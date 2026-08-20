@@ -161,21 +161,45 @@ Give one of them a different name under "aliases", for example:
 
 ---
 
-### M2 — 레지스트리 클라이언트
+### M2 — 레지스트리 클라이언트 ✅
 
-- [ ] `registry/client.ts`
-  - `getMetadata(scope, name)` — 헤더 불필요
-  - `getContents(scope, name, version)` — **`Wally-Version: 0.3.2` 필수** (누락 시 426)
-  - `search(query)`
-- [ ] 인덱스 `config.json` 에서 API base URL 해석 (기본값 하드코딩 + 캐시)
-- [ ] 메타데이터 응답의 메모리 캐시 — 한 번의 resolve 안에서 같은 패키지를 재요청하지 않게
-- [ ] 지수 백오프 재시도 (네트워크 오류·5xx 한정, 4xx는 즉시 실패)
-- [x] ~~Cargo → npm 범위 번역~~ — M0에서 완료 (`src/util/version-range.ts`)
+- [x] `registry/types.ts` — 와이어 타입과 파싱된 타입 분리
+- [x] `registry/parse.ts` — kebab-case, `null`, **Cargo 범위**를 여기서 전부 차단
+- [x] `registry/client.ts` — 3개 엔드포인트, 재시도, 캐시, API URL 해석
+- [x] 인덱스 `config.json` 해석 (기본 인덱스는 요청 0회)
+- [x] in-flight 프로미스 캐시 — 동시 호출도 요청 1회
+- [x] 지수 백오프 (네트워크·5xx·429 한정, 4xx 즉시 실패)
 
-> 레지스트리에서 들어오는 **모든** 범위는 `normalizeRange` 를 통과시킨다. 빠뜨리면 예외가 아니라
-> 조용한 오해석이 된다.
+M2 상태: **145 tests pass / eslint clean / tsc clean / biome clean.**
 
-**완료 기준:** `@sleitnick/knit`의 메타데이터에서 `Comm`·`Promise` 의존성과 범위가 npm 문법으로 나온다.
+**실측으로 발견한 API 특이점:** 없는 패키지가 **404가 아니라 500**을 반환한다.
+
+```
+$ curl -o /dev/null -w "%{http_code}" .../package-metadata/nobody/does-not-exist-xyz
+500
+{"message":"could not open package nobody/does-not-exist-xyz from index ..."}
+```
+
+500을 곧이곧대로 서버 오류로 보면 오타 하나에 백오프를 전부 돌고 나서 엉뚱한 원인을
+보고한다. 본문을 보고 "없는 패키지"로 판정해 **재시도 없이 즉시** 실패시킨다.
+브리틀한 판정이지만 대안이 더 나쁘다.
+
+**API URL 해석은 기본 인덱스에서 네트워크를 쓰지 않는다.** `config.json` 이 레지스트리
+수명 내내 `api.wally.run` 을 가리켜 왔고, 상수를 재발견하려고 매 실행 라운드트립을
+쓸 이유가 없다. 커스텀 인덱스만 GitHub raw 로 읽는다.
+
+**완료 기준 달성 — 실서버 확인:**
+
+```
+getMetadata: 29 versions in 441ms
+sleitnick/knit@1.7.0  realm=shared
+  Comm       -> sleitnick/comm  >=1.0.0 <2.0.0
+  Promise    -> evaera/promise  >=4.0.0 <5.0.0
+getContents: 7793 bytes, magic=50 4b 03 04 (zip)
+RN0110: nobody/does-not-exist-xyz does not exist in the registry.
+```
+
+> 테스트는 녹화된 픽스처만 쓴다 (`tests/fixtures/registry/`). 네트워크 없이 돈다.
 
 ---
 
@@ -405,5 +429,6 @@ Studio MCP를 쓰지 않으므로 **마지막 실행은 수동**이다. M6 완�
 1. ~~Bun 설치~~ — 완료
 2. ~~M0 스캐폴딩~~ — 완료 (feat/toolchain)
 3. ~~M1 매니페스트~~ — 완료 (feat/manifest)
-4. **M2 레지스트리 클라이언트** — feat/registry (다음)
-5. 각 feat 브랜치는 `--no-ff` 로 `develop` 에 병합
+4. ~~M2 레지스트리 클라이언트~~ — 완료 (feat/registry)
+5. **M3 리졸버** — feat/resolver (다음, 가장 어려움)
+6. 각 feat 브랜치는 `--no-ff` 로 `develop` 에 병합
