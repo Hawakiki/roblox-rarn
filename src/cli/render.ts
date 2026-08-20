@@ -1,4 +1,5 @@
 import chalk from 'chalk'
+import { Code } from '../util/codes.ts'
 import { RarnError } from '../util/errors.ts'
 
 /**
@@ -9,7 +10,9 @@ import { RarnError } from '../util/errors.ts'
  */
 export function renderError(error: unknown): string {
   if (error instanceof RarnError) {
-    const lines = [`${chalk.red('error')} ${error.what}`]
+    // The code leads the line so it is the first thing a reader can copy into a
+    // search. Wording may change between releases; the code never does.
+    const lines = [`${chalk.red(error.code)}: ${error.what}`]
     if (error.where !== undefined) lines.push(chalk.dim(`  at ${error.where}`))
     if (error.detail !== undefined) lines.push('', error.detail)
     if (error.how !== undefined) lines.push('', chalk.cyan(error.how))
@@ -21,18 +24,14 @@ export function renderError(error: unknown): string {
 
   const message = error instanceof Error ? error.message : String(error)
   return [
-    `${chalk.red('error')} ${message}`,
+    `${chalk.red(Code.InternalError)}: ${message}`,
     '',
     chalk.dim('This is a bug in Rarn — it should have been reported as a RarnError.'),
   ].join('\n')
 }
 
 function isCommanderExit(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    typeof (error as { code: unknown }).code === 'string' &&
-    (error as { code: string }).code.startsWith('commander.')
-  )
+  if (typeof error !== 'object' || error === null || !('code' in error)) return false
+  const { code } = error
+  return typeof code === 'string' && code.startsWith('commander.')
 }
