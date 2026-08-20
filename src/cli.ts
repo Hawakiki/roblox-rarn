@@ -51,9 +51,13 @@ async function main(argv: readonly string[]): Promise<void> {
     .description('install everything the manifest asks for')
     .option('--frozen-lockfile', 'fail instead of updating a stale lockfile', false)
     .option('--production', 'skip development dependencies', false)
-    .action(async (options: { production: boolean }) => {
+    .action(async (options: { production: boolean; frozenLockfile: boolean }) => {
       const { cwd } = program.opts<{ cwd: string }>()
-      await install({ cwd, production: options.production })
+      await install({
+        cwd,
+        production: options.production,
+        frozenLockfile: options.frozenLockfile,
+      })
     })
 
   program
