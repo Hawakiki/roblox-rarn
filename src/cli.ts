@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 import { Command } from 'commander'
 import pkg from '../package.json' with { type: 'json' }
+import { add } from './cli/commands/add.ts'
 import { init } from './cli/commands/init.ts'
+import { install } from './cli/commands/install.ts'
 import { renderError } from './cli/render.ts'
 import { Code } from './util/codes.ts'
 import { ExitCode, RarnError, RegistryError } from './util/errors.ts'
@@ -38,14 +40,21 @@ async function main(argv: readonly string[]): Promise<void> {
     .description('add packages to the manifest and install them')
     .option('-D, --dev', 'add as a development dependency', false)
     .option('--server', 'add as a server dependency', false)
-    .action(notYetImplemented('add', 'M8'))
+    .option('-E, --exact', 'write the exact version instead of a caret range', false)
+    .action(async (specs: string[], options: { dev: boolean; server: boolean; exact: boolean }) => {
+      const { cwd } = program.opts<{ cwd: string }>()
+      await add({ cwd, specs, dev: options.dev, server: options.server, exact: options.exact })
+    })
 
   program
     .command('install', { isDefault: true })
     .description('install everything the manifest asks for')
     .option('--frozen-lockfile', 'fail instead of updating a stale lockfile', false)
     .option('--production', 'skip development dependencies', false)
-    .action(notYetImplemented('install', 'M8'))
+    .action(async (options: { production: boolean }) => {
+      const { cwd } = program.opts<{ cwd: string }>()
+      await install({ cwd, production: options.production })
+    })
 
   program
     .command('remove')

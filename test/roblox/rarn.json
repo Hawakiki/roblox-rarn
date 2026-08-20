@@ -1,0 +1,15 @@
+{
+  "name": "rarn-verification",
+  "version": "0.1.0",
+  "private": true,
+  "realm": "shared",
+  "packageDir": "RARN_MODULE",
+  "place": {
+    "sharedPackages": "game.ReplicatedStorage.RARN_MODULE"
+  },
+  "dependencies": {
+    "@sleitnick/knit": "^1.7.0",
+    "@evaera/promise": "^4.0.0",
+    "@sleitnick/signal": "^2.0.0"
+  }
+}

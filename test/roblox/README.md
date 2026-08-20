@@ -1,15 +1,35 @@
-# test/roblox — 실제 동작 검증장
+# test/roblox — Studio 검증장
 
-자동화 테스트는 **파일 트리가 맞는지**까지만 본다. `require` 가 런타임에 정말 해결되는지,
-dedupe 된 패키지가 정말 같은 인스턴스인지는 Roblox 안에서만 확인할 수 있다.
+두 층으로 검증한다. **여기는 두 번째 층이다.**
 
-**Rojo는 이 폴더에서만 쓴다.** Rarn 자체는 Rojo에 의존하지 않으며 — 오히려 Rojo 없이
-동작하는 게 목표다 — 여기서는 산출물을 Studio로 옮기는 운반 수단으로만 쓴다.
+| 층 | 무엇을 증명하나 | 자동화 |
+|---|---|---|
+| `tests/roblox/verify.luau` (Lune) | 트리가 Roblox 규칙대로 해석되는가, dedupe가 진짜 되는가 | **O** — `bun test` |
+| **이 폴더** (Rojo + Studio) | 그게 **실제 엔진에서도** 그런가 | X — 수동 1회 |
 
-M6(링커) 완료 시 채운다. 시나리오와 절차는 [../../PLAN.md](../../PLAN.md) 5절 참고.
+Lune 하니스는 Roblox의 require 의미론을 **재구현**한 것이다. 트리가 그 모델 아래에서
+일관됨을 증명하지, 엔진에서 그렇다는 걸 증명하지 않는다. 모델이 어딘가 틀렸다면
+하니스는 통과하고 Studio는 깨진다 — 재구현이 지는 위험이 정확히 그것이므로 둘을 분리해 둔다.
 
-```
+## 실행
+
+```bash
+cd test/roblox
 rarn install          # RARN_MODULE/ 생성
 rojo serve            # Studio 연결
-                      # Studio에서 실행 -> verify.server.luau 출력 확인
+                      # Studio 에서 Play -> 출력 확인
 ```
+
+## 이 검증장이 잡는 것
+
+`src/verify.server.luau` 는 Lune 하니스가 **답할 수 없는** 것만 확인한다:
+
+- `Promise.new(...):andThen(...)` 가 실제로 동작하는가 — 패키지 코드가 엔진에서 도는가
+- `Knit.Util` 이 진짜 Instance 인가 — [R1 연구](../../docs/pnp-feasibility.md)에서 확인한
+  대로 shim 파일의 물리적 존재가 관측 가능한 API 표면이라는 사실
+
+나머지 (트리 모양, dedupe 동일성)는 Lune 쪽에서 이미 매번 자동으로 돈다.
+
+## 언제 돌려야 하나
+
+링커를 건드릴 때마다. 그 외에는 Lune 하니스로 충분하다.
