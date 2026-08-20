@@ -62,8 +62,8 @@
     "packageDir": {
       "type": "string",
       "default": "RARN_MODULE",
-      "pattern": "^[A-Za-z0-9._-]+$",
-      "description": "Directory the shared install tree is written to. Server and dev packages go to sibling directories named by appending '_SERVER' and '_DEV'. Renaming is safe; the _Index shape inside is not negotiable."
+      "pattern": "^(?!\\.{1,2}$)[A-Za-z0-9._-]+$",
+      "description": "Directory the shared install tree is written to. Never \".\" or \"..\": installing deletes and rebuilds it, so those would destroy the project. Server and dev packages go to sibling directories named by appending '_SERVER' and '_DEV'. Renaming is safe; the _Index shape inside is not negotiable."
     },
 
     "place": {

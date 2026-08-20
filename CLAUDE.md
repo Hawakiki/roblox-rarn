@@ -31,6 +31,36 @@ bun run build                        # bun build --compile -> dist/rarn(.exe)
 `bun run check` is what the pre-commit hook runs. Run it before committing rather
 than discovering it at commit time.
 
+### Verifying an install
+
+Roblox-side tools come from `rokit.toml` and are needed only to check output, never
+to build Rarn. `~/.rokit/bin` must be on PATH, and the shims resolve against that file.
+
+```bash
+lune run tests/roblox/verify.luau -- <install-dir> [<realm>] [--execute]
+```
+
+Reimplements Roblox's `require` — instance-based lookup, per-instance caching — over
+a real install tree. It answers the two questions a file-tree assertion cannot: does
+each shim reach a real ModuleScript, and does one package reached by two paths come
+back as **one instance**. Two copies look identical on disk and only diverge at
+runtime, when every singleton inside quietly becomes two.
+
+`bun test` runs it automatically on a synthetic tree, with three deliberately broken
+trees alongside — a harness nothing can fail is worth nothing.
+
+Package code is **not** executed by default. A real package calls `game:GetService`
+and `task.defer` at module scope, so running it measures stub completeness rather
+than install correctness; package modules resolve to a per-instance sentinel instead.
+`--execute` opts in.
+
+**This does not replace `test/roblox/`.** The harness proves the tree is consistent
+under a *model* of Roblox. If the model is wrong the harness passes and Studio breaks,
+so the manual check stays — run it whenever the linker changes.
+
+`wally install` on an equivalent `wally.toml` is the other useful comparison: the
+skeleton and shim bodies should match, and only pruning should differ.
+
 `bun build --compile --target=bun-windows-x64|bun-darwin-arm64|bun-linux-x64` cross-compiles
 from any host. `bun-windows-arm64` is not supported by Bun. Native `.node` addons do not
 cross-compile, so **keep every dependency pure JS**.
@@ -111,6 +141,27 @@ Two related rules:
 - Placement resolves to the **widest** realm any requester asked for: `shared > server > dev`.
   A package must live where its most permissive requester can still reach it. This is why the
   lockfile records `placement` separately from the declared `realm`.
+
+### 2a-2. The shim files are observable API, not an implementation detail
+
+`sleitnick/knit` — one of the most used Roblox frameworks — does this:
+
+```lua
+--[=[ @prop Util Folder  @within KnitClient  @readonly ]=]
+KnitClient.Util = (script.Parent :: Instance).Parent   -- the _Index entry folder
+local Promise = require(KnitClient.Util.Promise)       -- via that variable
+```
+
+Two consequences, and both close doors:
+
+- **Static rewriting of package sources is not viable.** The require does not name
+  `script.Parent.Parent.Promise` anywhere; the folder is stashed in a variable first.
+- **The folder is documented public API.** User code calls `Knit.Util.Signal`. Replacing
+  the physical shim files with any kind of resolver would make that `nil`.
+
+So the layout in constraint 2 is not free to optimize away later. Measured, not assumed:
+see `docs/pnp-feasibility.md`, which also records why a Yarn-PnP-style resolver was
+investigated and rejected. Revisit only if Roblox ships `.luaurc` alias maps.
 
 ### 2a-2. The shim files are observable API, not an implementation detail
 

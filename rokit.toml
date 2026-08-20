@@ -1,0 +1,14 @@
+# Roblox-side tools, used only for verifying Rarn's output.
+# Rarn itself is TypeScript + Bun and needs none of these to build or run.
+#
+#   lune  — runs the require-semantics harness in tests/roblox/
+#   rojo  — carries an install into Studio for the manual check in test/roblox/
+#   wally — reference implementation, diffed against Rarn's install tree
+#
+# The wally pin matches the Wally-Version header Rarn sends, so the reference
+# output and the API contract Rarn was verified against stay in step.
+
+[tools]
+lune = "lune-org/lune@0.10.5"
+rojo = "rojo-rbx/rojo@7.7.0"
+wally = "upliftgames/wally@0.3.2"

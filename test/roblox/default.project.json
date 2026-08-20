@@ -1,0 +1,14 @@
+{
+  "name": "rarn-verification",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "RARN_MODULE": { "$path": "RARN_MODULE" }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "Verify": { "$path": "src/verify.server.luau" }
+    }
+  }
+}
