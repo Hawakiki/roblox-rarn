@@ -60,6 +60,18 @@ export const Code = {
   LockfileInvalid: 'RN0500',
   LockfileTooNew: 'RN0501',
   LockfileStale: 'RN0510',
+
+  // RN0600-RN0699 — authentication and publishing
+  NotLoggedIn: 'RN0600',
+  LoginFailed: 'RN0601',
+  TokenStoreUnwritable: 'RN0602',
+  PackTooLarge: 'RN0610',
+  PackEmpty: 'RN0611',
+  UnpublishableRange: 'RN0620',
+  PublishRejected: 'RN0621',
+  VersionAlreadyPublished: 'RN0622',
+  PublishForbidden: 'RN0623',
+  PrivatePackage: 'RN0624',
 } as const
 
 export type Code = (typeof Code)[keyof typeof Code]

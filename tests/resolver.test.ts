@@ -75,6 +75,13 @@ function registryOf(
     search(): Promise<readonly SearchResult[]> {
       return Promise.resolve([])
     },
+    apiBase(): Promise<string> {
+      return Promise.resolve('https://api.example/')
+    },
+    // The resolver never publishes. Reachable only through a mistake, so it says so.
+    publish(): Promise<never> {
+      return Promise.reject(new Error('the resolver must never publish'))
+    },
   }
 }
 
