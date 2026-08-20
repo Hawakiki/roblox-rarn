@@ -317,6 +317,8 @@ is one that eventually contradicts it.
 - Commit messages in Korean, `type: subject` — matching the existing history.
 - Git flow, local only: `master` (releases), `develop` (integration), `feat/*` (work).
   Merge into `develop` with `--no-ff`. Never commit directly to `master`.
+  **`feat/*` is the only working-branch prefix** — a fix, a refactor, or a piece of
+  research all go on `feat/*` too. Do not invent `fix/*` or `research/*`.
 - Biome formats and catches syntax; ESLint carries **only** type-aware rules that Biome
   structurally cannot express (`no-floating-promises` above all — an unawaited download
   leaves a half-written cache and no error). Do not duplicate a rule across both.
