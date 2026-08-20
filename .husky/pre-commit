@@ -2,6 +2,17 @@
 # lint-staged 는 스테이지된 파일만 보지만 typecheck/test 는 전체를 돈다.
 # 커밋이 느려지면 --no-verify 유혹이 생기므로, 느려지기 시작하면
 # pre-push 로 옮기는 걸 먼저 고려할 것.
+
+# Git 이 훅을 돌릴 때의 PATH 는 로그인 셸의 PATH 가 아니다. bun 은 기본적으로
+# ~/.bun/bin 에 설치되는데 거기가 안 들어 있으면 훅이 command not found 로 죽고,
+# 그 순간 --no-verify 가 정답처럼 보이기 시작한다. 그래서 직접 넣는다.
+[ -d "$HOME/.bun/bin" ] && PATH="$HOME/.bun/bin:$PATH"
+
+command -v bun >/dev/null || {
+  echo "pre-commit: bun 을 못 찾았다. https://bun.sh 에서 설치하거나 PATH 를 확인할 것." >&2
+  exit 1
+}
+
 bun run lint-staged
 bun run typecheck
 bun test
