@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rarn.dev/schemas/rarn.lock.schema.json",
+  "title": "rarn.lock",
+  "description": "Rarn lockfile. Records the exact, fully resolved dependency graph so that any machine reproduces byte-identical install output. Generated — never hand-edited. Written with sorted keys and a trailing newline so diffs stay reviewable.",
+  "type": "object",
+  "required": ["lockfileVersion", "registry", "root", "packages"],
+  "additionalProperties": false,
+
+  "properties": {
+    "lockfileVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Bumped only on a breaking format change. A newer lockfileVersion than the CLI understands is a hard error, not a warning."
+    },
+
+    "registry": {
+      "type": "string",
+      "format": "uri",
+      "description": "API base URL every 'resolved' field in this file points at.",
+      "examples": ["https://api.wally.run/"]
+    },
+
+    "root": {
+      "type": "object",
+      "description": "Snapshot of the ranges rarn.json requested at resolution time. Comparing this against the current rarn.json is how 'rarn install' detects a stale lockfile without re-resolving.",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "dependencies": { "$ref": "#/$defs/rangeMap" },
+        "devDependencies": { "$ref": "#/$defs/rangeMap" },
+        "serverDependencies": { "$ref": "#/$defs/rangeMap" }
+      }
+    },
+
+    "packages": {
+      "type": "object",
+      "description": "Every resolved package, keyed by '@scope/name@version'. One entry per (name, version) pair — two entries sharing a name means dedupe could not collapse them, which 'rarn dedupe' reports.",
+      "propertyNames": { "$ref": "#/$defs/packageKey" },
+      "additionalProperties": { "$ref": "#/$defs/lockedPackage" },
+      "default": {}
+    }
+  },
+
+  "$defs": {
+    "packageKey": {
+      "type": "string",
+      "pattern": "^@[a-z0-9]([a-z0-9-]*[a-z0-9])?/[a-z0-9]([a-z0-9-]*[a-z0-9])?@.+$",
+      "description": "'@scope/name@version', e.g. '@evaera/promise@4.0.0'.",
+      "examples": ["@evaera/promise@4.0.0"]
+    },
+
+    "lockedPackage": {
+      "type": "object",
+      "required": ["version", "resolved", "integrity", "realm"],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "Exact resolved version. Never a range."
+        },
+
+        "resolved": {
+          "type": "string",
+          "format": "uri",
+          "description": "Absolute package-contents URL the archive was fetched from.",
+          "examples": ["https://api.wally.run/v1/package-contents/evaera/promise/4.0.0"]
+        },
+
+        "integrity": {
+          "$ref": "#/$defs/integrity",
+          "description": "Hash of the downloaded ZIP bytes, verified on every install. A mismatch aborts."
+        },
+
+        "realm": {
+          "type": "string",
+          "enum": ["shared", "server"],
+          "description": "Realm declared by the registry for this version."
+        },
+
+        "moduleRoot": {
+          "type": "string",
+          "description": "Path inside the extracted archive that holds the actual module tree, resolved from the package's default.project.json. Absent means the project file was missing or too complex to interpret, and the whole archive was copied instead.",
+          "examples": ["lib", "src"]
+        },
+
+        "projectName": {
+          "type": "string",
+          "description": "The 'name' field of the package's default.project.json. This is the folder name used inside _Index, so it must be recorded rather than guessed.",
+          "examples": ["promise"]
+        },
+
+        "indexDir": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+_[a-z0-9-]+@.+$",
+          "description": "Folder name under _Index, in Wally's own '{scope}_{name}@{version}' form.",
+          "examples": ["evaera_promise@4.0.0"]
+        },
+
+        "dependencies": {
+          "type": "object",
+          "description": "This package's own dependencies, mapping the alias its source code requires to the packageKey that alias resolves to. The linker turns each entry into one sibling shim inside the package's _Index folder.",
+          "propertyNames": { "$ref": "#/$defs/alias" },
+          "additionalProperties": { "$ref": "#/$defs/packageKey" },
+          "default": {},
+          "examples": [{ "Promise": "@evaera/promise@4.0.0" }]
+        },
+
+        "requestedBy": {
+          "type": "array",
+          "description": "Every requester and the range it asked for. Powers 'rarn why' and makes dedupe conflicts explainable rather than mysterious.",
+          "items": {
+            "type": "object",
+            "required": ["from", "range"],
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "type": "string",
+                "description": "A packageKey, or the literal 'root' for a direct dependency of rarn.json.",
+                "examples": ["root", "@sleitnick/knit@1.7.0"]
+              },
+              "range": {
+                "type": "string",
+                "description": "The range as requested, already normalized to npm syntax.",
+                "examples": ["^4.0.0", ">=4.0.0 <5.0.0"]
+              }
+            }
+          },
+          "default": []
+        },
+
+        "dev": {
+          "type": "boolean",
+          "default": false,
+          "description": "True when this package is reachable only through devDependencies. Skipped by 'rarn install --production'."
+        }
+      }
+    },
+
+    "integrity": {
+      "type": "string",
+      "pattern": "^sha256-[A-Za-z0-9+/]+={0,2}$",
+      "description": "Subresource-Integrity style: 'sha256-' followed by the base64 digest.",
+      "examples": ["sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="]
+    },
+
+    "alias": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "description": "Luau identifier used as the shim filename."
+    },
+
+    "rangeMap": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^@[a-z0-9]([a-z0-9-]*[a-z0-9])?/[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
+      },
+      "additionalProperties": { "type": "string" },
+      "default": {}
+    }
+  },
+
+  "examples": [
+    {
+      "lockfileVersion": 1,
+      "registry": "https://api.wally.run/",
+      "root": {
+        "name": "my-game",
+        "version": "0.1.0",
+        "dependencies": {
+          "@sleitnick/knit": "^1.7.0"
+        }
+      },
+      "packages": {
+        "@evaera/promise@4.0.0": {
+          "version": "4.0.0",
+          "resolved": "https://api.wally.run/v1/package-contents/evaera/promise/4.0.0",
+          "integrity": "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
+          "realm": "shared",
+          "moduleRoot": "lib",
+          "projectName": "promise",
+          "indexDir": "evaera_promise@4.0.0",
+          "dependencies": {},
+          "requestedBy": [
+            { "from": "@sleitnick/knit@1.7.0", "range": ">=4.0.0 <5.0.0" }
+          ]
+        },
+        "@sleitnick/knit@1.7.0": {
+          "version": "1.7.0",
+          "resolved": "https://api.wally.run/v1/package-contents/sleitnick/knit/1.7.0",
+          "integrity": "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
+          "realm": "shared",
+          "moduleRoot": "src",
+          "projectName": "knit",
+          "indexDir": "sleitnick_knit@1.7.0",
+          "dependencies": {
+            "Comm": "@sleitnick/comm@1.0.0",
+            "Promise": "@evaera/promise@4.0.0"
+          },
+          "requestedBy": [{ "from": "root", "range": "^1.7.0" }]
+        }
+      }
+    }
+  ]
+}
