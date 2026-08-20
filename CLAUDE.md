@@ -292,6 +292,7 @@ rarn.json -> resolve -> fetch -> extract -> prune -> link -> rarn.lock
 | `project` | Rojo `default.project.json` interpretation, module-root pruning | know about semver |
 | `linker` | build `RARN_MODULE/`, `_Index/`, generate `.luau` shims | perform network I/O |
 | `lockfile` | read/write/verify `rarn.lock` | resolve anything itself |
+| `doctor` | scan installed Luau for requires, compare against declared deps | fetch or resolve anything |
 | `cli` | commander wiring, output, exit codes | contain business logic |
 
 Business logic lives in the layers; `cli/` only wires and prints. Anything worth testing must

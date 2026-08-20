@@ -585,7 +585,7 @@ M7 상태: **292 tests pass / eslint clean / tsc clean / biome clean.**
 
 ---
 
-### M8 — CLI 명령 (계획)
+### M8 — CLI 명령 ✅
 
 **이미 동작하는 것:** `init` `add` `install` — M1·M6 에서 배선했다.
 
@@ -645,6 +645,64 @@ M8 은 **10개**를 추가한다. 발행 계열은 이번에 넣지 않는다 (�
   `script.Parent.Parent.X` 를 부르는데 `X` 가 선언된 의존성에 없으면 경고, 반대로 선언만
   하고 안 쓰면 경고. **표본의 4.5% 는 동적 require 라 검사 불가인데, 그 사실을 그대로 보고한다.**
   Wally 에 없는 영역이다.
+
+---
+
+#### 실측 결과
+
+10개 전부 구현·배선했다. 아래는 `@sleitnick/knit` + `@evaera/promise` 를 설치한
+스크래치 프로젝트에서 실제로 받은 출력이다.
+
+| 명령 | 확인한 것 |
+|---|---|
+| `remove` | 매니페스트에서 지우고 재설치. 없는 패키지는 `RN0002` 로 거부하고 **아무것도 안 지운다** |
+| `up` | `^1.4.0` → `^1.7.0` 으로 **범위까지 다시 씀**. `--latest` 는 범위를 넘어 `^3.2.1` → `^4.0.0` |
+| `list` | 트리 + 중복 경고. 재방문 노드는 `·` 로 접는다 |
+| `why` | 루트까지의 경로 전체. 사슬이라 항상 `└─` |
+| `dedupe` | 버전별 요구자와 범위, `resolutions` 제안 |
+| `search` | `--limit` 동작. M2 의 scope/name 분리 필드 그대로 |
+| `info` | 버전 목록·realm·라이선스·의존성 |
+| `outdated` | `current / wanted / latest` 3열. 범위 밖 최신만 노랑 |
+| `cache` | `dir` / `clean` / `verify` — verify 는 락파일과 대조 |
+| `doctor` | 아래 |
+
+`up` 이 실제 중복을 만들어 `dedupe` 를 검증할 재료가 되어 줬다:
+
+```
+@evaera/promise is installed at 2 versions:
+  4.0.0
+    >=4.0.0 <5.0.0       <- @sleitnick/comm@1.0.1
+    >=4.0.0 <5.0.0       <- @sleitnick/knit@1.7.0
+  3.2.1
+    ^3.2.1               <- rarn.json (direct dependency)
+
+  Force one version with:  "resolutions": { "@evaera/promise": "4.0.0" }
+```
+
+**`doctor` 는 대조군으로 검증했다.** 통과만으로는 검사기가 아무것도 안 하고 있는
+경우와 구별이 안 되기 때문이다.
+
+| 주입한 결함 | 결과 |
+|---|---|
+| 선언 안 한 `NotDeclared` 를 require | `requires NotDeclared — not a declared dependency` + 파일·줄 번호, 종료 1 |
+| Knit 소스에서 `Comm` require 제거 | `declares Comm — never required`, 종료 0 |
+
+두 번째가 중요하다. Knit 은 `KnitClient.Util = (script.Parent :: Instance).Parent`
+로 한 번 변수를 경유해서 require 한다. **그 require 를 지웠을 때만 `unused` 로 바뀌었다는 건
+스캐너가 변수 경유를 실제로 따라가고 있다는 뜻이다** — 안 따라갔다면 애초에 `Comm` 을
+쓰는 걸 못 봤을 테니 지우기 전에도 `unused` 라고 했을 것이다.
+
+`missing` 은 런타임에 `nil` 이 되는 진짜 결함이라 종료 1, `unused` 는 매니페스트가
+넉넉한 것뿐이라 종료 0 으로 나눴다.
+
+스캐너가 못 보는 것도 그대로 보고한다: `7 requires are built at runtime and could not be checked`.
+
+문자열 처리에 걸린 게 하나 있다. 주석 속 예제 코드를 진짜 require 로 읽지 않으려면
+문자열을 지워야 하는데, 그러면 `folder["Promise"]` 의 이름까지 날아간다. 이름 하나짜리
+리터럴만 남기고 나머지를 지우는 것으로 갈랐다 — `require(...)` 를 숨길 만큼 긴 문자열이
+문제였던 거지 짧은 이름은 아니었다.
+
+전체 검사 초록: 315 tests pass, 0 fail (12 files, 1467ms).
 
 ---
 
@@ -788,6 +846,7 @@ Studio MCP를 쓰지 않으므로 **마지막 실행은 수동**이다. M6 완�
 8. ~~M5 가지치기~~ — 완료 (feat/prune)
 9. ~~M6 링커~~ — 완료 (feat/linker)
 10. ~~M7 락파일~~ — 완료 (feat/lockfile)
-11. **M8 나머지 CLI 명령** — 계획 완료, 실행 대기 (feat/commands)
-12. M9 마감 → M10 발행 (연기)
-13. 각 feat 브랜치는 `--no-ff` 로 `develop` 에 병합
+11. ~~M8 나머지 CLI 명령~~ — 완료 (feat/commands)
+12. **M9 마감** — 다음 차례
+13. M10 발행 (연기, 조사 완료)
+14. 각 feat 브랜치는 `--no-ff` 로 `develop` 에 병합
