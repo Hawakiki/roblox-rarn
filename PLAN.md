@@ -1,0 +1,286 @@
+# Rarn — 구현 계획
+
+> 이 문서는 **무엇을 어떤 순서로 만들지**를 정한다.
+> 플랫폼 제약과 검증된 API 사실은 [CLAUDE.md](CLAUDE.md)에 있으며, 여기서 반복하지 않는다.
+
+---
+
+## 0. 확정된 결정
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 구현 언어 | TypeScript + Bun | 부품(zip·semver·HTTP) 전부 성숙, `--compile`로 단일 바이너리까지 해결 |
+| 패키지 소스 | Wally 레지스트리 API | 기존 Roblox 생태계를 그대로 흡수 |
+| 설치 위치 | `RARN_MODULE/` | `node_modules` 감각. 내부는 `_Index` + shim (구조는 강제사항) |
+| 매니페스트 | `rarn.json` | npm 표기법 `"@evaera/promise": "^4.0.0"` |
+| 락파일 | `rarn.lock` (JSON) | 정렬된 키, 재현 가능 |
+| 스키마 | JSON Schema 2020-12 | `schemas/` 가 두 포맷의 단일 진실 |
+| 캐시 | 전역 캐시 + **복사** | 하드링크는 프로젝트 간 편집 전파 사고 위험 |
+| MVP 범위 | `init` `add` `install` `remove` `list` | CLI 표면 전체를 얇게 |
+| 차별점 | 좋은 CLI 경험 + dedupe 가시화 | `why` / `dedupe` 는 Wally에 없는 영역 |
+| 배포 | 로컬 실행만 | 크로스컴파일·릴리스는 기능 완성 후 |
+
+### 채택하지 않은 것과 그 이유
+
+| 후보 | 왜 안 했나 |
+|---|---|
+| Luau + Lune | Lune에 **zip 해제가 없다**. Wally가 zip을 주므로 치명적 |
+| Rust | 생태계 정통성은 최고지만 개발 속도 손해가 큼 |
+| 하드링크 캐시 | 한 프로젝트의 편집이 다른 프로젝트로 전파됨 |
+| 자체 레지스트리 | 서버 운영·인증·스토리지가 MVP 범위를 크게 넘음 |
+| `.rbxm` 직접 생성 | 바이너리 포맷 직렬화 난이도가 높음. `rarn pack`으로 후순위 |
+
+---
+
+## 1. 아키텍처 요약
+
+```
+rarn.json
+   |
+   v
+[resolver] --(metadata API)--> 정확한 버전 집합 + dedupe 판정
+   |
+   v
+[cache] --(miss: contents API -> zip -> unzip)--> extracted/
+   |
+   v
+[project] --(default.project.json)--> 모듈 루트만 골라냄
+   |
+   v
+[linker] --> RARN_MODULE/_Index/... + *.luau shim
+   |
+   v
+rarn.lock
+```
+
+`resolver`는 **네트워크를 metadata 호출로만 쓴다.** zip은 버전 집합이 확정된 뒤에만 받는다.
+메타데이터가 의존성 그래프를 통째로 주기 때문에 가능한 설계이며, 이게 속도의 대부분을 만든다.
+
+---
+
+## 2. 마일스톤
+
+### M0 — 툴체인 부트스트랩
+
+> **현재 블로커: 이 머신에 Bun이 설치되어 있지 않다.** (`node v24.19.0`, `git 2.53.0`은 확인됨)
+> `powershell -c "irm bun.sh/install.ps1 | iex"` 로 설치한 뒤 M1로 넘어간다.
+
+- [ ] Bun 설치 및 `bun --version` 확인
+- [ ] `package.json`, `tsconfig.json` (strict, `noUncheckedIndexedAccess`)
+- [ ] 의존성 확정 — **전부 순수 JS여야 한다** (네이티브 애드온은 크로스컴파일 불가)
+
+| 용도 | 패키지 | 비고 |
+|---|---|---|
+| CLI 파싱 | `commander` | |
+| 색상 | `chalk` | |
+| 스피너/진행 | `ora` | |
+| semver | `semver` | Cargo 문법 번역 후 투입 |
+| zip 해제 | `fflate` | 순수 JS |
+| 스키마 검증 | `ajv` + `ajv-formats` | `schemas/*.json`을 그대로 소비 |
+| HTTP / 해시 / 파일 | Bun 내장 | `fetch`, `crypto.subtle`, `Bun.file` |
+
+TOML 파서는 **필요 없다.** 의존성 별칭까지 metadata API가 JSON으로 준다.
+
+- [ ] `biome` 린트 설정, `bun test` 동작 확인
+- [ ] `src/` 레이어 디렉터리 골격 생성
+
+---
+
+### M1 — 매니페스트
+
+- [ ] `schemas/rarn.schema.json` → TS 타입 생성 또는 수기 미러링
+- [ ] `manifest/read.ts` — 읽기 + ajv 검증 + **경로와 이유가 붙은 에러**
+- [ ] `manifest/write.ts` — 키 순서 보존 저장
+- [ ] `rarn init` — 대화형/`-y`. `.gitignore`에 `RARN_MODULE/` 자동 추가
+
+**완료 기준:** 잘못된 `rarn.json`이 스택 트레이스가 아니라 `dependencies["@evaera/promise"]: "^^4" 는 올바른 semver 범위가 아닙니다` 로 실패한다.
+
+---
+
+### M2 — 레지스트리 클라이언트
+
+- [ ] `registry/client.ts`
+  - `getMetadata(scope, name)` — 헤더 불필요
+  - `getContents(scope, name, version)` — **`Wally-Version: 0.3.2` 필수** (누락 시 426)
+  - `search(query)`
+- [ ] 인덱스 `config.json` 에서 API base URL 해석 (기본값 하드코딩 + 캐시)
+- [ ] 메타데이터 응답의 메모리 캐시 — 한 번의 resolve 안에서 같은 패키지를 재요청하지 않게
+- [ ] 지수 백오프 재시도 (네트워크 오류·5xx 한정, 4xx는 즉시 실패)
+- [ ] **Cargo → npm 범위 번역**: `">=4.0.0, <5.0.0"` → `">=4.0.0 <5.0.0"`
+
+> 번역 누락은 조용히 오작동한다. `semver`는 콤마를 AND로 읽지 않으므로 **여기 전용 유닛 테스트를 반드시 둔다.**
+
+**완료 기준:** `@sleitnick/knit`의 메타데이터에서 `Comm`·`Promise` 의존성과 범위가 npm 문법으로 나온다.
+
+---
+
+### M3 — 리졸버 (여기가 제일 어렵다)
+
+```
+1. rarn.json 직접 의존성을 큐에 넣는다
+2. 큐가 빌 때까지:
+     메타데이터 조회 -> 후보 버전 목록
+     이 이름에 걸린 모든 범위를 수집
+     의존성을 큐에 추가 (이름+범위 쌍 기준으로 방문 표시)
+3. 이름별 버전 집합 최소화:
+     모든 범위의 교집합이 비지 않으면 -> 최고 버전 1개
+     비면 -> 겹치는 범위끼리 묶어 그룹 수만큼 버전 선택
+4. 각 요구자에 대해 자신이 쓸 버전을 매핑 -> dependencies 맵
+```
+
+- [ ] `resolver/graph.ts` — 그래프 순회, 방문 표시
+- [ ] `resolver/dedupe.ts` — 범위 교집합 기반 버전 수 최소화
+- [ ] `resolver/errors.ts` — 충돌 시 **왜 안 되는지** 출력
+
+```
+X @evaera/promise 를 하나의 버전으로 통합할 수 없습니다
+
+    ^3.2.0  <- @nevermore/signal@2.1.0 이 요구
+    ^4.0.0  <- rarn.json 이 직접 요구
+
+  두 범위는 겹치지 않아 각각 설치됩니다.
+  두 사본은 런타임에 서로 다른 모듈이 되어 싱글톤이 깨질 수 있습니다.
+  -> @nevermore/signal 을 올릴 수 있는지 확인하세요.
+```
+
+- [ ] 순환 의존성 감지 (에러가 아니라 경고 — Luau에서는 성립할 수 있다)
+- [ ] pre-release 는 명시적으로 요구된 경우에만 후보에 넣는다
+
+**완료 기준:** `@sleitnick/knit@^1.7.0` 하나로 knit·comm·promise가 각 1버전씩 나온다.
+
+---
+
+### M4 — 캐시와 취득
+
+- [ ] `cache/paths.ts` — Windows `%LOCALAPPDATA%\rarn\cache`, 그 외 XDG
+- [ ] `cache/store.ts` — `downloads/`(zip), `extracted/`(트리)
+- [ ] sha256 무결성 계산·검증, 락파일과 대조
+- [ ] `fetch/download.ts` — 동시성 상한을 둔 병렬 다운로드
+- [ ] `fetch/extract.ts` — fflate 해제
+  - **매직바이트로 판별한다.** `Content-Type: application/gzip` 이라고 오지만 실제는 zip (`PK 03 04`)
+  - zip slip 방어: `..` 를 포함하는 엔트리는 거부
+- [ ] 원자적 쓰기: 임시 디렉터리에 풀고 완료 후 rename (중단 시 반쪽 캐시 방지)
+
+**완료 기준:** 두 번째 `rarn install`이 네트워크 요청 0회로 끝난다.
+
+---
+
+### M5 — 프로젝트 해석과 가지치기
+
+가장 큰 실용적 이득이 나오는 단계다. `evaera/promise@4.0.0` 은 zip 안에 **340개 파일**이
+들어 있지만 실제 모듈은 `lib/init.lua` **1개**다.
+
+- [ ] `project/rojo.ts` — `default.project.json` 파싱
+  - `{ "name": ..., "tree": { "$path": "lib" } }` 단순형 지원 (대다수가 여기 해당)
+  - `$className`, 중첩 노드, 다중 `$path` 는 **미지원으로 판정하고 통째 복사 + 경고**
+  - 프로젝트 파일 부재 시에도 통째 복사 + 경고
+- [ ] `project/prune.ts` — 모듈 루트만 복사
+- [ ] `.lua` / `.luau` 확장자 양쪽 처리
+- [ ] 판정 결과를 락파일 `moduleRoot` / `projectName` 에 기록
+
+> **절대 이것 때문에 설치를 실패시키지 않는다.** 해석 못 하면 전부 복사하고 경고만 남긴다.
+
+**완료 기준:** promise 설치 결과가 340개가 아니라 1개 파일이고, `_Index/evaera_promise@4.0.0/promise/init.lua` 에 놓인다.
+
+---
+
+### M6 — 링커
+
+- [ ] `linker/layout.ts` — `RARN_MODULE/`, `_Index/{scope}_{name}@{version}/{projectName}/`
+- [ ] `linker/shim.ts` — shim 생성
+  - 최상위: `return require(script.Parent._Index["evaera_promise@4.0.0"].promise)`
+  - `_Index` 내부: `return require(script.Parent.Parent["evaera_promise@4.0.0"].promise)`
+- [ ] 별칭 도출: `@evaera/promise` → `Promise`. 충돌은 하드 에러, `aliases`로 해소
+- [ ] `serverDependencies` 는 `RARN_MODULE/Server/` 로 분리 (클라이언트 복제 방지)
+- [ ] 정리 로직: 락파일에 없는 `_Index` 항목 제거. **`RARN_MODULE` 밖은 절대 건드리지 않는다**
+
+**완료 기준:** Studio에 수동 배치한 뒤 `require(RARN_MODULE.Promise)` 가 실제로 동작한다.
+
+---
+
+### M7 — 락파일
+
+- [ ] `lockfile/write.ts` — 키 정렬, 후행 개행. 같은 입력 → 바이트 동일 출력
+- [ ] `lockfile/read.ts` — 스키마 검증, `lockfileVersion` 미래 버전은 하드 에러
+- [ ] 신선도 판정: `root` 스냅샷 vs 현재 `rarn.json`
+- [ ] `--frozen-lockfile` — 락파일이 낡았으면 갱신하지 않고 실패 (CI용)
+
+**완료 기준:** `rarn install` 두 번 실행 후 `git diff rarn.lock` 이 비어 있다.
+
+---
+
+### M8 — CLI 명령
+
+| 명령 | 동작 |
+|---|---|
+| `rarn init` | `rarn.json` 생성, `.gitignore` 갱신 |
+| `rarn add <pkg>` | 해석 → 매니페스트 갱신 → 설치. `-D`, `--server` |
+| `rarn install` | 락파일 우선, 낡았으면 재해석 |
+| `rarn remove <pkg>` | 매니페스트에서 제거 후 재설치 (고아 정리) |
+| `rarn list` | 트리 출력. `--depth`, `--json` |
+| `rarn why <pkg>` | 그 패키지가 왜 들어왔는지 경로 표시 |
+| `rarn dedupe` | 중복 버전 진단 및 축약 제안 |
+
+전 명령 공통: `--verbose`, `--silent`, `--no-color`, `--cwd`.
+종료 코드는 `0` 성공 / `1` 사용자 오류 / `2` 네트워크·레지스트리 오류로 구분한다.
+
+---
+
+### M9 — 마감
+
+- [ ] `ora` 진행 표시 (TTY 아닐 때는 자동 비활성)
+- [ ] 에러 메시지 통일: **무엇이 / 어디서 / 어떻게 고치는지** 세 줄
+- [ ] 설치 요약 — 추가·제거·재사용 개수와 소요 시간
+- [ ] `README.md` 사용법 확장
+
+---
+
+## 3. 이후 (MVP 밖)
+
+| 항목 | 비고 |
+|---|---|
+| `rarn pack` → `.rbxm` | Rojo 없이 Studio 드래그. 바이너리 직렬화 필요 |
+| `rarn publish` | GitHub OAuth 필요 |
+| 워크스페이스 | 모노레포 |
+| `--linked` 캐시 | 하드링크 옵트인 |
+| `rarn doctor` | 수동 배치된 중복 패키지 탐지 |
+| 크로스컴파일·릴리스 | 3개 OS 바이너리, Rokit 배포 |
+| `wally.toml` 임포트 | 마이그레이션 경로 |
+
+---
+
+## 4. 위험 요소
+
+| 위험 | 영향 | 대응 |
+|---|---|---|
+| Cargo 범위 문법 번역 누락 | 범위를 조용히 오해석 | 전용 유닛 테스트, M2에서 최우선 |
+| `default.project.json` 형태가 다양함 | 잘못된 트리 배치 | 단순형만 처리, 나머지는 통째 복사 + 경고 |
+| `Content-Type` 이 거짓말함 | 해제 실패 | 매직바이트로만 판별 |
+| Wally API 스펙 변경 | 전면 고장 | 클라이언트를 한 파일에 격리, 검증 사실을 CLAUDE.md에 기록 |
+| zip slip | 임의 파일 쓰기 | 엔트리 경로 검증 |
+| Bun `--compile` 바이너리 크기 (50~110MB) | 배포 부담 | `--minify --bytecode` |
+| 순환 의존성 | 무한 루프 | 방문 표시, 순환은 경고 처리 |
+
+---
+
+## 5. 테스트 전략
+
+| 층 | 방식 |
+|---|---|
+| `resolver` | 순수 함수. 손으로 만든 메타데이터 픽스처로 표 기반 테스트 |
+| `registry` | 녹화된 HTTP 픽스처. **CI에서 네트워크 금지** |
+| `project` | 실제 `default.project.json` 샘플 모음 |
+| `linker` | 임시 디렉터리에 설치 후 트리 구조와 shim 내용 스냅샷 |
+| 통합 | `@sleitnick/knit` 설치 → 정확한 트리 검증 (네트워크 필요, 별도 태그) |
+
+Luau 산출물 검증은 자동화할 수 없다 — Studio MCP를 쓰지 않기로 했기 때문이다.
+M6 완료 시 **한 번은 Studio에 손으로 넣어 `require` 가 실제로 동작하는지 확인한다.**
+
+---
+
+## 6. 다음 행동
+
+1. **Bun 설치** — 유일한 블로커
+2. M0 스캐폴딩을 `feat/toolchain` 브랜치에서
+3. M1~M2 를 `feat/manifest`, `feat/registry` 로
+4. 각 feat 브랜치는 `--no-ff` 로 `develop` 에 병합
