@@ -585,20 +585,100 @@ M7 상태: **292 tests pass / eslint clean / tsc clean / biome clean.**
 
 ---
 
-### M8 — CLI 명령
+### M8 — CLI 명령 (계획)
 
-| 명령 | 동작 |
-|---|---|
-| `rarn init` | `rarn.json` 생성, `.gitignore` 갱신 |
-| `rarn add <pkg>` | 해석 → 매니페스트 갱신 → 설치. `-D`, `--server` |
-| `rarn install` | 락파일 우선, 낡았으면 재해석 |
-| `rarn remove <pkg>` | 매니페스트에서 제거 후 재설치 (고아 정리) |
-| `rarn list` | 트리 출력. `--depth`, `--json` |
-| `rarn why <pkg>` | 그 패키지가 왜 들어왔는지 경로 표시 |
-| `rarn dedupe` | 중복 버전 진단 및 축약 제안 |
+**이미 동작하는 것:** `init` `add` `install` — M1·M6 에서 배선했다.
+
+M8 은 **10개**를 추가한다. 발행 계열은 이번에 넣지 않는다 (아래 M10).
 
 전 명령 공통: `--verbose`, `--silent`, `--no-color`, `--cwd`.
-종료 코드는 `0` 성공 / `1` 사용자 오류 / `2` 네트워크·레지스트리 오류로 구분한다.
+종료 코드는 `0` 성공 / `1` 사용자 오류 / `2` 네트워크·레지스트리 오류.
+
+#### A. 편집·조회 (5개) — 밑단이 전부 있음
+
+| 명령 | 옵션 | 하는 일 | 크기 |
+|---|---|---|---|
+| `remove <pkg...>` | | 매니페스트에서 제거 후 재설치 | S |
+| `up [pkg...]` | `--latest` | 범위 내 최신으로 올리고 **매니페스트 범위도 갱신** | S |
+| `list` (`ls`) | `--depth` `--json` | 락파일로 트리 출력. 네트워크 0 | S |
+| `why <pkg>` | `--json` | 루트까지 역추적 | S |
+| `dedupe` | `--json` | 중복 버전 진단 | S |
+
+- `remove` 는 **어느 섹션에 있든 찾아서** 지운다. `withoutDependency` 가 M1 에 이미 있고
+  아직 안 쓰인다. 없는 패키지를 지우라고 하면 조용히 성공하지 말고 그렇게 말한다.
+- `up` 은 `install` 과 다르다. `install` 은 매니페스트를 안 건드리지만 `up` 은
+  **범위를 새 버전에 맞춰 다시 쓴다** (Yarn 과 동일). `--latest` 는 선언된 범위를 무시한다.
+- `why` 는 락파일의 `requestedBy` 가 곧 역방향 간선이라 **네트워크 없이** 된다.
+  직접 요구자만이 아니라 **루트까지의 경로 전체**를 보여준다.
+
+> **`dedupe` 는 Yarn 과 역할이 다르다.** Yarn 의 `dedupe` 는 재해석해서 버전 수를 줄인다.
+> Rarn 의 리졸버는 **이미 제약을 다 모은 뒤 교집합으로 푸는** 순서 독립 알고리즘이라
+> 결과가 항상 최소다 — 더 줄일 여지가 없다. 그래서 Rarn 의 `dedupe` 는 축약이 아니라
+> **"왜 못 합쳤는지 설명하고 `resolutions` 를 제안"** 하는 진단 명령이다.
+
+#### B. 탐색 (3개)
+
+| 명령 | 하는 일 | 크기 |
+|---|---|---|
+| `search <query>` | 레지스트리 검색 | **XS** |
+| `info <pkg>[@ver]` | 버전 목록·설명·라이선스·realm·의존성 | S |
+| `outdated` | 설치본 vs 범위 내 최신 vs 전체 최신 | S |
+
+> `search` 는 **M2 에서 이미 구현했고 버그까지 고쳤는데** (scope/name 분리 필드)
+> 아무 데서도 안 부른다. 배선만 하면 끝난다.
+
+`outdated` 는 Yarn Classic 형식으로 `current / wanted / latest` 3열. CI 용으로
+낡은 게 있으면 종료 코드를 1로 할지는 구현 시 결정한다 — 기본은 0, `--check` 로 옵트인이
+안전해 보인다.
+
+#### D. 유지보수 (2개)
+
+| 명령 | 하는 일 | 크기 |
+|---|---|---|
+| `cache dir\|clean\|verify` | 캐시 경로 출력 / 비우기 / 무결성 재검사 | S |
+| `doctor` | 선언 ↔ 실제 require 불일치 검사 | M |
+
+- `cache verify` 는 `downloads/` 를 다시 해싱해 `extracted/` 와 대조한다.
+  M4 의 무결성 코드를 그대로 쓴다.
+- `cache clean` 은 **되돌릴 수 없으므로** 지울 용량과 항목 수를 먼저 보여준다.
+- `doctor` 는 [R1 연구](docs/pnp-feasibility.md) 5-2 에서 나온 항목이다. 패키지 소스가
+  `script.Parent.Parent.X` 를 부르는데 `X` 가 선언된 의존성에 없으면 경고, 반대로 선언만
+  하고 안 쓰면 경고. **표본의 4.5% 는 동적 require 라 검사 불가인데, 그 사실을 그대로 보고한다.**
+  Wally 에 없는 영역이다.
+
+---
+
+### M10 — 발행 (연기, 조사만 완료)
+
+**이번 M8 에 넣지 않기로 했다.** 다만 API 를 실측으로 확인해 뒀으므로 다시 조사할 필요는 없다.
+
+| 항목 | 확인된 사실 |
+|---|---|
+| 엔드포인트 | `POST {api}/v1/publish` |
+| 헤더 | `Wally-Version`, `Authorization: Bearer <token>`, `accept: application/json` |
+| 본문 | **raw zip 바이트** (multipart 아님) |
+| 크기 제한 | **2 MiB** |
+| 로그인 | **GitHub device flow** — `github.com/login/device/code` → 폴링 → `login/oauth/access_token` |
+| client_id | 인덱스 `config.json` 의 `github_oauth_id` (기본 인덱스: `7bd503594a0f9a9f7ed3`) |
+| 토큰 저장 | API URL 별. Wally 는 `~/.wally/auth.toml` |
+| 에러 | `400` 이름·버전·zip 문제 / `401` 스코프 권한 없음 / `409` **버전 이미 존재** / `500` 저장 실패 |
+
+**핵심 제약 — 서버가 zip 안의 `wally.toml` 을 읽는다.** 백엔드 publish 핸들러가 업로드된
+아카이브에서 `wally.toml` 을 꺼내 파싱해 패키지 이름과 버전을 얻는다. 따라서
+`rarn publish` 는 **`rarn.json` 에서 `wally.toml` 을 생성해 zip 에 넣어야** 한다.
+
+**여기서 파생되는 제약:** 생성된 `wally.toml` 의 범위는 **Cargo 문법이어야** 한다.
+`^1.0.0`, `~1.2.3`, `>=1.0.0, <2.0.0` 은 되지만 **`||`(OR)와 하이픈 범위는 Cargo 에 없다.**
+그런 범위를 쓴 프로젝트는 발행 시 거부하거나 경고해야 한다.
+
+**첫 발행 시 스코프가 자동으로 등록된다.** 오타난 스코프로 발행하면 그 스코프를 점유한다.
+
+예정 명령: `login` `logout` `whoami` `pack` `publish`.
+`pack` 이 분량의 대부분 — include/exclude 글롭, `.gitignore` 폴백, `wally.toml` 생성.
+`rarn.json` 스키마에 `include`/`exclude` 는 이미 있다.
+
+> **발행은 되돌릴 수 없다.** 레지스트리는 버전을 불변으로 보고 `409` 로 재발행을 막는다.
+> `pack --list`(무엇이 들어갈지 미리 보기)와 `publish --dry-run` 은 선택이 아니라 필수다.
 
 ---
 
@@ -708,5 +788,6 @@ Studio MCP를 쓰지 않으므로 **마지막 실행은 수동**이다. M6 완�
 8. ~~M5 가지치기~~ — 완료 (feat/prune)
 9. ~~M6 링커~~ — 완료 (feat/linker)
 10. ~~M7 락파일~~ — 완료 (feat/lockfile)
-11. **M8 나머지 CLI 명령** — feat/commands (다음)
-12. 각 feat 브랜치는 `--no-ff` 로 `develop` 에 병합
+11. **M8 나머지 CLI 명령** — 계획 완료, 실행 대기 (feat/commands)
+12. M9 마감 → M10 발행 (연기)
+13. 각 feat 브랜치는 `--no-ff` 로 `develop` 에 병합
