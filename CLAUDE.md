@@ -21,9 +21,15 @@ bun test                             # run the whole test suite
 bun test path/to/file.test.ts        # run one test file
 bun test -t "resolves ranges"        # run tests matching a name
 bun run typecheck                    # tsc --noEmit
-bun run lint                         # biome check
+bun run format                       # biome check (formatting + fast rules)
+bun run format:fix                   # biome check --write
+bun run lint                         # eslint, type-aware rules
+bun run check                        # format + lint + typecheck + test, in that order
 bun run build                        # bun build --compile -> dist/rarn(.exe)
 ```
+
+`bun run check` is what the pre-commit hook runs. Run it before committing rather
+than discovering it at commit time.
 
 `bun build --compile --target=bun-windows-x64|bun-darwin-arm64|bun-linux-x64` cross-compiles
 from any host. `bun-windows-arm64` is not supported by Bun. Native `.node` addons do not
@@ -233,10 +239,58 @@ round. Both are JSON Schema draft 2020-12.
 `rarn.lock` is written with **sorted keys and a trailing newline** so diffs stay reviewable and
 reruns are byte-identical. A resolution that is not reproducible is a bug.
 
+## Error codes
+
+Every `RarnError` carries a stable `RN####` code from `src/util/codes.ts`, following
+Yarn Berry's `YN0060` scheme. The code leads the rendered message so it is the first
+thing a reader can copy into a search.
+
+The point of a code is that it never changes. Wording gets rewritten; `RN0210` stays
+`RN0210`. Two rules follow from that:
+
+- **A shipped code is never reused for a different meaning.**
+- **A retired code stays in the file** with a `Retired:` note instead of being deleted,
+  so the number cannot be handed out twice.
+
+Ranges are grouped by layer (`0001` CLI, `0010` manifest, `0100` registry, `0200`
+resolution, `0300` cache, `0400` linking, `0500` lockfile) with gaps left inside each.
+`tests/codes.test.ts` enforces uniqueness.
+
+## Yarn conventions
+
+Rarn is Yarn's model applied to Roblox, so where a decision has a Yarn precedent and no
+platform reason to differ, follow Yarn:
+
+- Command names and flags: `add -D`, `remove`, `install`, `up [--latest]`, `why`,
+  `dedupe`, `list`. `--frozen-lockfile` keeps the Yarn Classic spelling.
+- **`resolutions`** in the manifest forces a package to one exact version. This is more
+  than a convenience here: it is the only escape hatch when two dependents demand
+  incompatible majors, because the alternative is two ModuleScript copies and a broken
+  singleton. Always report an override that was applied — a silent one is worse than the
+  conflict it hides.
+
+## Comments
+
+Comment the **why**, never the **what**. If the signature already says it, delete it.
+
+This codebase carries more prose than usual, and that is deliberate: the domain is full
+of constraints nobody would guess from the code. `normalizeRange` is a one-line function
+whose entire reason for existing — that skipping it misparses silently rather than
+throwing — is invisible without a comment. Those earn their place. A comment restating a
+parameter list does not.
+
+No JSDoc type tags (`@param {string}`). Types live in the signature; a duplicated type
+is one that eventually contradicts it.
+
 ## Conventions
 
 - Commit messages in Korean, `type: subject` — matching the existing history.
 - Git flow, local only: `master` (releases), `develop` (integration), `feat/*` (work).
   Merge into `develop` with `--no-ff`. Never commit directly to `master`.
+- Biome formats and catches syntax; ESLint carries **only** type-aware rules that Biome
+  structurally cannot express (`no-floating-promises` above all — an unawaited download
+  leaves a half-written cache and no error). Do not duplicate a rule across both.
+- `.husky/pre-commit` runs the full `check`. If commits get slow enough to tempt
+  `--no-verify`, move `typecheck`/`test` to `pre-push` rather than skipping the hook.
 - Every Wally API claim in this file was verified against the live service. If behavior looks
   different, re-verify with `curl` and **update this file in the same commit** as the fix.

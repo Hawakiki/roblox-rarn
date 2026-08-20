@@ -1,4 +1,5 @@
 import semver from 'semver'
+import { Code } from './codes.ts'
 import { RarnError } from './errors.ts'
 import { type PackageName, parseWallyName } from './package-name.ts'
 
@@ -40,6 +41,7 @@ export function normalizeRange(range: string): string {
 
   if (normalized.length === 0) {
     throw new RarnError({
+      code: Code.InvalidVersionRange,
       what: `'${range}' is not a usable version range.`,
       where: range,
       how: "Use a range such as '^4.0.0', '>=1.0.0 <2.0.0', or '*'.",
@@ -48,6 +50,7 @@ export function normalizeRange(range: string): string {
 
   if (semver.validRange(normalized) === null) {
     throw new RarnError({
+      code: Code.InvalidVersionRange,
       what: `'${range}' is not a valid version range.`,
       where: range,
       how: "Use a range such as '^4.0.0', '>=1.0.0 <2.0.0', or '*'.",
@@ -74,6 +77,7 @@ export function parsePackageReq(input: string): PackageReq {
   const at = input.indexOf('@')
   if (at === -1) {
     throw new RarnError({
+      code: Code.InvalidDependencySpec,
       what: `Dependency '${input}' is missing a version range.`,
       where: input,
       how: "Registry dependencies look like 'evaera/promise@^4.0.0'.",
@@ -101,6 +105,7 @@ export function areCompatible(a: string, b: string): boolean {
   const right = semver.parse(b)
   if (left === null || right === null) {
     throw new RarnError({
+      code: Code.InvalidVersion,
       what: `Cannot compare versions '${a}' and '${b}'.`,
       how: 'Both must be exact semver versions.',
     })

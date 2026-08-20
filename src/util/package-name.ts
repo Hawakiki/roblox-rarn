@@ -1,3 +1,4 @@
+import { Code } from './codes.ts'
 import { RarnError } from './errors.ts'
 
 /**
@@ -18,6 +19,7 @@ const SEGMENT = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
 function assertSegment(value: string, kind: 'scope' | 'name', source: string): void {
   if (SEGMENT.test(value)) return
   throw new RarnError({
+    code: Code.InvalidPackageName,
     what: `'${value}' is not a valid package ${kind}.`,
     where: source,
     how: `A ${kind} must be lowercase letters, digits, or dashes, and may not start or end with a dash.`,
@@ -28,6 +30,7 @@ function assertSegment(value: string, kind: 'scope' | 'name', source: string): v
 export function parsePackageName(input: string): PackageName {
   if (!input.startsWith('@')) {
     throw new RarnError({
+      code: Code.InvalidPackageName,
       what: `Package name '${input}' is missing its leading '@'.`,
       where: input,
       how: `Rarn writes package names as '@scope/name'. Did you mean '@${input}'?`,
@@ -45,6 +48,7 @@ function splitScopeAndName(body: string, source: string): PackageName {
   const slash = body.indexOf('/')
   if (slash === -1) {
     throw new RarnError({
+      code: Code.InvalidPackageName,
       what: `Package name '${source}' is missing a scope.`,
       where: source,
       how: "Every Wally package is scoped, as in '@evaera/promise'.",

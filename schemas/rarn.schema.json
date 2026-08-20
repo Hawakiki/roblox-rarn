@@ -16,10 +16,7 @@
     "name": {
       "description": "Package identity. Scoped form '@scope/name' is required to publish; a bare name is fine for a private game project.",
       "type": "string",
-      "anyOf": [
-        { "$ref": "#/$defs/scopedName" },
-        { "$ref": "#/$defs/bareName" }
-      ]
+      "anyOf": [{ "$ref": "#/$defs/scopedName" }, { "$ref": "#/$defs/bareName" }]
     },
 
     "version": {
@@ -98,6 +95,14 @@
     "serverDependencies": {
       "$ref": "#/$defs/dependencyMap",
       "description": "Server-realm dependencies. Kept separate so they are never replicated to clients."
+    },
+
+    "resolutions": {
+      "type": "object",
+      "description": "Forces a package to a single version regardless of what the graph asked for, following Yarn's field of the same name. This is the escape hatch for a resolution Rarn reports as unmergeable: when two dependents demand incompatible majors, Roblox would otherwise get two ModuleScript copies and any singleton inside the package silently breaks, so overriding to one version is often the only correct fix rather than a convenience. Values are exact versions, not ranges — an override that still needed resolving would defeat the purpose. Every applied override is reported during install; a silent override would be worse than the conflict it hides.",
+      "propertyNames": { "$ref": "#/$defs/scopedName" },
+      "additionalProperties": { "$ref": "#/$defs/semver" },
+      "examples": [{ "@evaera/promise": "4.0.0" }]
     },
 
     "aliases": {

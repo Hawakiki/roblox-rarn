@@ -2,6 +2,7 @@
 import { Command } from 'commander'
 import pkg from '../package.json' with { type: 'json' }
 import { renderError } from './cli/render.ts'
+import { Code } from './util/codes.ts'
 import { ExitCode, RarnError, RegistryError } from './util/errors.ts'
 
 /**
@@ -48,6 +49,13 @@ async function main(argv: readonly string[]): Promise<void> {
     .action(notYetImplemented('remove', 'M8'))
 
   program
+    .command('up')
+    .argument('[packages...]', 'packages to upgrade; all of them when omitted')
+    .description('upgrade packages to the newest version their range allows')
+    .option('--latest', 'ignore the declared range and take the newest release', false)
+    .action(notYetImplemented('up', 'M8'))
+
+  program
     .command('list')
     .alias('ls')
     .description('show the installed dependency tree')
@@ -78,6 +86,7 @@ async function main(argv: readonly string[]): Promise<void> {
 function notYetImplemented(command: string, milestone: string) {
   return () => {
     throw new RarnError({
+      code: Code.Unimplemented,
       what: `'rarn ${command}' is not implemented yet.`,
       how: `It arrives in ${milestone}. See PLAN.md for the current state.`,
     })

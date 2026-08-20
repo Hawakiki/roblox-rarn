@@ -19,6 +19,19 @@
 | MVP 범위 | `init` `add` `install` `remove` `list` | CLI 표면 전체를 얇게 |
 | 차별점 | 좋은 CLI 경험 + dedupe 가시화 | `why` / `dedupe` 는 Wally에 없는 영역 |
 | 배포 | 로컬 실행만 | 크로스컴파일·릴리스는 기능 완성 후 |
+| 린트 | Biome 포매터 + ESLint 타입룰 | Biome은 타입 인지 린팅이 **구조적으로** 불가 |
+| 훅 | husky `pre-commit` 에 전부 | 느려지면 `pre-push` 로 분리 |
+| 에러 코드 | `RN####` (Yarn Berry `YN0060` 방식) | 검색 가능한 고정 식별자 |
+
+### Yarn에서 가져온 것
+
+| Yarn | Rarn | 비고 |
+|---|---|---|
+| `resolutions` | `resolutions` | **버전 강제 통일.** 충돌 시 유일한 탈출구 |
+| `yarn up [--latest]` | `rarn up [--latest]` | 업그레이드 |
+| `YN0060` 코드 | `RN0210` 코드 | 메시지 문구는 바뀌어도 코드는 불변 |
+| `yarn why` / `dedupe` | 동일 | 이미 계획에 있었음 |
+| `--frozen-lockfile` | 동일 | Classic 철자 유지 (Berry는 `--immutable`) |
 
 ### 채택하지 않은 것과 그 이유
 
@@ -85,8 +98,12 @@ TOML 파서는 **필요 없다.** 의존성 별칭까지 metadata API가 JSON으
 - [x] **`src/util/version-range.ts` — Cargo→npm 범위 번역** (최고 위험 항목, M2보다 앞당김)
 - [x] `src/cli.ts` — commander 배선, 전 명령 스텁
 - [x] `bun build --compile` 단일 바이너리 확인 (99MB)
+- [x] ESLint 타입 인지 룰 (`typescript-eslint` `strictTypeChecked`)
+- [x] husky `pre-commit` + lint-staged
+- [x] `src/util/codes.ts` — `RN####` 에러 코드 체계
+- [x] `resolutions` 필드, `rarn up` 명령
 
-M0 상태: **44 tests pass / typecheck clean / lint clean.**
+M0 상태: **86 tests pass / eslint clean / typecheck clean / biome clean.**
 
 > 번역 로직을 M2가 아니라 M0에서 끝냈다. 위험도 1순위였고 순수 함수라 의존성이 없었다.
 > 테스트에는 *번역하지 않은 범위가 다른 의미로 파싱된다*는 것을 고정하는 케이스를 넣어,
