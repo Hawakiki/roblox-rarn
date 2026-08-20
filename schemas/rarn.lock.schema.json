@@ -76,19 +76,20 @@
         "realm": {
           "type": "string",
           "enum": ["shared", "server"],
-          "description": "Realm declared by the registry for this version."
+          "description": "Realm the registry declares for this version. A 'shared' package may only depend on other 'shared' packages; a 'server' package may depend on anything."
+        },
+
+        "placement": {
+          "type": "string",
+          "enum": ["shared", "server", "dev"],
+          "description": "Which install directory this package actually lands in — the resolved origin realm, which is NOT always the declared realm. When several requesters disagree, the widest placement wins (shared > server > dev), because a package must live where its most permissive requester can still see it. A shared package pulled in only by a dev dependency is placed in 'dev'.",
+          "default": "shared"
         },
 
         "moduleRoot": {
           "type": "string",
           "description": "Path inside the extracted archive that holds the actual module tree, resolved from the package's default.project.json. Absent means the project file was missing or too complex to interpret, and the whole archive was copied instead.",
           "examples": ["lib", "src"]
-        },
-
-        "projectName": {
-          "type": "string",
-          "description": "The 'name' field of the package's default.project.json. This is the folder name used inside _Index, so it must be recorded rather than guessed.",
-          "examples": ["promise"]
         },
 
         "indexDir": {
@@ -180,7 +181,6 @@
           "integrity": "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
           "realm": "shared",
           "moduleRoot": "lib",
-          "projectName": "promise",
           "indexDir": "evaera_promise@4.0.0",
           "dependencies": {},
           "requestedBy": [
@@ -193,7 +193,6 @@
           "integrity": "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
           "realm": "shared",
           "moduleRoot": "src",
-          "projectName": "knit",
           "indexDir": "sleitnick_knit@1.7.0",
           "dependencies": {
             "Comm": "@sleitnick/comm@1.0.0",
