@@ -112,6 +112,27 @@ Two related rules:
   A package must live where its most permissive requester can still reach it. This is why the
   lockfile records `placement` separately from the declared `realm`.
 
+### 2a-2. The shim files are observable API, not an implementation detail
+
+`sleitnick/knit` — one of the most used Roblox frameworks — does this:
+
+```lua
+--[=[ @prop Util Folder  @within KnitClient  @readonly ]=]
+KnitClient.Util = (script.Parent :: Instance).Parent   -- the _Index entry folder
+local Promise = require(KnitClient.Util.Promise)       -- via that variable
+```
+
+Two consequences, and both close doors:
+
+- **Static rewriting of package sources is not viable.** The require does not name
+  `script.Parent.Parent.Promise` anywhere; the folder is stashed in a variable first.
+- **The folder is documented public API.** User code calls `Knit.Util.Signal`. Replacing
+  the physical shim files with any kind of resolver would make that `nil`.
+
+So the layout in constraint 2 is not free to optimize away later. Measured, not assumed:
+see `docs/pnp-feasibility.md`, which also records why a Yarn-PnP-style resolver was
+investigated and rejected. Revisit only if Roblox ships `.luaurc` alias maps.
+
 ### 2b. Install by deleting and rebuilding
 
 Wipe the realm directories and rebuild them from the lockfile. No incremental updates, no
@@ -138,8 +159,17 @@ bloated install *and the wrong require depth*. Wally's `unpack_into_path` is a b
 file at sync time, which is exactly why Wally installs need Rojo and Rarn's do not. Pruning at
 install time is doing Rojo's job early.
 
-Fallback when a project file is absent or too complex to interpret: copy the whole tree,
-emit a warning, and keep going. Never fail the install over this.
+Three things a 13-package survey turned up that the obvious implementation gets wrong:
+
+- **Half the sample has no project file at all** (every `sleitnick/*` package). Those set
+  `include` at publish time, so the zip root already *is* the module. Absent is the normal
+  case, not an error — warn about it and half of all installs print a warning.
+- **`$path` can name a file, not a directory** (`red-blox/signal` → `"Signal.luau"`).
+- Savings range from 100% (promise, 340 → 2) to 15% (react, 20 → 17). Promise is the
+  dramatic case, not the typical one.
+
+Fallback when a project file is too complex to interpret: copy the whole tree and keep
+going. Never fail the install over this.
 
 ### 4. Wally API facts (all verified live, 2026-08-20)
 
