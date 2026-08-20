@@ -9,20 +9,29 @@ import { info } from './cli/commands/info.ts'
 import { init } from './cli/commands/init.ts'
 import { install } from './cli/commands/install.ts'
 import { list } from './cli/commands/list.ts'
+import { login } from './cli/commands/login.ts'
+import { logout } from './cli/commands/logout.ts'
 import { outdated } from './cli/commands/outdated.ts'
+import { pack } from './cli/commands/pack.ts'
+import { publish } from './cli/commands/publish.ts'
 import { remove } from './cli/commands/remove.ts'
 import { search } from './cli/commands/search.ts'
 import { up } from './cli/commands/up.ts'
+import { whoami } from './cli/commands/whoami.ts'
 import { why } from './cli/commands/why.ts'
-import { renderError } from './cli/render.ts'
-
-import { ExitCode, RegistryError } from './util/errors.ts'
+import { configureOutput } from './cli/output.ts'
+import { exitCodeFor, renderError } from './cli/render.ts'
 
 /**
  * Command wiring only. Every command body delegates immediately — business logic
  * lives in the layer modules so it stays reachable from tests without a process.
  */
 async function main(argv: readonly string[]): Promise<void> {
+  // Applied once up front so that anything printed before a command runs — a
+  // parse error, --help — already respects TTY detection and NO_COLOR. The hook
+  // below re-applies it with the parsed flags.
+  configureOutput({})
+
   const program = new Command()
 
   program
@@ -33,6 +42,11 @@ async function main(argv: readonly string[]): Promise<void> {
     .option('--verbose', 'show every step', false)
     .option('--silent', 'print only errors', false)
     .option('--no-color', 'disable colored output')
+    // Applied before any command runs so that every later print, including the
+    // error renderer, sees the same switches.
+    .hook('preAction', () => {
+      configureOutput(program.opts())
+    })
 
   program
     .command('init')
@@ -174,6 +188,52 @@ async function main(argv: readonly string[]): Promise<void> {
       await doctor({ cwd: cwdOf(program), json: options.json })
     })
 
+  program
+    .command('login')
+    .description('sign in to the registry with a GitHub account')
+    .option('--force', 'sign in again even if a token is already stored', false)
+    .action(async (options: { force: boolean }) => {
+      await login({ cwd: cwdOf(program), force: options.force })
+    })
+
+  program
+    .command('logout')
+    .description('forget the stored registry token')
+    .action(async () => {
+      await logout({ cwd: cwdOf(program) })
+    })
+
+  program
+    .command('whoami')
+    .description('show who the stored token belongs to')
+    .option('--json', 'emit machine-readable output', false)
+    .action(async (options: { json: boolean }) => {
+      await whoami({ cwd: cwdOf(program), json: options.json })
+    })
+
+  program
+    .command('pack')
+    .description('build the archive that publish would upload')
+    .option('--list', 'print every file that would be included', false)
+    .option('-o, --out <file>', 'write the archive to a file')
+    .option('--json', 'emit machine-readable output', false)
+    .action(async (options: { list: boolean; out?: string; json: boolean }) => {
+      await pack({
+        cwd: cwdOf(program),
+        list: options.list,
+        ...(options.out === undefined ? {} : { out: options.out }),
+        json: options.json,
+      })
+    })
+
+  program
+    .command('publish')
+    .description('upload this package to the registry')
+    .option('--dry-run', 'do everything except the upload', false)
+    .action(async (options: { dryRun: boolean }) => {
+      await publish({ cwd: cwdOf(program), dryRun: options.dryRun })
+    })
+
   await program.parseAsync([...argv])
 }
 
@@ -188,7 +248,9 @@ void (async () => {
   try {
     await main(process.argv)
   } catch (error) {
-    process.stderr.write(`${renderError(error)}\n`)
-    process.exitCode = error instanceof RegistryError ? ExitCode.RegistryError : ExitCode.UserError
+    // Empty for --help and --version, which commander implements by throwing.
+    const text = renderError(error)
+    if (text !== '') process.stderr.write(`${text}\n`)
+    process.exitCode = exitCodeFor(error)
   }
 })()

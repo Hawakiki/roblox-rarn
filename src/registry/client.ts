@@ -6,6 +6,7 @@ import {
   DEFAULT_API_URL,
   DEFAULT_INDEX_URL,
   type PackageMetadata,
+  type PublishReceipt,
   type RegistryClient,
   type SearchResult,
   WALLY_VERSION_HEADER,
@@ -116,6 +117,53 @@ export function createRegistryClient(options: RegistryClientOptions = {}): Regis
           description: typeof row.description === 'string' ? row.description : undefined,
         }
       })
+    },
+
+    async apiBase(): Promise<string> {
+      return await apiUrl()
+    },
+
+    /**
+     * Uploads the archive.
+     *
+     * Deliberately not retried, unlike every other call here. The others are
+     * idempotent reads; this one is a write whose outcome after a timeout is
+     * genuinely unknown, and a retry that succeeds where the first attempt also
+     * succeeded is a second publish. The registry would answer 409 in that case,
+     * which is safe but reports a failure for something that worked — worse to
+     * read than one clear error.
+     */
+    async publish(archive: Uint8Array, token: string): Promise<PublishReceipt> {
+      const base = await apiUrl()
+      const url = new URL('v1/publish', base).toString()
+
+      let response: Response
+      try {
+        response = await doFetch(url, {
+          method: 'POST',
+          headers: {
+            'Wally-Version': WALLY_VERSION_HEADER,
+            Authorization: `Bearer ${token}`,
+            accept: 'application/json',
+            'content-type': 'application/octet-stream',
+          },
+          body: archive,
+        })
+      } catch (cause) {
+        throw new RegistryError({
+          code: Code.RegistryUnreachable,
+          what: 'Could not reach the registry to publish.',
+          where: url,
+          how: 'Nothing was published. Check your connection and try again.',
+          cause,
+        })
+      }
+
+      const body = (await response.text()).trim()
+      if (response.ok) {
+        return { status: response.status, message: body === '' ? undefined : body }
+      }
+      throw publishFailure(response.status, body, url)
     },
   }
 }
@@ -330,4 +378,50 @@ async function isRetryable(response: Response): Promise<boolean> {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Turns a publish rejection into something actionable.
+ *
+ * Every one of these has a different fix, and the raw status alone sends the reader
+ * to the wrong one — 401 in particular reads as "log in again" when it usually means
+ * the scope belongs to somebody else.
+ */
+function publishFailure(status: number, body: string, url: string): RarnError {
+  const detail = body === '' ? undefined : `  ${body}`
+
+  if (status === 409) {
+    return new RarnError({
+      code: Code.VersionAlreadyPublished,
+      what: 'that version is already published.',
+      where: url,
+      detail,
+      how: 'Registry versions are immutable. Raise the version in rarn.json and publish again.',
+    })
+  }
+  if (status === 401 || status === 403) {
+    return new RarnError({
+      code: Code.PublishForbidden,
+      what: 'the registry refused this scope.',
+      where: url,
+      detail,
+      how: 'Check that your GitHub account owns the scope. Run `rarn whoami` to see who you are.',
+    })
+  }
+  if (status === 400) {
+    return new RarnError({
+      code: Code.PublishRejected,
+      what: 'the registry rejected the package.',
+      where: url,
+      detail,
+      how: 'Run `rarn pack --list` to see exactly what would be uploaded.',
+    })
+  }
+  return new RegistryError({
+    code: Code.PublishRejected,
+    what: `the registry answered ${status}.`,
+    where: url,
+    detail,
+    how: 'Nothing was published. Try again in a moment.',
+  })
 }
