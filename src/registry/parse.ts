@@ -91,14 +91,31 @@ function nullToUndefined(value: string | null | undefined): string | undefined {
   return value === null || value === '' ? undefined : value
 }
 
-/** Parses a `scope/name` string from a search result. */
-export function parseSearchName(value: unknown, context: string): PackageName {
-  if (typeof value !== 'string') {
-    throw new RegistryError({
-      code: Code.RegistryBadResponse,
-      what: `The registry returned a nameless entry in ${context}.`,
-      how: 'The registry returned data Rarn cannot read.',
-    })
+/**
+ * Reads the package identity from a search result.
+ *
+ * Search does **not** match the rest of the API: `package-metadata` reports a
+ * package as one `"scope/name"` string, but `package-search` splits it into
+ * separate `scope` and `name` fields. Verified against the live endpoint:
+ *
+ *     {"description":"WonderKnit","name":"knit","scope":"acecateer","versions":["1.7.2"]}
+ *
+ * Both shapes are accepted so that a registry following either convention works.
+ */
+export function parseSearchName(entry: unknown, context: string): PackageName {
+  const row = entry as { name?: unknown; scope?: unknown }
+
+  if (typeof row.scope === 'string' && typeof row.name === 'string') {
+    return parseWallyName(`${row.scope}/${row.name}`)
   }
-  return parseWallyName(value)
+
+  if (typeof row.name === 'string' && row.name.includes('/')) {
+    return parseWallyName(row.name)
+  }
+
+  throw new RegistryError({
+    code: Code.RegistryBadResponse,
+    what: `The registry returned an entry with no usable package name in ${context}.`,
+    how: 'Expected either a "scope" and "name" pair, or a "scope/name" string.',
+  })
 }
