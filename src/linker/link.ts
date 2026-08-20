@@ -33,6 +33,13 @@ export interface LinkResult {
   readonly installedFiles: number
   /** Non-fatal notes from project-file interpretation, keyed by package. */
   readonly notes: ReadonlyMap<string, string>
+  /**
+   * Module root pruning chose for each package, keyed by package key.
+   *
+   * Recorded for the lockfile and for `rarn why`. Empty string means the archive
+   * root was used, which is the normal case for a package that publishes clean.
+   */
+  readonly moduleRoots: ReadonlyMap<string, string>
 }
 
 /**
@@ -53,6 +60,7 @@ export async function link(options: LinkOptions): Promise<LinkResult> {
 
   const used = new Set<Placement>()
   const notes = new Map<string, string>()
+  const moduleRoots = new Map<string, string>()
   let archiveFiles = 0
   let installedFiles = 0
 
@@ -77,6 +85,7 @@ export async function link(options: LinkOptions): Promise<LinkResult> {
     const result = await pruneInto(source, join(dir, moduleNameOf(pkg)), key)
     archiveFiles += result.archiveFiles
     installedFiles += result.installedFiles
+    moduleRoots.set(key, result.root.path)
     if (result.root.note !== undefined) notes.set(key, result.root.note)
   }
 
@@ -91,6 +100,7 @@ export async function link(options: LinkOptions): Promise<LinkResult> {
     archiveFiles,
     installedFiles,
     notes,
+    moduleRoots,
   }
 }
 
