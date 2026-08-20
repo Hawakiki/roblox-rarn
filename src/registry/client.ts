@@ -109,9 +109,9 @@ export function createRegistryClient(options: RegistryClientOptions = {}): Regis
       if (!Array.isArray(body)) return []
 
       return body.map((entry) => {
-        const row = entry as { name?: unknown; versions?: unknown; description?: unknown }
+        const row = entry as { versions?: unknown; description?: unknown }
         return {
-          name: parseSearchName(row.name, 'package-search'),
+          name: parseSearchName(entry, 'package-search'),
           versions: Array.isArray(row.versions) ? row.versions.map(String) : [],
           description: typeof row.description === 'string' ? row.description : undefined,
         }

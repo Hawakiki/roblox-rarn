@@ -1,0 +1,197 @@
+[
+  { "description": "WonderKnit", "name": "knit", "scope": "acecateer", "versions": ["1.7.2"] },
+  {
+    "description": "Fork of Knit by ArchLand64",
+    "name": "knit",
+    "scope": "archland64",
+    "versions": ["1.3.0"]
+  },
+  {
+    "description": "Slightly edited version of Knit",
+    "name": "knit",
+    "scope": "franydev",
+    "versions": ["0.1.5"]
+  },
+  {
+    "description": "Slightly edited version of Knit",
+    "name": "knit",
+    "scope": "dazzycoin",
+    "versions": ["0.1.6"]
+  },
+  {
+    "description": "Knit is a lightweight game framework",
+    "name": "knit",
+    "scope": "arxkdev",
+    "versions": ["1.8.4"]
+  },
+  {
+    "description": "Knit is a lightweight game framework",
+    "name": "knit",
+    "scope": "breezy1214",
+    "versions": ["2.0.5"]
+  },
+  {
+    "description": "Knit is a lightweight game framework",
+    "name": "knit",
+    "scope": "dig1t",
+    "versions": ["1.7.1"]
+  },
+  {
+    "description": "Knit is a lightweight game framework",
+    "name": "knit",
+    "scope": "howmanysmall",
+    "versions": ["1.8.0"]
+  },
+  {
+    "description": "Knit is a lightweight game framework",
+    "name": "knit",
+    "scope": "jessekroeske",
+    "versions": ["1.7.0"]
+  },
+  {
+    "description": "Knit is a lightweight game framework",
+    "name": "knit",
+    "scope": "meta-maxim",
+    "versions": ["1.7.2"]
+  },
+  {
+    "description": "Knit is a lightweight game framework",
+    "name": "knit",
+    "scope": "noxirity",
+    "versions": ["1.7.1"]
+  },
+  {
+    "description": "Knit is a lightweight game framework",
+    "name": "knit",
+    "scope": "sleitnick",
+    "versions": ["1.7.0"]
+  },
+  {
+    "description": "(FORKED) Knit is a lightweight game framework",
+    "name": "knit",
+    "scope": "joshuaclarkelua",
+    "versions": ["1.7.3"]
+  },
+  {
+    "description": "Knit is a lightweight game framework. This version is an experimental version with parallelization support. Original framework can be found at sleitnick/knit.",
+    "name": "knit",
+    "scope": "lucke0051",
+    "versions": ["1.1.1"]
+  },
+  {
+    "description": "Knit but instead of Comm, it uses DarkoComm (a very simple BridgeNet2 implementation of Comm)",
+    "name": "knit",
+    "scope": "darkestdev",
+    "versions": ["1.2.3"]
+  },
+  {
+    "description": "DeKnit is a lightweight game framework forked from Sleitnick's Knit module",
+    "name": "deknit",
+    "scope": "isophes",
+    "versions": ["2.1.0"]
+  },
+  {
+    "description": "A module containing useful functions for Knit projects",
+    "name": "knitutil",
+    "scope": "virshal",
+    "versions": ["0.1.2"]
+  },
+  { "description": null, "name": "oldknit", "scope": "scottricity", "versions": ["0.1.0"] },
+  { "description": null, "name": "owlknit", "scope": "avadakedavra6", "versions": ["1.1.2"] },
+  {
+    "description": "Modified version of Knit that makes accessing ServerPackages, Shared folders and Packages folders easier.",
+    "name": "knit-rojo",
+    "scope": "kumarion",
+    "versions": ["0.5.0"]
+  },
+  {
+    "description": "Knit with functions GetLibrary & GetModule to make modular usage more fluid.",
+    "name": "draco-knit",
+    "scope": "sah31m",
+    "versions": ["0.1.13"]
+  },
+  {
+    "description": "PlacementService but for wally and knitified, meaning it uses a Signal object instead of a RemoteFunction.",
+    "name": "placementservice-knit",
+    "scope": "scottricity",
+    "versions": ["0.1.0"]
+  },
+  {
+    "description": null,
+    "name": "knit-rojo-template",
+    "scope": "meta-maxim",
+    "versions": ["0.1.0"]
+  },
+  {
+    "description": null,
+    "name": "knit-remote-type-checker",
+    "scope": "meta-maxim",
+    "versions": ["1.1.0"]
+  },
+  {
+    "description": "Mvvm for roact and knit.",
+    "name": "mvvm",
+    "scope": "jessekroeske",
+    "versions": ["1.1.0"]
+  },
+  {
+    "description": "Framework inspired by Knit",
+    "name": "axis",
+    "scope": "sebastian2852",
+    "versions": ["0.0.10"]
+  },
+  {
+    "description": "A simple framework inspired by Knit.",
+    "name": "dash-framework",
+    "scope": "overdsh",
+    "versions": ["0.0.6"]
+  },
+  {
+    "description": "A module that handle everything like knit",
+    "name": "centrablox",
+    "scope": "thesquiddev",
+    "versions": ["0.1.0"]
+  },
+  {
+    "description": "Official game framework for bloxlab, built upon Knit.",
+    "name": "bloxwork",
+    "scope": "pastelly64",
+    "versions": ["0.1.0"]
+  },
+  {
+    "description": "Weaver is an alternative to the lightweight game framework Knit",
+    "name": "weaver",
+    "scope": "paracosm-daemon",
+    "versions": ["1.1.0"]
+  },
+  {
+    "description": "A framework based off knit with a few more bells and whistles",
+    "name": "whim",
+    "scope": "th3pr0fessor",
+    "versions": ["0.2.5"]
+  },
+  {
+    "description": "A dependency-free Knit-inspired application framework for Roblox.",
+    "name": "vanguard",
+    "scope": "twrblxdevs",
+    "versions": ["0.1.15"]
+  },
+  {
+    "description": "Collaborative, optimized, and network efficient idealization of the Knit framework.",
+    "name": "backs-framework",
+    "scope": "baytowne",
+    "versions": ["0.0.2"]
+  },
+  {
+    "description": "Indium is the prodigal lightweight framework for Roblox inspired by Knit & Weaver",
+    "name": "indium",
+    "scope": "hoarsekat",
+    "versions": ["0.1.0"]
+  },
+  {
+    "description": "A BridgeNet2-based implementation similar to sleitnick's Comm, designed to replace it for Knit.",
+    "name": "darkocomm",
+    "scope": "darkestdev",
+    "versions": ["1.0.6"]
+  }
+]

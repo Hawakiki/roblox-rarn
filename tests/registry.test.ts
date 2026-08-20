@@ -421,24 +421,59 @@ describe('API url resolution', () => {
 })
 
 describe('search', () => {
-  test('parses results and tolerates missing fields', async () => {
+  // Driven by a recorded response, not a hand-written one. The first version of
+  // this test invented `{ name: "evaera/promise" }` and passed, while the live
+  // endpoint actually sends `scope` and `name` as separate fields — so the parser
+  // was broken on every real search and the suite said it was fine.
+  test('reads the split scope and name the live endpoint really sends', async () => {
+    const recorded = (await fixture('search-knit.json')) as { scope: string; name: string }[]
+    expect(recorded[0]).toHaveProperty('scope')
+
+    const client = createRegistryClient({
+      apiUrl: DEFAULT_API_URL,
+      fetch: fakeFetch({ 'package-search': { body: recorded } }),
+    })
+
+    const results = await client.search('knit')
+    expect(results).toHaveLength(recorded.length)
+    expect(results[0]?.name).toEqual({
+      scope: recorded[0]?.scope ?? '',
+      name: recorded[0]?.name ?? '',
+    })
+  })
+
+  test('also accepts a combined scope/name string', async () => {
     const client = createRegistryClient({
       apiUrl: DEFAULT_API_URL,
       fetch: fakeFetch({
-        'package-search': {
-          body: [
-            { name: 'evaera/promise', versions: ['4.0.0'], description: 'Promises' },
-            { name: 'sleitnick/knit' },
-          ],
-        },
+        'package-search': { body: [{ name: 'evaera/promise', versions: ['4.0.0'] }] },
       }),
     })
 
-    const results = await client.search('promise')
-    expect(results[0]?.name).toEqual({ scope: 'evaera', name: 'promise' })
-    expect(results[0]?.description).toBe('Promises')
-    expect(results[1]?.versions).toEqual([])
-    expect(results[1]?.description).toBeUndefined()
+    expect((await client.search('promise'))[0]?.name).toEqual({
+      scope: 'evaera',
+      name: 'promise',
+    })
+  })
+
+  test('tolerates missing optional fields', async () => {
+    const client = createRegistryClient({
+      apiUrl: DEFAULT_API_URL,
+      fetch: fakeFetch({ 'package-search': { body: [{ scope: 'sleitnick', name: 'knit' }] } }),
+    })
+
+    const results = await client.search('knit')
+    expect(results[0]?.versions).toEqual([])
+    expect(results[0]?.description).toBeUndefined()
+  })
+
+  test('rejects an entry with no usable name', async () => {
+    const client = createRegistryClient({
+      apiUrl: DEFAULT_API_URL,
+      fetch: fakeFetch({ 'package-search': { body: [{ description: 'nameless' }] } }),
+    })
+
+    await expectRejection(() => client.search('x'))
   })
 
   test('encodes the query', async () => {
