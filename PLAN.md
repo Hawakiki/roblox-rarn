@@ -373,7 +373,38 @@ Wally 는 `checksum` 필드를 두고도 채우지 않아 실질적으로 검증
 
 ---
 
-### M5 — 프로젝트 해석과 가지치기
+### M5 — 프로젝트 해석과 가지치기 ✅
+
+- [x] `project/rojo.ts` — `default.project.json` 해석, 모듈 루트 판정
+- [x] `project/prune.ts` — 모듈 루트만 복사, 절약량 보고
+
+M5 상태: **229 tests pass / eslint clean / tsc clean / biome clean.**
+
+**완료 기준 달성 — 실제 레지스트리 패키지 8개:**
+
+```
+패키지                   zip   설치   절약   모듈루트 / 출처
+evaera/promise           340     2    99%   lib [directory] / project-file
+roblox/roact             126    79    37%   src [directory] / project-file
+roblox/rodux              48    19    60%   src [directory] / project-file
+jsdotlua/react            20    17    15%   src [directory] / project-file
+red-blox/signal            4     1    75%   Signal.luau [file] / project-file
+sleitnick/knit             5     5     0%   (zip 루트) / archive-root
+sleitnick/comm            12    12     0%   (zip 루트) / archive-root
+osyrisrblx/t               6     1    83%   lib [directory] / project-file
+합계                      561   136    76%
+```
+
+**해석 가능한 형태만 해석한다.** 레지스트리에서 표본으로 뽑은 패키지는 전부
+`{ "name": ..., "tree": { "$path": "src" } }` 하나뿐이었다. 중첩 노드나 `$className`
+같은 건 트리가 무엇이 되는지를 바꾸는데 그건 Rojo 만 수행할 수 있다. 어설프게 절반만
+해석해 미묘하게 틀린 걸 설치하느니 사양하고 통째로 복사한다 — 어차피 Wally 가 모든
+패키지에 대해 하는 일이 그것이다.
+
+**`$path` 도 escape 검사를 거친다.** 패키지가 제공한 데이터이므로 아카이브 엔트리와
+같은 취급이다. `"../.."` 가 캐시 밖으로 나가지 못한다.
+
+기존 계획 내용:
 
 가장 큰 실용적 이득이 나오는 단계다. `evaera/promise@4.0.0` 은 zip 안에 **340개 파일**이
 들어 있지만 실제 모듈은 `lib/init.lua` **1개**다.
@@ -556,5 +587,6 @@ Studio MCP를 쓰지 않으므로 **마지막 실행은 수동**이다. M6 완�
 5. ~~R1 PnP 가능성 연구~~ — 완료, 결론: 도입 안 함
 6. ~~M3 리졸버~~ — 완료 (feat/resolver)
 7. ~~M4 캐시와 취득~~ — 완료 (feat/cache)
-8. **M5 가지치기** — feat/prune (다음)
-9. 각 feat 브랜치는 `--no-ff` 로 `develop` 에 병합
+8. ~~M5 가지치기~~ — 완료 (feat/prune)
+9. **M6 링커** — feat/linker (다음, Studio 수동 검증 필요)
+10. 각 feat 브랜치는 `--no-ff` 로 `develop` 에 병합
