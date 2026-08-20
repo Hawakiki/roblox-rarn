@@ -1,0 +1,104 @@
+{
+  "versions": [
+    {
+      "dependencies": {},
+      "dev-dependencies": {},
+      "package": {
+        "authors": [],
+        "description": "Promise implementation for Roblox",
+        "exclude": [],
+        "homepage": null,
+        "include": [],
+        "license": "MIT",
+        "name": "evaera/promise",
+        "private": false,
+        "realm": "shared",
+        "registry": "https://github.com/UpliftGames/wally-index",
+        "repository": null,
+        "version": "4.0.0"
+      },
+      "place": { "server-packages": null, "shared-packages": null },
+      "server-dependencies": {}
+    },
+    {
+      "dependencies": {},
+      "dev-dependencies": {},
+      "package": {
+        "authors": [],
+        "description": "Promise implementation for Roblox",
+        "exclude": [],
+        "homepage": null,
+        "include": [],
+        "license": "MIT",
+        "name": "evaera/promise",
+        "private": false,
+        "realm": "shared",
+        "registry": "https://github.com/UpliftGames/wally-index",
+        "repository": null,
+        "version": "4.0.0-rc.2"
+      },
+      "place": { "server-packages": null, "shared-packages": null },
+      "server-dependencies": {}
+    },
+    {
+      "dependencies": {},
+      "dev-dependencies": {},
+      "package": {
+        "authors": [],
+        "description": "Promise implementation for Roblox",
+        "exclude": [],
+        "homepage": null,
+        "include": [],
+        "license": "MIT",
+        "name": "evaera/promise",
+        "private": false,
+        "realm": "shared",
+        "registry": "https://github.com/UpliftGames/wally-index",
+        "repository": null,
+        "version": "3.2.1"
+      },
+      "place": { "server-packages": null, "shared-packages": null },
+      "server-dependencies": {}
+    },
+    {
+      "dependencies": {},
+      "dev-dependencies": {},
+      "package": {
+        "authors": [],
+        "description": "Promise implementation for Roblox",
+        "exclude": [],
+        "homepage": null,
+        "include": [],
+        "license": "MIT",
+        "name": "evaera/promise",
+        "private": false,
+        "realm": "shared",
+        "registry": "https://github.com/UpliftGames/wally-index",
+        "repository": null,
+        "version": "3.2.0"
+      },
+      "place": { "server-packages": null, "shared-packages": null },
+      "server-dependencies": {}
+    },
+    {
+      "dependencies": {},
+      "dev-dependencies": {},
+      "package": {
+        "authors": [],
+        "description": "Promise implementation for Roblox",
+        "exclude": [],
+        "homepage": null,
+        "include": [],
+        "license": "MIT",
+        "name": "evaera/promise",
+        "private": false,
+        "realm": "shared",
+        "registry": "https://github.com/UpliftGames/wally-index",
+        "repository": null,
+        "version": "3.1.0"
+      },
+      "place": { "server-packages": null, "shared-packages": null },
+      "server-dependencies": {}
+    }
+  ]
+}
