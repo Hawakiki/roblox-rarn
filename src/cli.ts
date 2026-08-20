@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { Command } from 'commander'
 import pkg from '../package.json' with { type: 'json' }
+import { init } from './cli/commands/init.ts'
 import { renderError } from './cli/render.ts'
 import { Code } from './util/codes.ts'
 import { ExitCode, RarnError, RegistryError } from './util/errors.ts'
@@ -25,7 +26,11 @@ async function main(argv: readonly string[]): Promise<void> {
     .command('init')
     .description('create a rarn.json in the current directory')
     .option('-y, --yes', 'accept the defaults without prompting', false)
-    .action(notYetImplemented('init', 'M1'))
+    .option('-f, --force', 'overwrite an existing rarn.json', false)
+    .action(async (options: { yes: boolean; force: boolean }) => {
+      const { cwd } = program.opts<{ cwd: string }>()
+      await init({ cwd, yes: options.yes, force: options.force })
+    })
 
   program
     .command('add')

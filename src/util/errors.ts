@@ -1,16 +1,23 @@
 import type { Code } from './codes.ts'
 
+/**
+ * The optional fields are written `?: T | undefined` on purpose. Under
+ * `exactOptionalPropertyTypes` a bare `?: T` rejects an explicitly-passed
+ * `undefined`, which would force every conditional field at a call site into a
+ * spread just to satisfy the compiler. For an options bag, "absent" and
+ * "explicitly undefined" should mean the same thing.
+ */
 export interface RarnErrorInit {
   /** Stable identifier from `Code`. Required — an uncoded error is unsearchable. */
   code: Code
   /** What went wrong, as one sentence. */
   what: string
   /** Where it went wrong: a file path, a package id, a URL. */
-  where?: string
+  where?: string | undefined
   /** What the user should do next. */
-  how?: string
+  how?: string | undefined
   /** Extra lines rendered verbatim under the message, e.g. a conflict table. */
-  detail?: string
+  detail?: string | undefined
   cause?: unknown
 }
 
