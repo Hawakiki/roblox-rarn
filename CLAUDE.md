@@ -168,6 +168,15 @@ Three things a 13-package survey turned up that the obvious implementation gets 
 - Savings range from 100% (promise, 340 → 2) to 15% (react, 20 → 17). Promise is the
   dramatic case, not the typical one.
 
+Three things a 13-package survey turned up that the obvious implementation gets wrong:
+
+- **Half the sample has no project file at all** (every `sleitnick/*` package). Those set
+  `include` at publish time, so the zip root already *is* the module. Absent is the normal
+  case, not an error — warn about it and half of all installs print a warning.
+- **`$path` can name a file, not a directory** (`red-blox/signal` → `"Signal.luau"`).
+- Savings range from 100% (promise, 340 → 2) to 15% (react, 20 → 17). Promise is the
+  dramatic case, not the typical one.
+
 Fallback when a project file is too complex to interpret: copy the whole tree and keep
 going. Never fail the install over this.
 
