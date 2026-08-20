@@ -1,0 +1,40 @@
+{
+  "name": "rarn",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A package manager for Roblox that speaks the Wally registry",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "rarn": "./src/cli.ts"
+  },
+  "scripts": {
+    "rarn": "bun run src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src",
+    "lint:fix": "biome check --write src",
+    "test": "bun test",
+    "build": "bun build --compile --minify --bytecode src/cli.ts --outfile dist/rarn",
+    "build:windows": "bun build --compile --minify --bytecode --target=bun-windows-x64 src/cli.ts --outfile dist/rarn-windows-x64.exe",
+    "build:macos-arm64": "bun build --compile --minify --bytecode --target=bun-darwin-arm64 src/cli.ts --outfile dist/rarn-macos-arm64",
+    "build:linux-x64": "bun build --compile --minify --bytecode --target=bun-linux-x64 src/cli.ts --outfile dist/rarn-linux-x64"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "fflate": "^0.8.2",
+    "ora": "^8.2.0",
+    "semver": "^7.7.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/bun": "latest",
+    "@types/semver": "^7.5.8",
+    "typescript": "^5.7.3"
+  },
+  "trustedDependencies": [
+    "@biomejs/biome"
+  ]
+}
