@@ -70,6 +70,16 @@ export interface RegistryClient {
   /** The package archive, as ZIP bytes. Requires the `Wally-Version` header. */
   getContents(name: PackageName, version: string): Promise<Uint8Array>
   search(query: string): Promise<readonly SearchResult[]>
+  /** The API base these calls resolve against. Tokens are stored per API URL. */
+  apiBase(): Promise<string>
+  /** Uploads an archive. The registry reads the package name from inside it. */
+  publish(archive: Uint8Array, token: string): Promise<PublishReceipt>
+}
+
+export interface PublishReceipt {
+  readonly status: number
+  /** Whatever the server said, for the success line. Often empty. */
+  readonly message: string | undefined
 }
 
 /** The index repository Wally ships with, and the API its config.json points at. */

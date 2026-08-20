@@ -16,6 +16,8 @@ import { resolve } from '../../resolver/resolve.ts'
 import type { Resolution } from '../../resolver/types.ts'
 import { Code } from '../../util/codes.ts'
 import { RarnError } from '../../util/errors.ts'
+import { outputSettings, verbose } from '../output.ts'
+import { createProgress } from '../progress.ts'
 
 export interface InstallOptions {
   cwd: string
@@ -51,7 +53,25 @@ export async function install(
 ): Promise<InstallOutcome> {
   const started = performance.now()
   const projectDir = resolvePath(options.cwd)
+  const progress = createProgress()
 
+  try {
+    return await run(options, registry, projectDir, started, progress)
+  } catch (error) {
+    // Stopped before the error is rendered, or the message lands on top of a
+    // spinner that is still repainting itself and half of it is overwritten.
+    progress.fail()
+    throw error
+  }
+}
+
+async function run(
+  options: InstallOptions,
+  registry: RegistryClient,
+  projectDir: string,
+  started: number,
+  progress: ReturnType<typeof createProgress>,
+): Promise<InstallOutcome> {
   const manifest = await readManifest(projectDir)
   const lockfile = await readLockfile(projectDir)
 
@@ -75,18 +95,31 @@ export async function install(
   }
 
   const reuse = freshness.fresh && lockfile !== undefined && !production
-  const resolution = reuse
-    ? resolutionFromLockfile(lockfile)
-    : await resolve({ manifest, registry, ...(production ? { production: true } : {}) })
+  for (const reason of freshness.reasons) verbose(`stale: ${reason}`)
+
+  let resolution: Resolution
+  if (reuse) {
+    resolution = resolutionFromLockfile(lockfile)
+  } else {
+    progress.stage('resolving dependencies')
+    resolution = await resolve({ manifest, registry, ...(production ? { production: true } : {}) })
+  }
 
   const store = createCacheStore()
+  const total = resolution.packages.size
+  progress.stage(`fetching ${total} packages`)
   const summary = await fetchPackages({
     packages: resolution.packages,
     registry,
     store,
     ...(reuse ? { expectedIntegrity: integrityOf(lockfile) } : {}),
+    onProgress: (pkg, done) => {
+      progress.update(`fetching ${done}/${total}  ${pkg.key}`)
+      verbose(`${pkg.fromCache ? 'cached' : 'downloaded'} ${pkg.key}`)
+    },
   })
 
+  progress.stage('linking')
   const sources = new Map(summary.packages.map((p) => [p.key, p.dir]))
   const linked = await link({ projectDir, manifest, resolution, sources })
 
@@ -116,7 +149,10 @@ export async function install(
     staleReasons: freshness.reasons,
   }
 
-  if (options.silent !== true) process.stdout.write(report(outcome, projectDir))
+  progress.stop()
+  if (options.silent !== true && !outputSettings().silent) {
+    process.stdout.write(report(outcome, projectDir))
+  }
   return outcome
 }
 

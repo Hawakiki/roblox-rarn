@@ -293,6 +293,7 @@ rarn.json -> resolve -> fetch -> extract -> prune -> link -> rarn.lock
 | `linker` | build `RARN_MODULE/`, `_Index/`, generate `.luau` shims | perform network I/O |
 | `lockfile` | read/write/verify `rarn.lock` | resolve anything itself |
 | `doctor` | scan installed Luau for requires, compare against declared deps | fetch or resolve anything |
+| `publish` | archive building, `wally.toml` generation, GitHub device flow | know about `RARN_MODULE` layout |
 | `cli` | commander wiring, output, exit codes | contain business logic |
 
 Business logic lives in the layers; `cli/` only wires and prints. Anything worth testing must
@@ -358,6 +359,33 @@ bug where a stale lockfile silently changes what gets installed.
 
 `--production` never writes the lockfile: its graph omits devDependencies and so no longer
 describes the manifest.
+
+## Publishing
+
+Four facts the publish path is built around, all verified against the live API.
+
+**The server reads `wally.toml` out of the uploaded zip.** It takes the package name
+and version from there, not from anything sent alongside, so `rarn publish` generates
+one from `rarn.json` and writes it into the archive last — a checked-in copy must
+never shadow it, or a stale hand-written file decides what gets published.
+
+**The generated ranges must be Cargo syntax.** `^1.2.0` and `>=1.0.0, <2.0.0` are
+fine; `||` and hyphen ranges have no Cargo equivalent and are refused rather than
+widened. Widening would publish a package whose declared dependencies are not the
+ones its author tested.
+
+**A published version is permanent.** There is no unpublish; the registry answers
+`409` to a repeat. Two consequences: the upload is never retried (a retry after a
+timeout is a second publish), and the default exclude list covers `.env`, `*.key`
+and `*.pem`. The two ways of being wrong are not symmetric — one file too few breaks
+an install and is fixed in minutes, one file too many cannot be undone at all.
+
+**The first publish claims the scope.** A typo in the scope name takes that scope.
+
+`include` overrides the built-in exclusions only when it names a path exactly.
+A glob is a statement about a directory, not about a secret that happens to sit in it.
+
+---
 
 ## Error codes
 
