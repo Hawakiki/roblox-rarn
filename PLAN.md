@@ -116,17 +116,29 @@ TOML 파서는 **필요 없다.** 의존성 별칭까지 metadata API가 JSON으
 
 ### M3 — 리졸버 (여기가 제일 어렵다)
 
+Wally의 리졸버는 **탐욕적 + 백트래킹 없음**이라 큐 순서에 결과가 좌우되고,
+`^1.2.0` 과 `^1.5.0` 처럼 명백히 풀리는 조합에서도 실패할 수 있다
+(상세: [docs/wally-internals.md](docs/wally-internals.md) 2절).
+
+**"major당 한 버전" 정책은 그대로 유지하되, 알고리즘을 순서 독립적으로 만든다.**
+버전을 하나라도 고르기 전에 제약을 전부 모으는 게 핵심이다.
+
 ```
 1. rarn.json 직접 의존성을 큐에 넣는다
-2. 큐가 빌 때까지:
+2. 큐가 빌 때까지 — 아직 버전을 고르지 않는다:
      메타데이터 조회 -> 후보 버전 목록
-     이 이름에 걸린 모든 범위를 수집
+     이 이름에 걸린 범위를 수집만 한다
      의존성을 큐에 추가 (이름+범위 쌍 기준으로 방문 표시)
-3. 이름별 버전 집합 최소화:
+3. 이제 이름별로 버전 집합 최소화:
      모든 범위의 교집합이 비지 않으면 -> 최고 버전 1개
      비면 -> 겹치는 범위끼리 묶어 그룹 수만큼 버전 선택
 4. 각 요구자에 대해 자신이 쓸 버전을 매핑 -> dependencies 맵
+5. realm 결정: 요구자들 중 가장 넓은 placement (shared > server > dev)
 ```
+
+2단계에서 후보 목록을 받으려면 전이 의존성을 알아야 하는데, 그건 아직 버전이 안 정해진
+상태에서 필요하다. 해결: **범위에 맞는 모든 후보의 의존성을 큐에 넣고**, 3단계에서 실제로
+선택된 버전의 것만 남긴다. 후보가 많으면 메타데이터 요청이 늘지만 전부 캐시되고 병렬이다.
 
 - [ ] `resolver/graph.ts` — 그래프 순회, 방문 표시
 - [ ] `resolver/dedupe.ts` — 범위 교집합 기반 버전 수 최소화
@@ -191,8 +203,11 @@ X @evaera/promise 를 하나의 버전으로 통합할 수 없습니다
   - 최상위: `return require(script.Parent._Index["evaera_promise@4.0.0"].promise)`
   - `_Index` 내부: `return require(script.Parent.Parent["evaera_promise@4.0.0"].promise)`
 - [ ] 별칭 도출: `@evaera/promise` → `Promise`. 충돌은 하드 에러, `aliases`로 해소
-- [ ] `serverDependencies` 는 `RARN_MODULE/Server/` 로 분리 (클라이언트 복제 방지)
-- [ ] 정리 로직: 락파일에 없는 `_Index` 항목 제거. **`RARN_MODULE` 밖은 절대 건드리지 않는다**
+- [ ] realm별 형제 디렉터리 3개: `RARN_MODULE/`, `RARN_MODULE_SERVER/`, `RARN_MODULE_DEV/`
+- [ ] 교차 realm shim — `place.sharedPackages` 절대 경로 사용.
+      선언이 없는데 필요하면 **무엇을 추가해야 하는지 알려주고 실패**
+- [ ] shared 패키지가 server 패키지에 의존하면 거부 (플랫폼 규칙)
+- [ ] 설치 = realm 디렉터리 삭제 후 재생성. **Rarn 소유 디렉터리 밖은 절대 건드리지 않는다**
 
 **완료 기준:** Studio에 수동 배치한 뒤 `require(RARN_MODULE.Promise)` 가 실제로 동작한다.
 
@@ -273,8 +288,50 @@ X @evaera/promise 를 하나의 버전으로 통합할 수 없습니다
 | `linker` | 임시 디렉터리에 설치 후 트리 구조와 shim 내용 스냅샷 |
 | 통합 | `@sleitnick/knit` 설치 → 정확한 트리 검증 (네트워크 필요, 별도 태그) |
 
-Luau 산출물 검증은 자동화할 수 없다 — Studio MCP를 쓰지 않기로 했기 때문이다.
-M6 완료 시 **한 번은 Studio에 손으로 넣어 `require` 가 실제로 동작하는지 확인한다.**
+### `test/roblox/` — 실제 동작 검증장 (Rojo는 여기서만 도입)
+
+위의 자동화 테스트는 **파일 트리가 맞는지**까지만 본다. `require` 가 런타임에 정말 해결되는지는
+Roblox 안에서만 확인할 수 있다. 그래서 실제 Roblox 프로젝트를 하나 둔다.
+
+```
+test/roblox/
+  rarn.json                 <- 여러 패키지를 일부러 섞어 넣은 매니페스트
+  default.project.json      <- Rojo 프로젝트 (여기서만 Rojo를 쓴다)
+  src/
+    verify.server.luau      <- 각 패키지를 require 하고 결과를 출력
+  RARN_MODULE/              <- rarn install 산출물 (gitignore)
+```
+
+**Rojo는 이 폴더 전용이다.** Rarn 자체는 Rojo에 의존하지 않으며 — 오히려 Rojo 없이 동작하는 게
+목표다 — 여기서는 산출물을 Studio로 밀어넣는 **운반 수단**으로만 쓴다.
+
+검증 시나리오는 난이도 순으로 쌓는다:
+
+| # | 시나리오 | 무엇을 증명하나 |
+|---|---|---|
+| 1 | 의존성 없는 패키지 1개 (`@evaera/promise`) | 기본 트리와 shim이 맞다 |
+| 2 | 전이 의존성 (`@sleitnick/knit` → comm, promise) | `_Index` 내부 형제 shim이 해결된다 |
+| 3 | 두 패키지가 같은 의존성 공유 | **dedupe** — 두 경로의 require가 같은 테이블을 반환한다 |
+| 4 | `serverDependencies` 포함 | realm 분리와 교차 realm 절대 경로 shim |
+| 5 | major가 다른 두 버전 공존 | 비호환 버전이 각자 자기 것을 본다 |
+| 6 | 가지치기 전후 비교 | 파일 수가 줄어도 동작이 같다 |
+
+3번이 가장 중요하다. 이렇게 확인한다:
+
+```lua
+-- src/verify.server.luau
+local direct   = require(game.ReplicatedStorage.RARN_MODULE.Promise)
+local viaKnit  = require(game.ReplicatedStorage.RARN_MODULE._Index["sleitnick_knit@1.7.0"].Promise)
+assert(direct == viaKnit, "dedupe 실패: Promise 사본이 2개다")
+print("✓ dedupe 확인")
+```
+
+`direct == viaKnit` 이 참이어야 한다. 거짓이면 ModuleScript 인스턴스가 둘이라는 뜻이고,
+싱글톤이 깨진다 — 파일 트리 스냅샷 테스트로는 절대 잡을 수 없는 종류의 버그다.
+
+절차: `rarn install` → `rojo build` 또는 `rojo serve` → Studio에서 실행 → 출력 확인.
+Studio MCP를 쓰지 않으므로 **마지막 실행은 수동**이다. M6 완료 시 최소 1회, 이후 링커를
+건드릴 때마다 반복한다.
 
 ---
 

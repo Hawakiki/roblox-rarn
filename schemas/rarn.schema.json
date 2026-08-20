@@ -66,7 +66,23 @@
       "type": "string",
       "default": "RARN_MODULE",
       "pattern": "^[A-Za-z0-9._-]+$",
-      "description": "Directory the install tree is written to. Renaming it is safe; the _Index shape inside it is not negotiable."
+      "description": "Directory the shared install tree is written to. Server and dev packages go to sibling directories named by appending '_SERVER' and '_DEV'. Renaming is safe; the _Index shape inside is not negotiable."
+    },
+
+    "place": {
+      "type": "object",
+      "description": "Where each package directory ends up in the Roblox DataModel. Required only when a server or dev package depends on a shared one: the two directories live under different services, so no relative script.Parent walk can reach across and the generated shim must use an absolute path instead. Rarn errors with an explanation if a cross-realm link needs a path that is not declared here.",
+      "additionalProperties": false,
+      "properties": {
+        "sharedPackages": {
+          "$ref": "#/$defs/dataModelPath",
+          "examples": ["game.ReplicatedStorage.Packages"]
+        },
+        "serverPackages": {
+          "$ref": "#/$defs/dataModelPath",
+          "examples": ["game.ServerScriptService.Packages"]
+        }
+      }
     },
 
     "dependencies": {
@@ -141,7 +157,14 @@
 
     "realm": {
       "type": "string",
-      "enum": ["shared", "server"]
+      "enum": ["shared", "server"],
+      "description": "'shared' replicates to clients and may only depend on other shared packages. 'server' never replicates and may depend on anything."
+    },
+
+    "dataModelPath": {
+      "type": "string",
+      "pattern": "^game(\\.[A-Za-z_][A-Za-z0-9_]*)+$",
+      "description": "Absolute DataModel path, starting at 'game'. Used verbatim inside generated cross-realm shims."
     },
 
     "dependencyMap": {
