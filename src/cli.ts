@@ -2,11 +2,21 @@
 import { Command } from 'commander'
 import pkg from '../package.json' with { type: 'json' }
 import { add } from './cli/commands/add.ts'
+import { cache } from './cli/commands/cache.ts'
+import { dedupe } from './cli/commands/dedupe.ts'
+import { doctor } from './cli/commands/doctor.ts'
+import { info } from './cli/commands/info.ts'
 import { init } from './cli/commands/init.ts'
 import { install } from './cli/commands/install.ts'
+import { list } from './cli/commands/list.ts'
+import { outdated } from './cli/commands/outdated.ts'
+import { remove } from './cli/commands/remove.ts'
+import { search } from './cli/commands/search.ts'
+import { up } from './cli/commands/up.ts'
+import { why } from './cli/commands/why.ts'
 import { renderError } from './cli/render.ts'
-import { Code } from './util/codes.ts'
-import { ExitCode, RarnError, RegistryError } from './util/errors.ts'
+
+import { ExitCode, RegistryError } from './util/errors.ts'
 
 /**
  * Command wiring only. Every command body delegates immediately — business logic
@@ -51,23 +61,31 @@ async function main(argv: readonly string[]): Promise<void> {
     .description('install everything the manifest asks for')
     .option('--frozen-lockfile', 'fail instead of updating a stale lockfile', false)
     .option('--production', 'skip development dependencies', false)
-    .action(async (options: { production: boolean }) => {
+    .action(async (options: { production: boolean; frozenLockfile: boolean }) => {
       const { cwd } = program.opts<{ cwd: string }>()
-      await install({ cwd, production: options.production })
+      await install({
+        cwd,
+        production: options.production,
+        frozenLockfile: options.frozenLockfile,
+      })
     })
 
   program
     .command('remove')
     .argument('<packages...>', 'packages to remove')
     .description('remove packages from the manifest and reinstall')
-    .action(notYetImplemented('remove', 'M8'))
+    .action(async (specs: string[]) => {
+      await remove({ cwd: cwdOf(program), specs })
+    })
 
   program
     .command('up')
     .argument('[packages...]', 'packages to upgrade; all of them when omitted')
-    .description('upgrade packages to the newest version their range allows')
+    .description('raise the ranges in rarn.json to the newest allowed version')
     .option('--latest', 'ignore the declared range and take the newest release', false)
-    .action(notYetImplemented('up', 'M8'))
+    .action(async (specs: string[], options: { latest: boolean }) => {
+      await up({ cwd: cwdOf(program), specs, latest: options.latest })
+    })
 
   program
     .command('list')
@@ -75,36 +93,92 @@ async function main(argv: readonly string[]): Promise<void> {
     .description('show the installed dependency tree')
     .option('--depth <n>', 'how deep to print', Number.parseInt)
     .option('--json', 'emit machine-readable output', false)
-    .action(notYetImplemented('list', 'M8'))
+    .action(async (options: { depth?: number; json: boolean }) => {
+      await list({
+        cwd: cwdOf(program),
+        ...(options.depth === undefined ? {} : { depth: options.depth }),
+        json: options.json,
+      })
+    })
 
   program
     .command('why')
     .argument('<package>', 'the package to explain')
-    .description('explain why a package is installed and which version won')
-    .action(notYetImplemented('why', 'M8'))
+    .description('explain why a package is installed, tracing back to rarn.json')
+    .option('--json', 'emit machine-readable output', false)
+    .action(async (spec: string, options: { json: boolean }) => {
+      await why({ cwd: cwdOf(program), spec, json: options.json })
+    })
 
   program
     .command('dedupe')
     .description('report packages installed at more than one version')
-    .action(notYetImplemented('dedupe', 'M8'))
+    .option('--json', 'emit machine-readable output', false)
+    .action(async (options: { json: boolean }) => {
+      await dedupe({ cwd: cwdOf(program), json: options.json })
+    })
+
+  program
+    .command('search')
+    .argument('<query>', 'text to search the registry for')
+    .description('search the registry for packages')
+    .option('--limit <n>', 'how many results to show', Number.parseInt)
+    .option('--json', 'emit machine-readable output', false)
+    .action(async (query: string, options: { limit?: number; json: boolean }) => {
+      await search({
+        cwd: cwdOf(program),
+        query,
+        ...(options.limit === undefined ? {} : { limit: options.limit }),
+        json: options.json,
+      })
+    })
+
+  program
+    .command('info')
+    .argument('<package>', 'package to describe, optionally @version')
+    .description('show what the registry knows about a package')
+    .option('--json', 'emit machine-readable output', false)
+    .action(async (spec: string, options: { json: boolean }) => {
+      await info({ cwd: cwdOf(program), spec, json: options.json })
+    })
+
+  program
+    .command('outdated')
+    .description('compare installed direct dependencies against the registry')
+    .option('--check', 'exit non-zero when anything is out of date', false)
+    .option('--json', 'emit machine-readable output', false)
+    .action(async (options: { check: boolean; json: boolean }) => {
+      await outdated({ cwd: cwdOf(program), check: options.check, json: options.json })
+    })
+
+  program
+    .command('cache')
+    .argument('<action>', 'dir, clean, or verify')
+    .description('inspect, empty, or check the global package cache')
+    .option('-y, --yes', 'skip the confirmation on clean', false)
+    .option('--json', 'emit machine-readable output', false)
+    .action(async (action: string, options: { yes: boolean; json: boolean }) => {
+      await cache({
+        cwd: cwdOf(program),
+        action: action as 'dir' | 'clean' | 'verify',
+        yes: options.yes,
+        json: options.json,
+      })
+    })
+
+  program
+    .command('doctor')
+    .description('check installed sources against the dependencies they declared')
+    .option('--json', 'emit machine-readable output', false)
+    .action(async (options: { json: boolean }) => {
+      await doctor({ cwd: cwdOf(program), json: options.json })
+    })
 
   await program.parseAsync([...argv])
 }
 
-/**
- * Stub for a command whose layer is not built yet.
- *
- * Naming the milestone keeps `rarn --help` honest about what already works instead
- * of failing in a way that reads like a bug.
- */
-function notYetImplemented(command: string, milestone: string) {
-  return () => {
-    throw new RarnError({
-      code: Code.Unimplemented,
-      what: `'rarn ${command}' is not implemented yet.`,
-      how: `It arrives in ${milestone}. See PLAN.md for the current state.`,
-    })
-  }
+function cwdOf(program: Command): string {
+  return program.opts<{ cwd: string }>().cwd
 }
 
 // Wrapped rather than a top-level await: `bun build --bytecode` emits CommonJS,

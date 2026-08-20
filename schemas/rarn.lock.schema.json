@@ -23,14 +23,29 @@
 
     "root": {
       "type": "object",
-      "description": "Snapshot of the ranges rarn.json requested at resolution time. Comparing this against the current rarn.json is how 'rarn install' detects a stale lockfile without re-resolving.",
+      "description": "Snapshot of everything in rarn.json that could change the resolution. Comparing it against the current manifest is how 'rarn install' decides whether the lockfile can be reused without contacting the registry at all. It deliberately excludes fields that only affect linking — packageDir, place, aliases — because linking runs on every install regardless.",
       "additionalProperties": false,
       "properties": {
         "name": { "type": "string" },
         "version": { "type": "string" },
+        "registry": {
+          "type": "string",
+          "description": "The manifest's \"registry\" — the *index repository*, not the API. Distinct from the top-level `registry` field, which records the API base the `resolved` URLs point at. Pointing the manifest at a different index can change which versions exist, so it belongs in the snapshot.",
+          "examples": ["https://github.com/UpliftGames/wally-index"]
+        },
         "dependencies": { "$ref": "#/$defs/rangeMap" },
         "devDependencies": { "$ref": "#/$defs/rangeMap" },
-        "serverDependencies": { "$ref": "#/$defs/rangeMap" }
+        "serverDependencies": { "$ref": "#/$defs/rangeMap" },
+        "resolutions": {
+          "description": "Overrides in force when this lockfile was written. Recorded because changing one changes the resolution, and a lockfile that did not notice would keep installing the version the user just overrode.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^@[a-z0-9]([a-z0-9-]*[a-z0-9])?/[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
+          },
+          "additionalProperties": { "type": "string" },
+          "default": {}
+        }
       }
     },
 
@@ -88,7 +103,7 @@
 
         "moduleRoot": {
           "type": "string",
-          "description": "Path inside the extracted archive that holds the actual module tree, resolved from the package's default.project.json. Absent means the project file was missing or too complex to interpret, and the whole archive was copied instead.",
+          "description": "Path inside the extracted archive that held the module tree, as resolved from the package's default.project.json. Absent means the whole archive was copied. Informational only: installing re-derives this from the cached archive rather than trusting the record, since re-reading one small file is cheaper than the class of bug where a stale lockfile silently changes what gets installed.",
           "examples": ["lib", "src"]
         },
 
@@ -183,9 +198,7 @@
           "moduleRoot": "lib",
           "indexDir": "evaera_promise@4.0.0",
           "dependencies": {},
-          "requestedBy": [
-            { "from": "@sleitnick/knit@1.7.0", "range": ">=4.0.0 <5.0.0" }
-          ]
+          "requestedBy": [{ "from": "@sleitnick/knit@1.7.0", "range": ">=4.0.0 <5.0.0" }]
         },
         "@sleitnick/knit@1.7.0": {
           "version": "1.7.0",

@@ -292,6 +292,7 @@ rarn.json -> resolve -> fetch -> extract -> prune -> link -> rarn.lock
 | `project` | Rojo `default.project.json` interpretation, module-root pruning | know about semver |
 | `linker` | build `RARN_MODULE/`, `_Index/`, generate `.luau` shims | perform network I/O |
 | `lockfile` | read/write/verify `rarn.lock` | resolve anything itself |
+| `doctor` | scan installed Luau for requires, compare against declared deps | fetch or resolve anything |
 | `cli` | commander wiring, output, exit codes | contain business logic |
 
 Business logic lives in the layers; `cli/` only wires and prints. Anything worth testing must
@@ -328,6 +329,35 @@ round. Both are JSON Schema draft 2020-12.
 
 `rarn.lock` is written with **sorted keys and a trailing newline** so diffs stay reviewable and
 reruns are byte-identical. A resolution that is not reproducible is a bug.
+
+**Two different things are both called `registry`.** At the top level of the lockfile it is the
+**API base** the archives came from (`https://api.wally.run/`); in `root` and in the manifest it
+is the **index repository** (`https://github.com/UpliftGames/wally-index`). Comparing across the
+two makes every lockfile look permanently stale — which is exactly what happened once, so the
+freshness check reads `root.registry` and nothing else.
+
+### Reusing the lockfile
+
+Resolution is the only stage that touches the network; fetching reads the global cache and
+linking is local. So a fresh lockfile makes a repeat install fully offline — 670ms to 45ms on a
+five-package graph.
+
+Freshness is deliberately **asymmetric**. Declaring a usable lockfile stale costs a round trip.
+Declaring a stale one usable installs versions the manifest no longer asks for *and reports
+success*. Every comparison errs toward stale.
+
+Only inputs to resolution are compared — dependencies, `resolutions`, and `root.registry`.
+`packageDir`, `place` and `aliases` change where files land, and linking runs every install
+regardless, so invalidating on them would force a full re-resolve over a renamed directory.
+Ranges compare in `semver`'s canonical form, so `^1.0.0` rewritten as `1.x` is not a change,
+while `>=1.0.0 <2.0.0` genuinely is (it admits `2.0.0-rc.1`; `^1.0.0` does not).
+
+`moduleRoot` in the lockfile is **informational**. Installing re-derives it from the cached
+archive rather than trusting the record — re-reading one small file is cheaper than the class of
+bug where a stale lockfile silently changes what gets installed.
+
+`--production` never writes the lockfile: its graph omits devDependencies and so no longer
+describes the manifest.
 
 ## Error codes
 
