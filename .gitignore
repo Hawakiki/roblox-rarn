@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+RARN_MODULE/
+
+# Build output
+dist/
+*.exe
+
+# Bun
+bun.lockb
+.bun/
+
+# Roblox
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+*.rbxl.lock
+*.rbxlx.lock
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Test scratch
+coverage/
+tmp/
