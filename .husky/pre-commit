@@ -1,0 +1,7 @@
+# 커밋 하나에 전부 건다 (사용자 선택).
+# lint-staged 는 스테이지된 파일만 보지만 typecheck/test 는 전체를 돈다.
+# 커밋이 느려지면 --no-verify 유혹이 생기므로, 느려지기 시작하면
+# pre-push 로 옮기는 걸 먼저 고려할 것.
+bun run lint-staged
+bun run typecheck
+bun test

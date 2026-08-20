@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rarn.dev/schemas/rarn.schema.json",
+  "title": "rarn.json",
+  "description": "Rarn project manifest. Declares package identity and Wally registry dependencies using npm-shaped keys.",
+  "type": "object",
+  "required": ["name", "version"],
+  "additionalProperties": false,
+
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional pointer to this schema, for editor completion."
+    },
+
+    "name": {
+      "description": "Package identity. Scoped form '@scope/name' is required to publish; a bare name is fine for a private game project.",
+      "type": "string",
+      "anyOf": [{ "$ref": "#/$defs/scopedName" }, { "$ref": "#/$defs/bareName" }]
+    },
+
+    "version": {
+      "$ref": "#/$defs/semver",
+      "description": "This package's own version. Exact semver, never a range."
+    },
+
+    "description": { "type": "string", "maxLength": 512 },
+
+    "license": {
+      "type": "string",
+      "description": "SPDX identifier, e.g. 'MIT'."
+    },
+
+    "authors": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Free-form author strings, matching Wally's package.authors."
+    },
+
+    "homepage": { "type": "string", "format": "uri" },
+    "repository": { "type": "string", "format": "uri" },
+
+    "private": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, 'rarn publish' refuses to run. Game projects should set this."
+    },
+
+    "realm": {
+      "$ref": "#/$defs/realm",
+      "default": "shared",
+      "description": "Where this package is meant to live in the DataModel. 'shared' replicates to clients; 'server' does not."
+    },
+
+    "registry": {
+      "type": "string",
+      "format": "uri",
+      "default": "https://github.com/UpliftGames/wally-index",
+      "description": "Index repository URL. Its config.json supplies the API base URL."
+    },
+
+    "packageDir": {
+      "type": "string",
+      "default": "RARN_MODULE",
+      "pattern": "^(?!\\.{1,2}$)[A-Za-z0-9._-]+$",
+      "description": "Directory the shared install tree is written to. Never \".\" or \"..\": installing deletes and rebuilds it, so those would destroy the project. Server and dev packages go to sibling directories named by appending '_SERVER' and '_DEV'. Renaming is safe; the _Index shape inside is not negotiable."
+    },
+
+    "place": {
+      "type": "object",
+      "description": "Where each package directory ends up in the Roblox DataModel. Required only when a server or dev package depends on a shared one: the two directories live under different services, so no relative script.Parent walk can reach across and the generated shim must use an absolute path instead. Rarn errors with an explanation if a cross-realm link needs a path that is not declared here.",
+      "additionalProperties": false,
+      "properties": {
+        "sharedPackages": {
+          "$ref": "#/$defs/dataModelPath",
+          "examples": ["game.ReplicatedStorage.Packages"]
+        },
+        "serverPackages": {
+          "$ref": "#/$defs/dataModelPath",
+          "examples": ["game.ServerScriptService.Packages"]
+        }
+      }
+    },
+
+    "dependencies": {
+      "$ref": "#/$defs/dependencyMap",
+      "description": "Runtime dependencies. Installed into packageDir and shimmed at its top level."
+    },
+
+    "devDependencies": {
+      "$ref": "#/$defs/dependencyMap",
+      "description": "Only installed for this project itself; never inherited by consumers."
+    },
+
+    "serverDependencies": {
+      "$ref": "#/$defs/dependencyMap",
+      "description": "Server-realm dependencies. Kept separate so they are never replicated to clients."
+    },
+
+    "resolutions": {
+      "type": "object",
+      "description": "Forces a package to a single version regardless of what the graph asked for, following Yarn's field of the same name. This is the escape hatch for a resolution Rarn reports as unmergeable: when two dependents demand incompatible majors, Roblox would otherwise get two ModuleScript copies and any singleton inside the package silently breaks, so overriding to one version is often the only correct fix rather than a convenience. Values are exact versions, not ranges — an override that still needed resolving would defeat the purpose. Every applied override is reported during install; a silent override would be worse than the conflict it hides.",
+      "propertyNames": { "$ref": "#/$defs/scopedName" },
+      "additionalProperties": { "$ref": "#/$defs/semver" },
+      "examples": [{ "@evaera/promise": "4.0.0" }]
+    },
+
+    "aliases": {
+      "type": "object",
+      "description": "Overrides the auto-derived Luau shim filename. Only needed when two packages PascalCase to the same alias, or when a specific require name is wanted.",
+      "propertyNames": { "$ref": "#/$defs/scopedName" },
+      "additionalProperties": { "$ref": "#/$defs/alias" },
+      "examples": [{ "@evaera/promise": "Promise", "@roblox/roact": "Roact" }]
+    },
+
+    "include": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Glob patterns of files to include when publishing. Empty means everything not excluded."
+    },
+
+    "exclude": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Glob patterns to drop when publishing."
+    }
+  },
+
+  "$defs": {
+    "scopedName": {
+      "type": "string",
+      "pattern": "^@[a-z0-9]([a-z0-9-]*[a-z0-9])?/[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+      "description": "npm-shaped scoped name. Maps to Wally's 'scope/name' by dropping the leading '@'. Wally scopes and names are lowercase alphanumeric with dashes.",
+      "examples": ["@evaera/promise", "@sleitnick/knit"]
+    },
+
+    "bareName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+      "description": "Unscoped name, valid only for a private project that is never published.",
+      "examples": ["my-game"]
+    },
+
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$",
+      "description": "Exact semver 2.0.0 version."
+    },
+
+    "range": {
+      "type": "string",
+      "minLength": 1,
+      "description": "npm-style semver range: '^4.0.0', '~1.2.0', '>=1.0.0 <2.0.0', '*'. Note that ranges arriving FROM the Wally API use Cargo syntax where ',' means AND, and must be translated to a space before being parsed.",
+      "examples": ["^4.0.0", "~1.2.3", ">=1.0.0 <2.0.0", "*"]
+    },
+
+    "alias": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "description": "Filename of the generated Luau shim, minus the extension. Must be a valid Luau identifier so that require(Packages.Alias) reads naturally."
+    },
+
+    "realm": {
+      "type": "string",
+      "enum": ["shared", "server"],
+      "description": "'shared' replicates to clients and may only depend on other shared packages. 'server' never replicates and may depend on anything."
+    },
+
+    "dataModelPath": {
+      "type": "string",
+      "pattern": "^game(\\.[A-Za-z_][A-Za-z0-9_]*)+$",
+      "description": "Absolute DataModel path, starting at 'game'. Used verbatim inside generated cross-realm shims."
+    },
+
+    "dependencyMap": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/scopedName" },
+      "additionalProperties": { "$ref": "#/$defs/range" },
+      "default": {},
+      "examples": [{ "@evaera/promise": "^4.0.0", "@sleitnick/knit": "^1.7.0" }]
+    }
+  },
+
+  "examples": [
+    {
+      "name": "my-game",
+      "version": "0.1.0",
+      "private": true,
+      "realm": "shared",
+      "packageDir": "RARN_MODULE",
+      "dependencies": {
+        "@evaera/promise": "^4.0.0",
+        "@sleitnick/knit": "^1.7.0"
+      },
+      "serverDependencies": {
+        "@sleitnick/comm": "^1.0.0"
+      },
+      "aliases": {
+        "@evaera/promise": "Promise"
+      }
+    }
+  ]
+}

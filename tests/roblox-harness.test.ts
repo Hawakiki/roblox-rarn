@@ -1,0 +1,174 @@
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { existsSync } from 'node:fs'
+import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { link } from '../src/linker/link.ts'
+import { normalizeManifest } from '../src/manifest/read.ts'
+import type { Manifest } from '../src/manifest/types.ts'
+import type { Resolution, ResolvedPackage } from '../src/resolver/types.ts'
+import { parseWallyName } from '../src/util/package-name.ts'
+
+/**
+ * Runs the Lune harness over a tree this test just built.
+ *
+ * The unit tests check that the linker writes the files it meant to. This checks
+ * something they cannot: that the tree *resolves* under Roblox's rules, and that a
+ * package reached by two paths really is one instance. A file-tree assertion cannot
+ * see the difference between one copy and two — both look correct on disk.
+ *
+ * Skipped when Lune is absent, since it is a Roblox-side tool and nothing about
+ * building Rarn requires it.
+ */
+
+const REPO = join(import.meta.dir, '..')
+
+/** rokit's shim if it is installed, otherwise whatever is on PATH. */
+function findLune(): string {
+  const local = join(homedir(), '.rokit', 'bin', process.platform === 'win32' ? 'lune.exe' : 'lune')
+  return existsSync(local) ? local : 'lune'
+}
+
+const lune = findLune()
+
+async function runHarness(installDir: string): Promise<{ code: number; output: string }> {
+  const proc = Bun.spawn([lune, 'run', 'tests/roblox/verify.luau', '--', installDir], {
+    cwd: REPO,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ])
+  return { code: await proc.exited, output: stdout + stderr }
+}
+
+let dir: string
+
+beforeEach(async () => {
+  dir = await mkdtemp(join(tmpdir(), 'rarn-harness-'))
+})
+afterEach(async () => {
+  await rm(dir, { recursive: true, force: true })
+})
+
+/**
+ * A diamond: two packages depending on one shared package.
+ *
+ * The smallest graph where deduplication is observable — `Base` is reached from the
+ * root, from `Left`, and from `Right`, and all three must land on one instance.
+ */
+async function buildDiamond(): Promise<string> {
+  const project = join(dir, 'project')
+  await mkdir(project, { recursive: true })
+
+  const specs = [
+    { name: 'a/left', deps: { Base: '@a/base@1.0.0' } },
+    { name: 'a/right', deps: { Base: '@a/base@1.0.0' } },
+    { name: 'a/base', deps: {} },
+  ]
+
+  const packages = new Map<string, ResolvedPackage>()
+  const sources = new Map<string, string>()
+
+  for (const spec of specs) {
+    const name = parseWallyName(spec.name)
+    const key = `@${spec.name}@1.0.0`
+    const source = join(dir, 'cache', `${name.scope}_${name.name}`)
+    await mkdir(source, { recursive: true })
+    await writeFile(join(source, 'init.lua'), `return { name = "${name.name}" }`)
+    sources.set(key, source)
+
+    packages.set(key, {
+      name,
+      version: '1.0.0',
+      realm: 'shared',
+      placement: 'shared',
+      dependencies: new Map(Object.entries(spec.deps)),
+      requestedBy: [{ from: 'root', range: '*', placement: 'shared' }],
+      dev: false,
+      forcedBy: undefined,
+    })
+  }
+
+  const manifest: Manifest = {
+    name: 'game',
+    version: '1.0.0',
+    dependencies: { '@a/left': '^1.0.0', '@a/right': '^1.0.0', '@a/base': '^1.0.0' },
+  }
+
+  const resolution: Resolution = { packages, duplicates: new Map(), overrides: new Map() }
+  await link({
+    projectDir: project,
+    manifest: normalizeManifest(manifest),
+    resolution,
+    sources,
+  })
+
+  return join(project, 'RARN_MODULE')
+}
+
+describe('Lune require harness', () => {
+  test('a linked tree resolves and deduplicates', async () => {
+    const installDir = await buildDiamond()
+    const { code, output } = await runHarness(installDir)
+
+    expect(output).toContain('checks passed')
+    expect(output).not.toContain('FAIL')
+    expect(code).toBe(0)
+  }, 30_000)
+
+  test('the identity check actually runs, rather than being vacuously satisfied', async () => {
+    const installDir = await buildDiamond()
+    const { output } = await runHarness(installDir)
+    // Naming the assertion explicitly: a harness that silently checked nothing would
+    // still print "checks passed".
+    expect(output).toContain('_Index["a_left@1.0.0"].Base')
+    expect(output).toMatch(/Base: RARN_MODULE\.Base == _Index/)
+  }, 30_000)
+
+  // Without these the suite could not tell a working harness from one that always
+  // passes. Each control breaks the tree in a way only the harness can see.
+  test('catches a duplicated package', async () => {
+    const installDir = await buildDiamond()
+    await cp(
+      join(installDir, '_Index', 'a_base@1.0.0'),
+      join(installDir, '_Index', 'a_base@1.0.1'),
+      { recursive: true },
+    )
+    await writeFile(
+      join(installDir, '_Index', 'a_left@1.0.0', 'Base.luau'),
+      '-- Generated by Rarn.\nreturn require(script.Parent.Parent["a_base@1.0.1"]["base"])\n',
+    )
+
+    const { code, output } = await runHarness(installDir)
+    expect(output).toContain('FAIL')
+    expect(output).toContain('two copies resolved')
+    expect(code).not.toBe(0)
+  }, 30_000)
+
+  test('catches a module left nested one level too deep', async () => {
+    const installDir = await buildDiamond()
+    const base = join(installDir, '_Index', 'a_base@1.0.0', 'base')
+    await mkdir(join(base, 'lib'), { recursive: true })
+    await writeFile(join(base, 'lib', 'init.lua'), 'return {}')
+    await rm(join(base, 'init.lua'))
+
+    const { code, output } = await runHarness(installDir)
+    expect(output).toContain('pruning may have left it nested')
+    expect(code).not.toBe(0)
+  }, 30_000)
+
+  test('catches a shim pointing at nothing', async () => {
+    const installDir = await buildDiamond()
+    await writeFile(
+      join(installDir, 'Base.luau'),
+      '-- Generated by Rarn.\nreturn require(script.Parent._Index["a_base@9.9.9"]["base"])\n',
+    )
+
+    const { code, output } = await runHarness(installDir)
+    expect(output).toContain('FAIL')
+    expect(code).not.toBe(0)
+  }, 30_000)
+})
