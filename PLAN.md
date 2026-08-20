@@ -330,18 +330,46 @@ RN0200: No published version of evaera/promise satisfies every requirement.
 
 ---
 
-### M4 — 캐시와 취득
+### M4 — 캐시와 취득 ✅
 
-- [ ] `cache/paths.ts` — Windows `%LOCALAPPDATA%\rarn\cache`, 그 외 XDG
-- [ ] `cache/store.ts` — `downloads/`(zip), `extracted/`(트리)
-- [ ] sha256 무결성 계산·검증, 락파일과 대조
-- [ ] `fetch/download.ts` — 동시성 상한을 둔 병렬 다운로드
-- [ ] `fetch/extract.ts` — fflate 해제
-  - **매직바이트로 판별한다.** `Content-Type: application/gzip` 이라고 오지만 실제는 zip (`PK 03 04`)
-  - zip slip 방어: `..` 를 포함하는 엔트리는 거부
-- [ ] 원자적 쓰기: 임시 디렉터리에 풀고 완료 후 rename (중단 시 반쪽 캐시 방지)
+- [x] `cache/paths.ts` — Windows `%LOCALAPPDATA%`, 그 외 XDG, `RARN_CACHE_DIR` 오버라이드
+- [x] `cache/integrity.ts` — sha256 계산·검증
+- [x] `cache/archive.ts` — 매직바이트 판별, zip slip 방어, 역슬래시 정규화
+- [x] `cache/store.ts` — `downloads/`(zip) + `extracted/`(트리), 원자적 rename
+- [x] `cache/fetch.ts` — 동시성 상한을 둔 병렬 취득
+- [x] `util/concurrency.ts` — `mapWithConcurrency` (입력 순서 보존, 첫 실패 전파)
 
-**완료 기준:** 두 번째 `rarn install`이 네트워크 요청 0회로 끝난다.
+M4 상태: **209 tests pass / eslint clean / tsc clean / biome clean.**
+
+**완료 기준 달성 — 실서버 (knit + roact, 6 패키지):**
+
+| | 다운로드 | 캐시 | contents 요청 | 시간 |
+|---|---|---|---|---|
+| 콜드 캐시 | 6 | 0 | 6회 | 2153ms |
+| **웜 캐시** | **0** | **6** | **0회** | **4ms** |
+
+> **정직한 단서:** 위 4ms 는 같은 프로세스라 메타데이터도 메모리 캐시에 남아 있었다.
+> 실제로 `rarn install` 을 두 번 실행하면 **contents 요청은 진짜 0회**지만 메타데이터는
+> 다시 받는다. 그걸 없애는 건 락파일 단락(M7)의 몫이다.
+
+**Windows 특이점을 반영했다.** `rename` 이 POSIX 와 달리 **기존 경로를 덮어쓰지 못한다.**
+대상이 이미 있다는 건 다른 프로세스가 같은 작업을 먼저 끝냈다는 뜻이므로, 에러가 아니라
+"상대 것을 쓰고 내 임시본을 버린다" 로 처리한다.
+
+**캐시 위치는 `%APPDATA%` 가 아니라 `%LOCALAPPDATA%` 다.** 로밍 프로필은 `%APPDATA%` 를
+기기 간 동기화하는데, 재생성 가능한 캐시를 네트워크로 복사할 이유가 없다.
+
+**Wally 소스에서 본 역슬래시 문제도 처리했다.** Windows 에서 만든 zip 이 엔트리 이름에
+`\` 를 박을 수 있고, 그러면 Unix 에서 디렉터리 트리가 아니라 긴 파일명 하나로 풀린다.
+최신 Wally 는 쓸 때 정리하지만 그 수정 이전에 발행된 패키지가 레지스트리에 남아 있다.
+
+**무결성은 매 설치 검증한다.** 캐시된 엔트리도 검증하므로 손상된 캐시가 통과하지 못한다.
+Wally 는 `checksum` 필드를 두고도 채우지 않아 실질적으로 검증이 없다 — 버전만 고정하고
+바이트를 고정하지 않는 락파일은 정작 중요한 걸 고정하지 않는다.
+
+**구현하며 잡은 것:** 캐시에 트리는 있는데 zip 이 사라진 경우, 처음엔 *빈 바이트의 해시*를
+돌려주고 있었다. 실재하지 않는 바이트를 설명하는 값이 락파일에 박힐 뻔했다. 무결성을
+확인할 수 없으면 다시 받는 게 맞다.
 
 ---
 
@@ -527,5 +555,6 @@ Studio MCP를 쓰지 않으므로 **마지막 실행은 수동**이다. M6 완�
 4. ~~M2 레지스트리 클라이언트~~ — 완료 (feat/registry)
 5. ~~R1 PnP 가능성 연구~~ — 완료, 결론: 도입 안 함
 6. ~~M3 리졸버~~ — 완료 (feat/resolver)
-7. **M4 캐시와 취득** — feat/cache (다음)
-8. 각 feat 브랜치는 `--no-ff` 로 `develop` 에 병합
+7. ~~M4 캐시와 취득~~ — 완료 (feat/cache)
+8. **M5 가지치기** — feat/prune (다음)
+9. 각 feat 브랜치는 `--no-ff` 로 `develop` 에 병합
