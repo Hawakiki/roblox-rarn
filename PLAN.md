@@ -60,14 +60,11 @@ rarn.lock
 
 ## 2. 마일스톤
 
-### M0 — 툴체인 부트스트랩
+### M0 — 툴체인 부트스트랩 ✅
 
-> **현재 블로커: 이 머신에 Bun이 설치되어 있지 않다.** (`node v24.19.0`, `git 2.53.0`은 확인됨)
-> `powershell -c "irm bun.sh/install.ps1 | iex"` 로 설치한 뒤 M1로 넘어간다.
-
-- [ ] Bun 설치 및 `bun --version` 확인
-- [ ] `package.json`, `tsconfig.json` (strict, `noUncheckedIndexedAccess`)
-- [ ] 의존성 확정 — **전부 순수 JS여야 한다** (네이티브 애드온은 크로스컴파일 불가)
+- [x] Bun 1.3.14 설치 확인
+- [x] `package.json`, `tsconfig.json` (strict, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`)
+- [x] 의존성 확정 — **전부 순수 JS** (네이티브 애드온은 크로스컴파일 불가)
 
 | 용도 | 패키지 | 비고 |
 |---|---|---|
@@ -81,8 +78,23 @@ rarn.lock
 
 TOML 파서는 **필요 없다.** 의존성 별칭까지 metadata API가 JSON으로 준다.
 
-- [ ] `biome` 린트 설정, `bun test` 동작 확인
-- [ ] `src/` 레이어 디렉터리 골격 생성
+- [x] `biome` 린트 설정, `bun test` 동작 확인
+- [x] `src/` 레이어 디렉터리 골격 생성
+- [x] `src/util/errors.ts` — `what` / `where` / `how` 3요소 에러
+- [x] `src/util/package-name.ts` — 이름 4형태 변환, 별칭 도출
+- [x] **`src/util/version-range.ts` — Cargo→npm 범위 번역** (최고 위험 항목, M2보다 앞당김)
+- [x] `src/cli.ts` — commander 배선, 전 명령 스텁
+- [x] `bun build --compile` 단일 바이너리 확인 (99MB)
+
+M0 상태: **44 tests pass / typecheck clean / lint clean.**
+
+> 번역 로직을 M2가 아니라 M0에서 끝냈다. 위험도 1순위였고 순수 함수라 의존성이 없었다.
+> 테스트에는 *번역하지 않은 범위가 다른 의미로 파싱된다*는 것을 고정하는 케이스를 넣어,
+> 이 변환이 왜 필요한지가 코드에 남도록 했다.
+
+> `--bytecode` 는 CommonJS로 내보내므로 top-level await 를 쓸 수 없다.
+> `src/cli.ts` 진입점을 async IIFE로 감싸 둔 이유다 — 안 그러면 인터프리터 실행은 되는데
+> 컴파일된 바이너리만 깨진다.
 
 ---
 
@@ -106,9 +118,10 @@ TOML 파서는 **필요 없다.** 의존성 별칭까지 metadata API가 JSON으
 - [ ] 인덱스 `config.json` 에서 API base URL 해석 (기본값 하드코딩 + 캐시)
 - [ ] 메타데이터 응답의 메모리 캐시 — 한 번의 resolve 안에서 같은 패키지를 재요청하지 않게
 - [ ] 지수 백오프 재시도 (네트워크 오류·5xx 한정, 4xx는 즉시 실패)
-- [ ] **Cargo → npm 범위 번역**: `">=4.0.0, <5.0.0"` → `">=4.0.0 <5.0.0"`
+- [x] ~~Cargo → npm 범위 번역~~ — M0에서 완료 (`src/util/version-range.ts`)
 
-> 번역 누락은 조용히 오작동한다. `semver`는 콤마를 AND로 읽지 않으므로 **여기 전용 유닛 테스트를 반드시 둔다.**
+> 레지스트리에서 들어오는 **모든** 범위는 `normalizeRange` 를 통과시킨다. 빠뜨리면 예외가 아니라
+> 조용한 오해석이 된다.
 
 **완료 기준:** `@sleitnick/knit`의 메타데이터에서 `Comm`·`Promise` 의존성과 범위가 npm 문법으로 나온다.
 
@@ -188,7 +201,7 @@ X @evaera/promise 를 하나의 버전으로 통합할 수 없습니다
   - 프로젝트 파일 부재 시에도 통째 복사 + 경고
 - [ ] `project/prune.ts` — 모듈 루트만 복사
 - [ ] `.lua` / `.luau` 확장자 양쪽 처리
-- [ ] 판정 결과를 락파일 `moduleRoot` / `projectName` 에 기록
+- [ ] 판정 결과를 락파일 `moduleRoot` 에 기록 (폴더 이름은 패키지 이름에서 유도되므로 기록 불필요)
 
 > **절대 이것 때문에 설치를 실패시키지 않는다.** 해석 못 하면 전부 복사하고 경고만 남긴다.
 
@@ -198,7 +211,7 @@ X @evaera/promise 를 하나의 버전으로 통합할 수 없습니다
 
 ### M6 — 링커
 
-- [ ] `linker/layout.ts` — `RARN_MODULE/`, `_Index/{scope}_{name}@{version}/{projectName}/`
+- [ ] `linker/layout.ts` — `RARN_MODULE/`, `_Index/{scope}_{name}@{version}/{패키지이름}/`
 - [ ] `linker/shim.ts` — shim 생성
   - 최상위: `return require(script.Parent._Index["evaera_promise@4.0.0"].promise)`
   - `_Index` 내부: `return require(script.Parent.Parent["evaera_promise@4.0.0"].promise)`
@@ -337,7 +350,7 @@ Studio MCP를 쓰지 않으므로 **마지막 실행은 수동**이다. M6 완�
 
 ## 6. 다음 행동
 
-1. **Bun 설치** — 유일한 블로커
-2. M0 스캐폴딩을 `feat/toolchain` 브랜치에서
-3. M1~M2 를 `feat/manifest`, `feat/registry` 로
+1. ~~Bun 설치~~ — 완료
+2. ~~M0 스캐폴딩~~ — 완료 (feat/toolchain)
+3. **M1 매니페스트** — feat/manifest (다음)
 4. 각 feat 브랜치는 `--no-ff` 로 `develop` 에 병합
