@@ -33,7 +33,7 @@ export function createLayout(projectDir: string, manifest: NormalizedManifest): 
 }
 
 /**
- * Rejects a `packageDir` that would make installing destructive.
+ * Rejects a `packageDir` whose *shape* would make installing destructive.
  *
  * Installing wipes and rebuilds the realm directories, so this value decides what
  * gets deleted. The manifest schema's character class once permitted `"."`, which
@@ -41,6 +41,14 @@ export function createLayout(projectDir: string, manifest: NormalizedManifest): 
  * entire project on the next install. Nothing about that failure would be
  * recoverable, so it is checked here as well as in the schema rather than trusting
  * one gate.
+ *
+ * **This guarantees the path, not the contents.** It once carried a comment saying
+ * installing could only delete "Rarn's own directories", which was not true: the only
+ * thing it enforces is a single directory name inside the project, and on Windows and
+ * macOS a name does not even distinguish `Packages` from `packages`. A project whose
+ * source lived in `packages/` had it replaced by the install — see RN-1. Whether the
+ * directory actually belongs to Rarn is `ownership.ts`, and that check is the one
+ * standing between an install and someone's source tree.
  */
 export function assertSafePackageDir(projectDir: string, packageDir: string): string {
   const root = resolve(projectDir)

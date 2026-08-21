@@ -15,6 +15,7 @@ import {
   createLayout,
   entryDir,
 } from './layout.ts'
+import { assertRealmsAreOurs } from './ownership.ts'
 import { crossRealmShim, requirePlacePath, rootShim, siblingShim } from './shim.ts'
 import { STAGING_DIR, clearLeftovers, swapIn } from './swap.ts'
 
@@ -59,6 +60,11 @@ export interface LinkResult {
  */
 export async function link(options: LinkOptions): Promise<LinkResult> {
   const final = createLayout(options.projectDir, options.manifest)
+
+  // Before anything is moved, and before the staging tree is built: installing
+  // replaces these directories, so the one question worth asking first is whether
+  // they are Rarn's to replace.
+  await assertRealmsAreOurs(final)
 
   await clearLeftovers(final.projectDir)
 
