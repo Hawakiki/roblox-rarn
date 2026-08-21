@@ -1081,7 +1081,7 @@ $ rarn install     # 같은 락파일 -> RN0500, "지우고 다시 설치하세�
 
 ---
 
-### M14 — Rojo·place 연동
+### M14 — Rojo·place 연동 ✅
 
 **목표:** `place` 를 손으로 적지 않아도 되고, 어긋나면 설치 시점에 잡힌다.
 
@@ -1116,6 +1116,49 @@ ReplicatedStorage`)은 한 겹 아래에 있고 Output 의 두 번째 줄로만 
 
 **판정:** `place` 를 일부러 틀리게 적은 프로젝트에서 경고가 나오는가. `place` 를 지운 프로젝트가
 프로젝트 파일만으로 정상 설치되는가.
+
+#### 실측 결과
+
+둘 다 통과했고, 판정에 없던 것 하나가 더 나왔다.
+
+| 시나리오 | 결과 |
+|---|---|
+| `place` 미선언 + Rojo 파일만 있음 | 파생 성공. 교차 realm shim 이 `game.ReplicatedStorage.SharedPkgs` 로 나왔다 — 폴더 이름은 `RARN_MODULE` 이다 |
+| 선언과 파생이 다름 | 경고 출력, 매니페스트 채택 |
+| **wally 이주 직후** | `Packages_SERVER/` 에 패키지가 들어갔는데 Rojo 가 안 옮긴다고 경고 |
+
+세 번째가 판정에 없던 것이다. M13 의 import 경고("Wally 는 ServerPackages 를 썼다")와
+M14 의 설치 경고("Packages_SERVER 를 프로젝트 파일이 안 나른다")가 **이어져서 하나의
+이야기가 된다.** 어느 쪽도 에러가 아니고, 둘 다 없으면 서버 realm 이 그냥 Studio 에
+나타나지 않는다.
+
+#### 조사부터 했다
+
+실제 `default.project.json` 을 GitHub 에서 여러 개 받아 봤고, 추측했으면 셋을 놓쳤다.
+
+| 야생의 사실 | 놓쳤다면 |
+|---|---|
+| 서비스 노드에 `$className` 이 없어도 된다 | 가장 흔한 템플릿을 통째로 건너뛴다 |
+| `$path` 가 `{ "optional": "Packages" }` 일 수 있다 | 패키지 매니저를 쓰는 프로젝트가 정확히 이 형태를 쓴다 |
+| 한 노드가 `$path` 와 자식을 동시에 가진다 | 그 아래를 못 본다 |
+
+그리고 DataModel 이름과 폴더 이름은 **다른 것이다.** `"SharedPackages": { "$path": "Packages" }`
+가 실제로 존재한다 — `packageDir` 로는 절대 추측할 수 없는 이유다.
+
+#### 검증 수단이 하나 늘었다
+
+`rojo sourcemap` 이 Rojo 가 실제로 지을 인스턴스 트리를 JSON 으로 내놓는다. 파생한 경로가
+거기 있는지 비교하면 **Studio 없이** 확인된다. 손으로 한 번 하고 마는 대신
+`tests/place-sourcemap.test.ts` 로 만들었고, CI 도 rojo 를 깐다.
+
+하니스와 같은 논리의 한 층 위다 — 하니스는 realm *안에서* require 가 풀리는지 보고,
+이건 그 realm 이 shim 에게 말해 준 자리에 실제로 있는지 본다.
+
+부수적으로 확인된 것: 소스맵은 `_Index` 안쪽까지 다 보인다
+(`game.ReplicatedStorage.Pkgs._Index.evaera_promise@4.0.0.promise`). luau-lsp 가 설치된
+패키지의 타입을 따라갈 수 있다는 뜻이고, 조건은 설치 후 소스맵을 다시 만드는 것뿐이다.
+
+426 → **429 tests**.
 
 ---
 
@@ -1276,7 +1319,7 @@ print("✓ dedupe 확인")
 14. ~~M11 CI와 빌드 검증~~ — 완료 (feat/ci). 8개 잡 초록
 15. ~~M12 설치 트리 원자성과 오프라인~~ — 완료 (feat/atomic-link)
 16. ~~M13 `rarn import` — Wally 이주~~ — 완료 (feat/import)
-17. **M14 Rojo·place 연동** — 다음 (feat/place)
-18. R2 워크스페이스 설계 연구 → M15
+17. ~~M14 Rojo·place 연동~~ — 완료 (feat/place)
+18. **R2 워크스페이스 설계 연구** — 다음 → M15
 19. M16 1.0.0 배포 — 선행조건은 §2 M16 표 참조
 20. 각 feat 브랜치는 `--no-ff` 로 `develop` 에 병합

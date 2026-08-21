@@ -59,6 +59,12 @@ Roblox-side tool. CI installs `lune` rather than accepting the skip: this is the
 test that can tell one shared package from two copies of it, and a harness that quietly
 did not run reads exactly like one that ran and passed.
 
+`rojo sourcemap` is the **second** Roblox-side check, and it answers a different question: not
+whether requires resolve inside a realm, but whether the realm is where Rarn told the shims it
+would be. `tests/place-sourcemap.test.ts` compares the DataModel path derived from a project
+file against the instance tree Rojo really builds — the closest thing to asking Rojo directly,
+with no Studio and no network. It skips loudly when `rojo` is absent, and CI installs it.
+
 Package code is **not** executed by default. A real package calls `game:GetService`
 and `task.defer` at module scope, so running it measures stub completeness rather
 than install correctness; package modules resolve to a per-instance sentinel instead.
@@ -202,8 +208,32 @@ absolute DataModel path taken from the manifest's `place`:
 return require(game.ReplicatedStorage.Packages._Index["evaera_promise@4.0.0"].promise)
 ```
 
-If a cross-realm link is needed and `place` does not declare that path, fail with an
-explanation of what to add — there is no way to synthesize it.
+`place` is **derived from `default.project.json` when the manifest does not declare it**, by
+walking the tree for a node whose `$path` is a realm directory and reading the DataModel path
+back off the trail. It cannot be guessed from `packageDir`: the instance name and the folder
+name are independent, and real projects use that (`"SharedPackages": { "$path": "Packages" }`).
+
+If a cross-realm link is needed and neither source supplies the path, fail with an explanation
+of what to add — there is no way to synthesize it.
+
+Three things the project-file walker has to get right, all taken from real files rather than
+imagined:
+
+- **A service node need not carry `$className`.** `"ReplicatedStorage": { "Packages": {...} }`
+  is enough, and requiring the field silently skips the most common template.
+- **`$path` is not always a string.** `{ "optional": "Packages" }` is Rojo's form for a path
+  that may not exist yet — which is precisely what a project using a package manager writes.
+- **A node can carry `$path` *and* children.** Stopping at the first `$path` misses whatever is
+  below it.
+
+When the two sources disagree the manifest wins and the disagreement is printed. Someone who
+wrote a path down meant it; but one of the two is wrong, and the runtime will not say which —
+see the Studio measurements above for what it says instead.
+
+**A realm directory the project file does not mount is a warning, not an error.** The install
+succeeds, the tree is right, and the packages simply never reach Studio. This is exactly what a
+Wally import produces: Wally used `ServerPackages`, Rarn derives `Packages_SERVER` by suffix, and
+the old Rojo entry does not cover it.
 
 Two related rules:
 
@@ -419,6 +449,7 @@ rarn.json -> resolve -> fetch -> extract -> prune -> link -> rarn.lock
 | `doctor` | scan installed Luau for requires, compare against declared deps | fetch or resolve anything |
 | `publish` | archive building, `wally.toml` generation, GitHub device flow | know about `RARN_MODULE` layout |
 | `import` | `wally.toml` text in, a `Manifest` out | touch the filesystem or the network |
+| `project` (place) | read `default.project.json`, say where each realm lands in the DataModel | ever throw; an uninterpretable project file is a note |
 | `cli` | commander wiring, output, exit codes | contain business logic |
 
 Business logic lives in the layers; `cli/` only wires and prints. Anything worth testing must

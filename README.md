@@ -114,6 +114,11 @@ Yarn's names, because Rarn is Yarn's model applied to Roblox.
 | `rarn outdated` | installed vs newest-in-range vs newest. `--check` for CI |
 | `rarn doctor` | requires in the installed source vs the declared dependencies |
 
+`place` is read out of `default.project.json` when `rarn.json` does not declare it, and
+Rarn says so when the two disagree — or when a package directory has packages in it that
+the Rojo project does not carry. Roblox reports a wrong path as `Requested module
+experienced an error while loading`, with no path in it, so the check has to happen here.
+
 ### Registry
 
 | | |
