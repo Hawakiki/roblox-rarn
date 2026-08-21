@@ -1,5 +1,6 @@
 import { Code } from '../util/codes.ts'
 import { RarnError, RegistryError } from '../util/errors.ts'
+import { isNetworkBlocked, networkBlocked, networkBlockedError } from '../util/network.ts'
 import { type PackageName, toWallyName } from '../util/package-name.ts'
 import { parseMetadata, parseSearchName } from './parse.ts'
 import {
@@ -28,7 +29,7 @@ export interface RegistryClientOptions {
 }
 
 export function createRegistryClient(options: RegistryClientOptions = {}): RegistryClient {
-  const doFetch = options.fetch ?? globalThis.fetch
+  const doFetch = options.fetch ?? offlineGuard(globalThis.fetch)
   const indexUrl = options.indexUrl ?? DEFAULT_INDEX_URL
   const attempts = options.attempts ?? 3
   const retryDelayMs = options.retryDelayMs ?? 250
@@ -57,6 +58,10 @@ export function createRegistryClient(options: RegistryClientOptions = {}): Regis
       try {
         return await doFetch(url, { headers: allHeaders })
       } catch (cause) {
+        // A structured failure already knows what went wrong — the offline guard
+        // below, or an injected fetch in a test. Wrapping it as "could not reach
+        // the registry" would replace an accurate diagnosis with a guess.
+        if (cause instanceof RarnError) throw cause
         throw new RegistryError({
           code: Code.RegistryUnreachable,
           what: 'Could not reach the registry.',
@@ -150,6 +155,7 @@ export function createRegistryClient(options: RegistryClientOptions = {}): Regis
           body: archive,
         })
       } catch (cause) {
+        if (cause instanceof RarnError) throw cause
         throw new RegistryError({
           code: Code.RegistryUnreachable,
           what: 'Could not reach the registry to publish.',
@@ -166,6 +172,27 @@ export function createRegistryClient(options: RegistryClientOptions = {}): Regis
       throw publishFailure(response.status, body, url)
     },
   }
+}
+
+/**
+ * Wraps the real fetch so `RARN_NO_NETWORK` can stop it.
+ *
+ * Wrapping instead of checking at each call site is the whole point: a request
+ * added later is covered without anyone remembering that the guard exists.
+ *
+ * Only the global fetch is wrapped. An injected one is a stand-in by definition,
+ * and blocking those would turn the guard into something that fails the test suite
+ * rather than something that keeps it off the network.
+ */
+function offlineGuard(inner: typeof globalThis.fetch): typeof globalThis.fetch {
+  return (async (...args: Parameters<typeof globalThis.fetch>) => {
+    if (networkBlocked()) throw networkBlockedError(urlOf(args[0]))
+    return await inner(...args)
+  }) as typeof globalThis.fetch
+}
+
+function urlOf(input: Parameters<typeof globalThis.fetch>[0]): string {
+  return input instanceof Request ? input.url : String(input)
 }
 
 /**
@@ -198,6 +225,7 @@ async function resolveApiUrl(
   try {
     response = await doFetch(rawUrl)
   } catch (cause) {
+    if (cause instanceof RarnError) throw cause
     throw new RegistryError({
       code: Code.RegistryUnreachable,
       what: 'Could not read the registry index configuration.',
@@ -350,7 +378,10 @@ async function withRetry(
       // `assertOk` produces the message instead of a generic retry failure.
       if (response.ok || attempt === attempts || !(await isRetryable(response))) return response
     } catch (error) {
-      if (attempt === attempts) throw error
+      // A refusal to go out is not a transport failure. Retrying it burns the
+      // whole backoff schedule to arrive at the same answer, which in CI turns one
+      // clear message into a slow one.
+      if (attempt === attempts || isNetworkBlocked(error)) throw error
     }
 
     await sleep(delayMs * 2 ** (attempt - 1))

@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [master, develop]
+  pull_request:
+
+# 같은 브랜치에 새 푸시가 오면 앞선 실행을 취소한다. 이미 뒤집힌 커밋의 결과를 기다리는
+# 것보다, 지금 밀어넣은 것의 답을 빨리 받는 쪽이 항상 쓸모 있다.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # 관례를 규칙으로 바꾼다. 테스트는 전부 fetch 를 주입해서 이미 오프라인이지만, 그건
+  # 누군가 기억하는 동안에만 유지되는 성질이다. 실제 요청을 하나 넣은 테스트는 로컬에서
+  # 통과하고 리뷰도 통과한 뒤, api.wally.run 이 흔들리는 날 CI 로만 나타난다.
+  # 이걸 켜 두면 그 테스트는 그 자리에서 RN0130 으로 죽는다.
+  RARN_NO_NETWORK: '1'
+  # 훅은 로컬 개발용이다. CI 는 이미 같은 검사를 잡으로 돌린다.
+  HUSKY: '0'
+
+jobs:
+  check:
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # 윈도우만 깨졌는데 리눅스까지 취소되면, 플랫폼 문제인지 공통 문제인지 판단할
+      # 근거가 사라진다. 판단 근거를 아끼자고 몇 분을 아끼는 거래는 남는 게 없다.
+      fail-fast: false
+      matrix:
+        # 윈도우를 뺄 수 없다. `renameIntoPlace` 는 "윈도우는 기존 경로 위로 rename
+        # 하지 못한다" 는 사실 위에 서 있고, 리눅스에서만 도는 CI 는 그 분기를 한 번도
+        # 밟지 않는다. 반대로 개발 기계가 윈도우라, 검증이 없던 쪽은 리눅스다.
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # 고정한다. pre-commit 훅이 쓰는 것과 같은 버전이어야, CI 가 빨개졌을 때
+          # 그게 코드 탓인지 아무도 고르지 않은 Bun 업그레이드 탓인지 묻지 않아도 된다.
+          bun-version: 1.3.14
+
+      - run: bun install --frozen-lockfile
+
+      # format -> lint -> typecheck -> test. 훅이 돌리는 것과 같은 명령이다.
+      - run: bun run check
+
+  build:
+    name: build (${{ matrix.target.name }})
+    needs: check
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 축이 *타깃* 이고 러너는 하나다. 한 호스트에서 셋이 다 나온다는 것은
+        # CLAUDE.md 가 주장하는 사실이므로, CI 가 매번 다시 확인해야 하는 대상이다.
+        target:
+          - { name: windows-x64, script: build:windows, file: rarn-windows-x64.exe }
+          - { name: macos-arm64, script: build:macos-arm64, file: rarn-macos-arm64 }
+          - { name: linux-x64, script: build:linux-x64, file: rarn-linux-x64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+
+      # package.json 의 스크립트를 그대로 부른다. 플래그를 여기 옮겨 적으면 로컬 빌드와
+      # CI 빌드가 언젠가 다른 것을 만들게 되고, 그 차이는 릴리스에서야 드러난다.
+      - run: bun run ${{ matrix.target.script }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rarn-${{ matrix.target.name }}
+          path: dist/${{ matrix.target.file }}
+          if-no-files-found: error
+          retention-days: 7
+
+  smoke:
+    name: smoke (${{ matrix.os }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # 윈도우 러너의 기본 셸은 pwsh 다. bash 로 고정하면 세 OS 가 스크립트 하나를
+        # 공유하고, 스모크 내용이 플랫폼마다 갈라지지 않는다.
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        # 여기 축은 *러너 OS* 다. build 와 합치고 싶어지지만, 합치면 각자 자기 OS 에서
+        # 네이티브 빌드를 하게 되어 크로스컴파일 검증이 통째로 사라진다.
+        # 빌드 성공은 동작 보장이 아니다 — ubuntu 가 만든 darwin 바이너리는 ubuntu
+        # 에서 실행조차 되지 않으므로, 만든 곳에서 확인하면 아무것도 확인한 게 아니다.
+        include:
+          - { os: windows-latest, artifact: rarn-windows-x64, bin: rarn-windows-x64.exe }
+          - { os: macos-14, artifact: rarn-macos-arm64, bin: rarn-macos-arm64 }
+          - { os: ubuntu-latest, artifact: rarn-linux-x64, bin: rarn-linux-x64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist
+
+      # 아티팩트는 실행 권한을 보존하지 않는다.
+      - run: chmod +x "dist/${{ matrix.bin }}"
+
+      - run: bash scripts/smoke.sh "dist/${{ matrix.bin }}"
+# 릴리스 잡은 여기 없다.
+#
+# 태그에 걸린 채 아무것도 하지 않는 워크플로는 기능처럼 보이는 거짓말이고, 정작 M16 에서
+# 진짜로 필요할 때 "이미 있는 줄 알았다" 로 시간을 먹는다. 배포는 M16 에서 이 파일 옆에
+# release.yml 로 새로 들어온다 — 태그 트리거, build 잡 재사용, GitHub Release 업로드,
+# Rokit 이 집어가는 에셋 이름 규칙까지 한 번에.
