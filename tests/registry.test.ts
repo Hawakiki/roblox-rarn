@@ -6,7 +6,7 @@ import { parseMetadata } from '../src/registry/parse.ts'
 import { DEFAULT_API_URL } from '../src/registry/types.ts'
 import { Code } from '../src/util/codes.ts'
 import { RarnError } from '../src/util/errors.ts'
-import { networkBlocked } from '../src/util/network.ts'
+import { blockNetwork, networkBlocked, unblockNetwork } from '../src/util/network.ts'
 import { parseWallyName } from '../src/util/package-name.ts'
 
 const FIXTURES = join(import.meta.dir, 'fixtures', 'registry')
@@ -551,6 +551,39 @@ describe('RARN_NO_NETWORK', () => {
 
     const metadata = await withBlock('1', async () => await client.getMetadata(promise))
     expect(metadata.versions.length).toBeGreaterThan(0)
+  })
+
+  // `--offline` reuses the same guard rather than growing a second one. What it does
+  // not reuse is the message: telling someone who typed `--offline` to unset an
+  // environment variable they never set reads as a misdiagnosis, and a reader who
+  // decides the tool has misread them stops reading the rest of it.
+  test('--offline blocks too, and says so in its own terms', async () => {
+    const client = createRegistryClient()
+    blockNetwork()
+    try {
+      await client.getMetadata(promise)
+      throw new Error('expected a rejection')
+    } catch (thrown) {
+      expect(thrown).toBeInstanceOf(RarnError)
+      const error = thrown as RarnError
+      expect(error.code).toBe(Code.NetworkBlocked)
+      expect(error.detail).toContain('--offline')
+      expect(error.detail).not.toContain('RARN_NO_NETWORK')
+      expect(error.how).toContain('--offline')
+    } finally {
+      unblockNetwork()
+    }
+  })
+
+  test('the flag wins over an unset variable', async () => {
+    expect(await withBlock(undefined, () => networkBlocked())).toBe(false)
+    blockNetwork()
+    try {
+      expect(await withBlock(undefined, () => networkBlocked())).toBe(true)
+    } finally {
+      unblockNetwork()
+    }
+    expect(await withBlock(undefined, () => networkBlocked())).toBe(false)
   })
 
   test('0 means off, so a job can opt back in', async () => {

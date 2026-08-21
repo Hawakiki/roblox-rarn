@@ -56,6 +56,7 @@ export const Code = {
   ProjectFileUnsupported: 'RN0400',
   ModuleRootMissing: 'RN0401',
   LinkTargetMissing: 'RN0410',
+  InstallSwapFailed: 'RN0420',
 
   // RN0500-RN0599 — lockfile
   LockfileInvalid: 'RN0500',
