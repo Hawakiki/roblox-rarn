@@ -115,6 +115,22 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # TEMPORARY: ubuntu 에서 크로스컴파일한 윈도우 바이너리가 --version 에서
+      # 세그폴트로 죽는다. 윈도우에서 네이티브로 빌드한 같은 바이너리는 멀쩡하고,
+      # 같은 호스트에서 나온 darwin-arm64 는 macOS 에서 잘 돈다. --bytecode 가
+      # 원인인지 가르려고 같은 타깃을 그것만 빼고 한 번 더 만든다.
+      - if: matrix.target.name == 'windows-x64'
+        run: >
+          bun build --compile --minify --target=bun-windows-x64 src/cli.ts
+          --outfile dist/rarn-windows-x64-plain.exe
+      - if: matrix.target.name == 'windows-x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rarn-windows-x64-plain
+          path: dist/rarn-windows-x64-plain.exe
+          if-no-files-found: error
+          retention-days: 1
+
   smoke:
     name: smoke (${{ matrix.os }})
     needs: build
@@ -145,6 +161,18 @@ jobs:
 
       # 아티팩트는 실행 권한을 보존하지 않는다.
       - run: chmod +x "dist/${{ matrix.bin }}"
+
+      # TEMPORARY: --bytecode 가 세그폴트의 원인인지 가르는 대조군. 위 스모크가
+      # 실패해도 이건 돌아야 답이 나오므로 continue-on-error 로 둔다.
+      - if: matrix.os == 'windows-latest'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: rarn-windows-x64-plain
+          path: dist
+      - if: matrix.os == 'windows-latest'
+        continue-on-error: true
+        run: bash scripts/smoke.sh "dist/rarn-windows-x64-plain.exe"
 
       - run: bash scripts/smoke.sh "dist/${{ matrix.bin }}"
 # 릴리스 잡은 여기 없다.
