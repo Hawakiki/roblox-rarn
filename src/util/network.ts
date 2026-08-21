@@ -21,8 +21,28 @@ export const NO_NETWORK_ENV = 'RARN_NO_NETWORK'
  * setting one is.
  */
 export function networkBlocked(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (byFlag) return true
   const value = env[NO_NETWORK_ENV]
   return value !== undefined && value !== '' && value !== '0'
+}
+
+/**
+ * Whether `--offline` was passed, as opposed to the environment variable.
+ *
+ * Tracked separately only so the error can name the thing the reader actually did.
+ * "Unset RARN_NO_NETWORK" is unhelpful advice to someone who typed `--offline`, and
+ * being told to change something they never set is how a reader concludes the tool
+ * has misdiagnosed them and stops reading the rest of the message.
+ */
+let byFlag = false
+
+export function blockNetwork(): void {
+  byFlag = true
+}
+
+/** Test seam. Nothing in the CLI turns the block back off mid-run. */
+export function unblockNetwork(): void {
+  byFlag = false
 }
 
 /**
@@ -33,12 +53,17 @@ export function networkBlocked(env: NodeJS.ProcessEnv = process.env): boolean {
  * A CI job that retries on 2 would otherwise loop on a decision it made itself.
  */
 export function networkBlockedError(url: string): RarnError {
+  const cause = byFlag ? '`--offline` was passed' : `${NO_NETWORK_ENV} is set`
+  const how = byFlag
+    ? 'Run without `--offline`. An install is fully offline when rarn.lock is up to date and every package is already cached — anything that has to ask the registry, such as a search or a new version, cannot be.'
+    : `Unset ${NO_NETWORK_ENV} to allow it. If this is CI, the code under test tried to reach the network — give it a fetch stand-in instead.`
+
   return new RarnError({
     code: Code.NetworkBlocked,
     what: 'Network access is turned off.',
     where: url,
-    detail: `  ${NO_NETWORK_ENV} is set, so Rarn refused to make this request.`,
-    how: `Unset ${NO_NETWORK_ENV} to allow it. If this is CI, the code under test tried to reach the network — give it a fetch stand-in instead.`,
+    detail: `  ${cause}, so Rarn refused to make this request.`,
+    how,
   })
 }
 

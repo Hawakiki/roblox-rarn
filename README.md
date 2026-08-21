@@ -118,7 +118,14 @@ Yarn's names, because Rarn is Yarn's model applied to Roblox.
 
 ### Everywhere
 
-`--cwd <path>` · `--verbose` · `--silent` · `--no-color` · `--json` on most read commands.
+`--cwd <path>` · `--verbose` · `--silent` · `--no-color` · `--offline` · `--json` on most
+read commands.
+
+`--offline` refuses to touch the network rather than quietly reaching for it. With an
+up-to-date `rarn.lock` and a warm cache an install needs none, so this costs nothing and
+turns "it happened not to need the network" into "it cannot use it" — which is the version
+worth having on a train. `RARN_NO_NETWORK=1` does the same thing for a whole shell or a CI
+job.
 
 Exit codes: `0` fine, `1` your project or arguments, `2` the registry or the network.
 Errors carry a stable code — `RN0210` means the same thing forever, whatever the

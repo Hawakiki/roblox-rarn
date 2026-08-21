@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertSafePackageDir } from '../src/linker/layout.ts'
@@ -362,5 +362,93 @@ describe('reporting', () => {
   test('reports only the realms that received something', async () => {
     const { result } = await run({ 'a/one': {} }, { dependencies: { '@a/one': '^1.0.0' } })
     expect(result.usedRealms).toEqual(['shared'])
+  })
+})
+
+describe('install atomicity', () => {
+  const project = () => join(dir, 'project')
+
+  /** Links into the same project a second time, so the swap has a tree to replace. */
+  async function relink(spec: Record<string, PkgSpec>, manifest: Partial<Manifest> = {}) {
+    const { resolution, sources } = await scenario(spec)
+    return await link({
+      projectDir: project(),
+      manifest: normalizeManifest({ name: 'game', version: '1.0.0', ...manifest }),
+      resolution,
+      sources,
+    })
+  }
+
+  test('leaves nothing staged behind on success', async () => {
+    await run({ 'a/one': {} }, { dependencies: { '@a/one': '^1.0.0' } })
+
+    const left = (await readdir(project())).filter(
+      (entry) => entry.startsWith('.rarn-tmp') || entry.startsWith('.rarn-old-'),
+    )
+    expect(left).toEqual([])
+  })
+
+  // The reason the staging directory exists. Before it, this test's project would be
+  // left with no tree at all — the delete had already happened.
+  test('a failure partway through leaves the previous tree untouched', async () => {
+    await run(
+      { 'a/one': { files: { 'init.lua': 'return "first"' } } },
+      { dependencies: { '@a/one': '^1.0.0' } },
+    )
+    expect(await readFile(shared('_Index/a_one@1.0.0/one/init.lua'), 'utf8')).toBe('return "first"')
+
+    // A resolution naming a package with no downloaded source. The linker discovers
+    // this while writing, which is exactly the moment that used to be unrecoverable.
+    const { resolution } = await scenario({ 'a/one': {}, 'b/two': {} })
+    const { sources } = await scenario({ 'a/one': {} })
+
+    await expectRejection(() =>
+      link({
+        projectDir: project(),
+        manifest: normalizeManifest({
+          name: 'game',
+          version: '1.0.0',
+          dependencies: { '@a/one': '^1.0.0', '@b/two': '^1.0.0' },
+        }),
+        resolution,
+        sources,
+      }),
+    )
+
+    expect(await readFile(shared('_Index/a_one@1.0.0/one/init.lua'), 'utf8')).toBe('return "first"')
+    expect(await pathExists(join(project(), '.rarn-tmp'))).toBe(false)
+  })
+
+  test('replaces the previous tree rather than merging into it', async () => {
+    await run({ 'a/one': {} }, { dependencies: { '@a/one': '^1.0.0' } })
+    expect(await pathExists(shared('_Index/a_one@1.0.0'))).toBe(true)
+
+    await relink({ 'b/two': {} }, { dependencies: { '@b/two': '^1.0.0' } })
+
+    // A stale entry that still resolves is worse than a missing one: it keeps working
+    // until the day two copies of something disagree.
+    expect(await pathExists(shared('_Index/a_one@1.0.0'))).toBe(false)
+    expect(await pathExists(shared('_Index/b_two@1.0.0'))).toBe(true)
+  })
+
+  // A realm nothing is placed into is not rebuilt, so it has to be retired instead —
+  // otherwise dropping the last server dependency leaves the old server tree behind.
+  test('a realm that is no longer used is removed', async () => {
+    await run({ 'a/one': { placement: 'server' } }, { serverDependencies: { '@a/one': '^1.0.0' } })
+    expect(await pathExists(join(project(), 'RARN_MODULE_SERVER'))).toBe(true)
+
+    await relink({ 'a/one': {} }, { dependencies: { '@a/one': '^1.0.0' } })
+    expect(await pathExists(join(project(), 'RARN_MODULE_SERVER'))).toBe(false)
+  })
+
+  test('clears what an interrupted run left behind', async () => {
+    await mkdir(join(dir, 'project'), { recursive: true })
+    await mkdir(join(project(), '.rarn-tmp', 'RARN_MODULE'), { recursive: true })
+    await mkdir(join(project(), '.rarn-old-deadbeef'), { recursive: true })
+
+    await run({ 'a/one': {} }, { dependencies: { '@a/one': '^1.0.0' } })
+
+    expect(await pathExists(join(project(), '.rarn-tmp'))).toBe(false)
+    expect(await pathExists(join(project(), '.rarn-old-deadbeef'))).toBe(false)
   })
 })
