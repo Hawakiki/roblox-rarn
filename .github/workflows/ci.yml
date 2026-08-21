@@ -143,9 +143,15 @@ jobs:
         # 빌드 성공은 동작 보장이 아니다. ubuntu 가 만든 darwin 바이너리는 ubuntu 에서
         # 실행조차 되지 않으므로, 만든 곳에서 확인하면 아무것도 확인한 게 아니다.
         # 이 잡이 없었으면 세그폴트하는 윈도우 바이너리가 빌드 성공으로 통과했다.
+        #
+        # macOS 만 버전을 못박는다. 여기서 검증하는 아티팩트는 bun-darwin-arm64 이고,
+        # arm64 Mach-O 는 x64 러너에서 실행 자체가 안 된다 — Rosetta 는 반대 방향이다.
+        # `macos-latest` 는 지금 arm64 를 가리키지만 그건 GitHub 이 바꿀 수 있는 값이라,
+        # 이 잡의 전제를 남의 기본값에 맡기지 않는다. `macos-26` 은 arm64 로 고정이다.
+        # (`macos-14` 는 deprecated 됐다.)
         include:
           - { os: windows-latest, artifact: rarn-windows-x64, bin: rarn-windows-x64.exe }
-          - { os: macos-14, artifact: rarn-macos-arm64, bin: rarn-macos-arm64 }
+          - { os: macos-26, artifact: rarn-macos-arm64, bin: rarn-macos-arm64 }
           - { os: ubuntu-latest, artifact: rarn-linux-x64, bin: rarn-linux-x64 }
     steps:
       - uses: actions/checkout@v4

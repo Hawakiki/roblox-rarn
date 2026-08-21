@@ -55,8 +55,13 @@ pass "init -y -> rarn.json"
 #
 #    The name is rewritten first. `init` names a project after its folder, which is
 #    a bare name — deliberate, since a game is never published — while `pack` renders
-#    a wally.toml and that needs '@scope/name'. Packing what init wrote is therefore
-#    not the path worth testing here.
+#    a wally.toml and that needs '@scope/name'. That collision is the first thing a
+#    real user hits, so it is checked before being stepped around.
+scoped=$("$BIN" pack --list --cwd "$WORK" 2>&1 || true)
+case $scoped in
+  *RN0625*) pass "스코프 없는 이름을 RN0625 로 설명한다" ;;
+  *) fail "RN0625 를 기대했는데: $scoped" ;;
+esac
 cat > "$WORK/rarn.json" <<'MANIFEST'
 {
   "name": "@rarn-smoke/demo",
