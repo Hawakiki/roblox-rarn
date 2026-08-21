@@ -26,10 +26,15 @@ bun run format:fix                   # biome check --write
 bun run lint                         # eslint, type-aware rules
 bun run check                        # format + lint + typecheck + test, in that order
 bun run build                        # bun build --compile -> dist/rarn(.exe)
+bash scripts/smoke.sh dist/rarn.exe  # prove a compiled binary actually starts
 ```
 
-`bun run check` is what the pre-commit hook runs. Run it before committing rather
-than discovering it at commit time.
+`bun run check` is what the pre-commit hook runs, and what CI runs. Run it before
+committing rather than discovering it at commit time.
+
+`scripts/smoke.sh` exists because a compiled binary can build cleanly and still fail
+at launch — the JSON schemas arrive through import attributes and `--bytecode` rewrites
+the module graph, so the failures show up on the first run, never in the build log.
 
 ### Verifying an install
 
@@ -49,6 +54,11 @@ runtime, when every singleton inside quietly becomes two.
 `bun test` runs it automatically on a synthetic tree, with three deliberately broken
 trees alongside — a harness nothing can fail is worth nothing.
 
+It **skips, loudly, when `lune` is absent**, since nothing about building Rarn needs a
+Roblox-side tool. CI installs `lune` rather than accepting the skip: this is the only
+test that can tell one shared package from two copies of it, and a harness that quietly
+did not run reads exactly like one that ran and passed.
+
 Package code is **not** executed by default. A real package calls `game:GetService`
 and `task.defer` at module scope, so running it measures stub completeness rather
 than install correctness; package modules resolve to a per-instance sentinel instead.
@@ -62,8 +72,40 @@ so the manual check stays — run it whenever the linker changes.
 skeleton and shim bodies should match, and only pruning should differ.
 
 `bun build --compile --target=bun-windows-x64|bun-darwin-arm64|bun-linux-x64` cross-compiles
-from any host. `bun-windows-arm64` is not supported by Bun. Native `.node` addons do not
-cross-compile, so **keep every dependency pure JS**.
+from any host, **except that a Windows target must not be cross-compiled with `--bytecode`**.
+`bun-windows-arm64` is not supported by Bun. Native `.node` addons do not cross-compile, so
+**keep every dependency pure JS**.
+
+The Windows exception is measured, not assumed. On Bun 1.3.14, a `bun-windows-x64` binary
+built on ubuntu with `--bytecode` segfaults at startup — on `--version`, before any Rarn
+code runs. The same host with `--bytecode` removed passes every smoke check; the same host
+targeting `bun-darwin-arm64` with `--bytecode` is fine on macOS; and building on Windows
+with `--bytecode` is fine too. So the broken combination is exactly *Windows target +
+cross-compiled + bytecode*.
+
+Bytecode is worth keeping — it moves startup from 178ms to 152ms — so CI builds the Windows
+binary on a Windows runner and cross-compiles the other two from ubuntu. If Bun fixes this,
+the giveaway will be the `smoke` job passing after moving `windows-x64` back to ubuntu, not
+this paragraph.
+
+### CI
+
+`.github/workflows/ci.yml`. Three jobs, and **each one's matrix axis is different** — the
+temptation to merge them is the thing to resist:
+
+| 잡 | axis | why that axis |
+|---|---|---|
+| `check` | `os: [ubuntu, windows]` | `renameIntoPlace` rests on "Windows will not rename onto an existing path". A Linux-only CI never executes that branch. Development happens on Windows, so Linux is the *un*tested side |
+| `build` | target (Windows native, other two cross-compiled from ubuntu) | see above |
+| `smoke` | runner OS ↔ artifact | building is not running. The ubuntu-built Windows binary compiled cleanly and crashed on launch; only this job saw it |
+
+`RARN_NO_NETWORK=1` is set for the whole workflow. Every test injects its own fetch, so the
+suite is offline by construction — but that is a convention, and one test with a real request
+would pass locally, pass review, and then fail whenever the registry has a bad day. With the
+variable set it fails immediately with `RN0130`. Only the global fetch is wrapped; an injected
+one is a stand-in by definition, so the guard never touches the suite.
+
+`scripts/smoke.sh <binary>` runs anywhere, not just in CI.
 
 ## Hard constraints — read before designing anything
 
@@ -440,7 +482,12 @@ is one that eventually contradicts it.
 - Biome formats and catches syntax; ESLint carries **only** type-aware rules that Biome
   structurally cannot express (`no-floating-promises` above all — an unawaited download
   leaves a half-written cache and no error). Do not duplicate a rule across both.
-- `.husky/pre-commit` runs the full `check`. If commits get slow enough to tempt
+- `.husky/pre-commit` runs the full `check`, and CI runs the same command so a green
+  hook and a green PR mean the same thing. If commits get slow enough to tempt
   `--no-verify`, move `typecheck`/`test` to `pre-push` rather than skipping the hook.
+- A test must produce the same bytes twice. `zipSync` stamps the current time unless
+  given an `mtime`, so any fixture archive fixes it — a digest comparison against a
+  rebuilt archive otherwise fails only when the two calls straddle a timestamp tick,
+  which is to say rarely, remotely, and never while you are looking.
 - Every Wally API claim in this file was verified against the live service. If behavior looks
   different, re-verify with `curl` and **update this file in the same commit** as the fix.
