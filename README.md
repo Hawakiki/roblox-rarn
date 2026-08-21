@@ -55,8 +55,13 @@ rarn = "Hawakiki/roblox-rarn@0.1.0"
 ```
 
 ```bash
+rokit trust Hawakiki/roblox-rarn
 rokit install
 ```
+
+The trust step is Rokit's, not Rarn's: it refuses to run a tool nobody has vouched for, and
+without it `rokit install` stops with *"has not been marked as trusted"*. It is asked once
+per machine.
 
 Or take the archive for your platform from
 [Releases](https://github.com/Hawakiki/roblox-rarn/releases) and put the binary on your PATH.
