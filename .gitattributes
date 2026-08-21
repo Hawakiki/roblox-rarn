@@ -1,0 +1,13 @@
+# 모든 플랫폼에서 작업 트리를 LF 로 유지한다.
+#
+# 없으면 윈도우 러너의 git 이 core.autocrlf=true 로 체크아웃해서 전 파일이 CRLF 가 되고,
+# biome 의 lineEnding 기본값은 lf 라 포맷 검사가 "코드는 멀쩡한데" 전부 실패한다.
+# CI 한 판을 통째로 태우는 종류의 문제라 미리 못박는다.
+* text=auto eol=lf
+
+# 바이너리는 건드리지 않는다.
+*.zip binary
+*.rbxl binary
+*.rbxlx binary
+*.rbxm binary
+*.png binary

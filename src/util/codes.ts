@@ -36,6 +36,7 @@ export const Code = {
   VersionNotFound: 'RN0111',
   WallyVersionHeaderRejected: 'RN0120',
   RegistryAuthRequired: 'RN0121',
+  NetworkBlocked: 'RN0130',
 
   // RN0200-RN0299 — resolution
   UnresolvableRange: 'RN0200',
