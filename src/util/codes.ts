@@ -75,6 +75,10 @@ export const Code = {
   PublishForbidden: 'RN0623',
   PrivatePackage: 'RN0624',
   UnscopedPackage: 'RN0625',
+
+  // RN0700-RN0799 — importing another package manager's manifest
+  WallyManifestMissing: 'RN0700',
+  WallyManifestInvalid: 'RN0701',
 } as const
 
 export type Code = (typeof Code)[keyof typeof Code]

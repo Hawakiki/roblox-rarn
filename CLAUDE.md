@@ -330,9 +330,21 @@ going. Never fail the install over this.
 - The API base URL comes from `config.json` in the index repo: `https://api.wally.run/`.
 - **Metadata alone carries the full dependency graph**, so resolution never needs to download a
   zip or clone the index. Download only after the version set is final.
-- Version ranges use **Cargo syntax, where `,` means AND**: `"evaera/promise@>=4.0.0, <5.0.0"`.
-  npm's `semver` package uses a *space* for AND. Translating `, ` to ` ` before handing a range
-  to `semver` is required — skipping it silently misparses every multi-comparator range.
+- Version ranges use **Cargo syntax**, which differs from npm's in two ways and fails silently
+  on both. `,` means AND where npm uses a space, and **a bare version is a caret requirement** —
+  Cargo reads `4.0.0` as `^4.0.0` where npm reads it as an exact pin. Use `fromCargoRange`
+  for anything coming from Wally and `normalizeRange` for anything written in `rarn.json`;
+  they read the same text and are not interchangeable.
+
+  The caret rule is not an edge case, it is how most `wally.toml` files are written. Verified
+  by comparing published manifests against what the index stored: `sleitnick/comm@1.0.1`
+  declares `evaera/promise@4` and the index holds `>=4.0.0, <5.0.0`; `red-blox/signal@2.0.2`
+  declares `red-blox/spawn@1.0.0` and the index holds `>=1.0.0, <2.0.0`.
+
+  The *index* itself only ever stores the expanded form — 76 of 76 requirements across 60
+  packages and 231 versions were `>=X, <Y` — so the registry path never exercises the caret
+  rule today. It goes through it anyway, because the alternative on the day that changes is
+  Rarn quietly disagreeing with Wally about what a version means.
 - Registry packages are immutable, so `{scope}_{name}@{version}` is a sufficient cache key.
 - Each version declares `realm` (`shared` | `server`).
 - Auth is a `Authorization: Bearer <token>` header and is optional; public packages need none.
@@ -377,6 +389,7 @@ rarn.json -> resolve -> fetch -> extract -> prune -> link -> rarn.lock
 | `lockfile` | read/write/verify `rarn.lock` | resolve anything itself |
 | `doctor` | scan installed Luau for requires, compare against declared deps | fetch or resolve anything |
 | `publish` | archive building, `wally.toml` generation, GitHub device flow | know about `RARN_MODULE` layout |
+| `import` | `wally.toml` text in, a `Manifest` out | touch the filesystem or the network |
 | `cli` | commander wiring, output, exit codes | contain business logic |
 
 Business logic lives in the layers; `cli/` only wires and prints. Anything worth testing must
@@ -402,6 +415,17 @@ other project sharing the cache. A `--linked` opt-in may come later.
 - The Luau shim filename (the alias) is derived by PascalCasing the name part:
   `@evaera/promise` becomes `Promise.luau`. Collisions are a hard error, overridable via the
   manifest's `aliases` map.
+- **An alias may contain a hyphen.** Both schemas allowed only Luau identifiers, on the
+  reasoning that `require(Packages.Alias)` should parse. The reasoning was fine and the rule
+  was wrong: the entire `jsdotlua` family publishes `luau-polyfill`, `es7-types`,
+  `instance-of`, `symbol-luau`, and their own source requires by those names, so a shim
+  cannot be called anything else. `Packages["luau-polyfill"]` works.
+
+  The lockfile schema carried the same pattern over `dependencies`, whose keys come from
+  registry metadata rather than from anything Rarn chose — so `rarn install` of any react-lua
+  package wrote a lockfile it then refused to read, and advised deleting the lockfile, which
+  regenerated the same one. A schema constraining data the tool does not author has to
+  describe what the registry actually contains.
 - `_Index` folder names use Wally's own form, `{scope}_{name}@{version}`, so the layout stays
   legible to anyone who already knows Wally.
 

@@ -35,13 +35,13 @@ esac
 # 2. Every command is wired. `publish` is last-registered, so its presence means
 #    the whole command table survived bundling.
 help=$("$BIN" --help)
-for command in init add install remove up list why dedupe search info outdated cache doctor login logout whoami pack publish; do
+for command in init import add install remove up list why dedupe search info outdated cache doctor login logout whoami pack publish; do
   case $help in
     *" $command"*) ;;
     *) fail "--help 에 $command 가 없다" ;;
   esac
 done
-pass "--help 에 18개 명령이 전부 있다"
+pass "--help 에 19개 명령이 전부 있다"
 
 # 3. Writing a manifest exercises ajv against the embedded schema — the single most
 #    likely thing to be missing from a compiled binary.
@@ -82,6 +82,27 @@ case $listing in
   *) fail "pack --list 에 생성된 wally.toml 이 없다" ;;
 esac
 pass "pack --list"
+
+# 4b. `import` leans on `Bun.TOML.parse`, a runtime API rather than a bundled
+#     dependency — precisely the kind of thing that resolves at build time and is
+#     missing at run time. The caret is asserted too: a bare Cargo version means
+#     `^2.0.0`, and reading it as an exact pin is the failure that leaves no trace.
+cat > "$WORK/wally.toml" <<'WALLY'
+[package]
+name = "smoke/demo"
+version = "0.1.0"
+registry = "https://github.com/UpliftGames/wally-index"
+realm = "shared"
+
+[dependencies]
+Signal = "sleitnick/signal@2.0.0"
+WALLY
+imported=$("$BIN" import --dry-run --cwd "$WORK" 2>&1 || true)
+case $imported in
+  *'^2.0.0'*) pass "import 이 TOML 을 읽고 맨 버전을 캐럿으로 옮긴다" ;;
+  *) fail "import --dry-run 이 ^2.0.0 을 내놓지 않았다: $imported" ;;
+esac
+rm -f "$WORK/wally.toml"
 
 # 5. A failure has to fail. A binary that exits 0 on everything satisfies every
 #    check above. The code is asserted rather than just the exit status — "not zero"

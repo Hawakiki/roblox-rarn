@@ -23,6 +23,13 @@ rarn init
 rarn add @sleitnick/knit
 ```
 
+Already using Wally? Two lines:
+
+```bash
+rarn import          # wally.toml -> rarn.json
+rarn install
+```
+
 ```
 installed 5 packages into RARN_MODULE
   26 files, 6 links, 338 pruned
@@ -91,6 +98,7 @@ Yarn's names, because Rarn is Yarn's model applied to Roblox.
 | | |
 |---|---|
 | `rarn init` | create a `rarn.json` |
+| `rarn import` | create one from an existing `wally.toml`. `--dry-run` |
 | `rarn add <pkg…>` | add and install. `-D` dev, `--server` server, `-E` exact |
 | `rarn install` | install what the manifest asks for. `--frozen-lockfile`, `--production` |
 | `rarn remove <pkg…>` | drop from the manifest and reinstall |
@@ -153,9 +161,13 @@ wording around it becomes.
 ```
 
 Ranges are npm syntax — `^1.2.3`, `~1.2.3`, `>=1.2.0 <2.0.0`, `1.2.x`, `*`, `||`.
-Wally's own manifests use Cargo syntax, where `,` is the AND separator; Rarn translates
-in both directions and refuses to publish a range Cargo cannot express rather than
-quietly widening it.
+
+Wally uses Cargo syntax, which differs twice over. `,` is its AND separator, and **a bare
+version is a caret requirement** — Cargo reads `1.0.0` as `^1.0.0` where npm reads it as an
+exact pin. Neither difference throws, so both are translated explicitly rather than hoped
+about: `rarn import` turns `red-blox/spawn@1.0.0` into `^1.0.0`, which is what the registry
+itself stored for that line. Going the other way, `rarn publish` refuses a range Cargo cannot
+express instead of quietly widening it.
 
 ## What the install looks like
 
