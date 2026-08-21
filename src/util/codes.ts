@@ -73,6 +73,7 @@ export const Code = {
   VersionAlreadyPublished: 'RN0622',
   PublishForbidden: 'RN0623',
   PrivatePackage: 'RN0624',
+  UnscopedPackage: 'RN0625',
 } as const
 
 export type Code = (typeof Code)[keyof typeof Code]
