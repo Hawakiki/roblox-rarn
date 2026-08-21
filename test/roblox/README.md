@@ -25,7 +25,7 @@ rojo serve            # Studio 연결
 `src/verify.server.luau` 는 Lune 하니스가 **답할 수 없는** 것만 확인한다:
 
 - `Promise.new(...):andThen(...)` 가 실제로 동작하는가 — 패키지 코드가 엔진에서 도는가
-- `Knit.Util` 이 진짜 Instance 인가 — [R1 연구](../../docs/pnp-feasibility.md)에서 확인한
+- `Knit.Util` 이 진짜 Instance 인가 — [R1 연구](../../docs/research/r1-pnp-feasibility.md)에서 확인한
   대로 shim 파일의 물리적 존재가 관측 가능한 API 표면이라는 사실
 
 나머지 (트리 모양, dedupe 동일성)는 Lune 쪽에서 이미 매번 자동으로 돈다.
