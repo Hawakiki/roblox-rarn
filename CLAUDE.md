@@ -97,7 +97,7 @@ temptation to merge them is the thing to resist:
 |---|---|---|
 | `check` | `os: [ubuntu, windows]` | `renameIntoPlace` rests on "Windows will not rename onto an existing path". A Linux-only CI never executes that branch. Development happens on Windows, so Linux is the *un*tested side |
 | `build` | target (Windows native, other two cross-compiled from ubuntu) | see above |
-| `smoke` | runner OS ↔ artifact | building is not running. The ubuntu-built Windows binary compiled cleanly and crashed on launch; only this job saw it |
+| `smoke` | runner OS ↔ artifact (macOS pinned to `macos-26`; the artifact is arm64 and `macos-latest` is GitHubs to change) | building is not running. The ubuntu-built Windows binary compiled cleanly and crashed on launch; only this job saw it |
 
 `RARN_NO_NETWORK=1` is set for the whole workflow. Every test injects its own fetch, so the
 suite is offline by construction — but that is a convention, and one test with a real request
