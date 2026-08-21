@@ -18,10 +18,38 @@ env:
   HUSKY: '0'
 
 jobs:
+  # 태그와 package.json 이 같은 버전을 말하는지 먼저 본다.
+  #
+  # `--version` 은 package.json 에서 온다. 태그만 올리고 그 파일을 잊으면 v0.2.0 으로
+  # 발행된 바이너리가 자기를 0.1.0 이라고 말하고, 버그 리포트는 존재한 적 없는 조합을
+  # 가리키게 된다. 실제로 걸렸다 — 버릴 태그로 파이프라인을 시험할 때 v0.0.1 태그가
+  # 0.1.0 이라고 말하는 바이너리를 냈다.
+  #
+  # 3개 바이너리를 짓기 전에, 가장 싼 잡에서 끝낸다.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      value: ${{ steps.check.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(node -p "require('./package.json').version")
+          if [ "$tag" != "$pkg" ]; then
+            echo "태그는 $tag 인데 package.json 은 $pkg 다." >&2
+            echo "둘이 다르면 바이너리가 자기 버전을 틀리게 말한다." >&2
+            exit 1
+          fi
+          echo "value=$tag" >> "$GITHUB_OUTPUT"
+          echo "버전 일치: $tag"
+
   # 릴리스 전에 다시 검사한다. CI 가 이미 develop 에서 돌았지만, 태그가 가리키는
   # 커밋이 그때 검사된 것과 같다는 보장은 없다.
   check:
     name: check (${{ matrix.os }})
+    needs: version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -93,15 +121,10 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: build
+    needs: [version, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      # Rokit 스펙의 버전에는 v 가 없다: 태그가 v0.1.0 이면 스펙은 @0.1.0 이다.
-      - id: version
-        shell: bash
-        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/download-artifact@v4
         with:
@@ -126,7 +149,7 @@ jobs:
             ```toml
             # rokit.toml
             [tools]
-            rarn = "Hawakiki/roblox-rarn@${{ steps.version.outputs.value }}"
+            rarn = "Hawakiki/roblox-rarn@${{ needs.version.outputs.value }}"
             ```
 
             또는 아래 자산을 직접 받아 PATH 에 두면 된다.

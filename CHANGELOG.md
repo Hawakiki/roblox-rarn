@@ -19,6 +19,11 @@ run against the live registry.
 rarn = "Hawakiki/roblox-rarn@0.1.0"
 ```
 
+```bash
+rokit trust Hawakiki/roblox-rarn
+rokit install
+```
+
 ### Commands
 
 `init` `import` `add` `install` `remove` `up` `list` `why` `dedupe` `search` `info`
