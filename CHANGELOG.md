@@ -6,6 +6,19 @@ Rarn follows semver, with one clarification that matters before 1.0: **the manif
 lockfile formats are not stable yet.** `lockfileVersion` exists so a change can be detected
 rather than silently misread, and a `0.x` release may bump it.
 
+## Unreleased
+
+### Fixed
+
+- **The require harness could not check a cross-realm shim, and reported the correct
+  form as broken** (RN-2). A shim crossing realms names an absolute DataModel path,
+  and the harness's `game` stub returned a bare table, so the path resolved to nil.
+  `verify.luau` now takes `--mount=<DataModelPath>=<dir>` and the runtime builds
+  `game` from those mounts, wrapping them through the same proxy table as the primary
+  realm — so a package reached across a realm boundary still compares equal to itself.
+  Without a mount the check is reported as *not verified* rather than failed, and the
+  harness test now exercises both paths, which CI never did.
+
 ## 0.1.0 — 2026-08-21
 
 First release. The install path is complete and verified; publishing works but has never been

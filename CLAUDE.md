@@ -42,7 +42,7 @@ Roblox-side tools come from `rokit.toml` and are needed only to check output, ne
 to build Rarn. `~/.rokit/bin` must be on PATH, and the shims resolve against that file.
 
 ```bash
-lune run tests/roblox/verify.luau -- <install-dir> [<realm>] [--execute]
+lune run tests/roblox/verify.luau -- <install-dir> [<realm>] [--mount=<path>=<dir>]... [--execute]
 ```
 
 Reimplements Roblox's `require` — instance-based lookup, per-instance caching — over
@@ -53,6 +53,18 @@ runtime, when every singleton inside quietly becomes two.
 
 `bun test` runs it automatically on a synthetic tree, with three deliberately broken
 trees alongside — a harness nothing can fail is worth nothing.
+
+A **cross-realm shim needs `--mount`**. It names an absolute DataModel path out of
+`place`, so there is nothing to resolve against unless the sibling realm is mounted:
+
+```bash
+lune run tests/roblox/verify.luau -- <proj>/RARN_MODULE_SERVER RARN_MODULE_SERVER   --mount=game.ReplicatedStorage.RARN_MODULE=<proj>/RARN_MODULE
+```
+
+Mounted trees wrap through the same proxy table as the primary realm, so identity
+still means what it means. Without a mount the check reports as **not verified**, never
+as a failure — until 2026-08-22 it reported the correct shim as broken, which is worse
+than not checking, and CI never invoked it this way to notice.
 
 It **skips, loudly, when `lune` is absent**, since nothing about building Rarn needs a
 Roblox-side tool. CI installs `lune` rather than accepting the skip: this is the only

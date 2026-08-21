@@ -27,9 +27,25 @@ local Emulator = require("./emulate")
 -- Lune forwards the `--` separator itself, so it has to be skipped rather than
 -- assumed away; invocations with and without it must behave the same.
 local args, execute = {}, false
+local mountSpecs: { { path: string, dir: string } } = {}
+
 for _, value in process.args do
 	if value == "--execute" then
 		execute = true
+	elseif string.sub(value, 1, 8) == "--mount=" then
+		-- `--mount=game.ReplicatedStorage.RARN_MODULE=../RARN_MODULE`
+		-- The first `=` after the flag separates it; the DataModel path may not
+		-- contain one, so splitting on the first is unambiguous.
+		local spec = string.sub(value, 9)
+		local at = string.find(spec, "=", 1, true)
+		if at == nil then
+			print(`bad --mount (expected <DataModelPath>=<dir>): {spec}`)
+			process.exit(2)
+		end
+		table.insert(mountSpecs, {
+			path = string.sub(spec, 1, at - 1),
+			dir = string.sub(spec, at + 1),
+		})
 	elseif value ~= "--" then
 		table.insert(args, value)
 	end
@@ -39,12 +55,20 @@ local installDir = args[1]
 local realmName = args[2] or "RARN_MODULE"
 
 if installDir == nil then
-	print("usage: lune run tests/roblox/verify.luau -- <install-dir> [<realm-name>] [--execute]")
+	print(
+		"usage: lune run tests/roblox/verify.luau -- <install-dir> [<realm-name>]"
+			.. " [--mount=<DataModelPath>=<dir>]... [--execute]"
+	)
 	process.exit(2)
 end
 
 local failures: { string } = {}
+local unverified: { string } = {}
 local checks = 0
+
+-- 아래 헬퍼들이 닫아 잡으므로 여기서 선언한다. 나중에 선언하면 Luau 가
+-- 전역으로 읽어 조용히 nil 이 된다.
+local mountedPaths: { string } = {}
 
 local function check(label: string, ok: boolean, detail: string?)
 	checks += 1
@@ -56,18 +80,59 @@ local function check(label: string, ok: boolean, detail: string?)
 	end
 end
 
+--[[
+	Records a check that could not be made, rather than making it and failing.
+
+	A cross-realm shim names an absolute DataModel path. Without a `--mount` for that
+	path there is nothing to resolve against, and running the check anyway produces a
+	failure that describes the harness rather than the install — which is exactly what
+	this harness did until 2026-08-22, reporting a correct shim as broken.
+
+	Counted separately and printed at the end, because the alternative to a false
+	failure is not a silent pass.
+]]
+local function skip(label: string, why: string)
+	print(`  skip  {label}\n          {why}`)
+	table.insert(unverified, `{label} — {why}`)
+end
+
+-- The DataModel path a cross-realm shim reaches for, if it is one.
+local function crossRealmTarget(source: string?): string?
+	if source == nil then
+		return nil
+	end
+	return string.match(source, "require%s*%(%s*(game[%w_.]*)")
+end
+
+local function isMounted(target: string): boolean
+	for _, path in mountedPaths do
+		if string.sub(target, 1, #path) == path then
+			return true
+		end
+	end
+	return false
+end
+
 local root = Emulator.tree(installDir, realmName)
+
+-- Mounted realms come from `--mount`. `game` itself is built by the runtime, which
+-- owns proxy identity — a mounted tree has to wrap through the same table as the
+-- primary one or the dedupe assertion silently changes meaning.
+local mounts: { [string]: Emulator.Node } = {}
+for _, spec in mountSpecs do
+	local leaf = string.match(spec.path, "[^.]+$") or spec.path
+	mounts[spec.path] = Emulator.tree(spec.dir, leaf)
+	table.insert(mountedPaths, spec.path)
+end
+
 local runtime = Emulator.runtime(root, {
 	execute = execute,
+	mounts = mounts,
 	globals = {
-		-- Only reached with --execute, and deliberately thin: a stub rich enough to
+		-- Deliberately thin, and reached only with --execute: a stub rich enough to
 		-- run real packages would be a reimplementation of the engine, and passing
-		-- against it would say nothing about passing in Roblox.
-		game = setmetatable({}, {
-			__index = function(_, key)
-				return { Name = key }
-			end,
-		}),
+		-- against it would say nothing about passing in Roblox. `game` is not here
+		-- because shims run on *every* invocation, so it is the runtime's job.
 		task = { wait = function() end, spawn = function() end, defer = function() end },
 		warn = print,
 	},
@@ -118,14 +183,28 @@ for entryName, entry in indexNode.Children do
 			continue
 		end
 
+		local label = `_Index["{entryName}"].{shimName} resolves`
+		local target = crossRealmTarget(shim.Source)
+		if target ~= nil and not isMounted(target) then
+			-- Two different situations, and the difference is worth printing. Nothing
+			-- mounted means the caller did not ask for this check. Something mounted
+			-- but not this means the shim and the mounts disagree about where the
+			-- realm lives — which is the shape a wrong `place` takes.
+			if #mountedPaths == 0 then
+				skip(label, `cross-realm shim points at {target}; pass --mount=<path>=<dir> to check it`)
+			else
+				skip(
+					label,
+					`shim points at {target}, but the mounted paths are {table.concat(mountedPaths, ", ")}`
+				)
+			end
+			continue
+		end
+
 		local ok, resolved = pcall(function()
 			return runtime.require(runtime.root._Index[entryName][shimName])
 		end)
-		check(
-			`_Index["{entryName}"].{shimName} resolves`,
-			ok,
-			if ok then nil else tostring(resolved)
-		)
+		check(label, ok, if ok then nil else tostring(resolved))
 
 		local direct = topLevel[shimName]
 		if ok and direct ~= nil then
@@ -139,6 +218,15 @@ for entryName, entry in indexNode.Children do
 end
 
 print(`\n{checks - #failures}/{checks} checks passed, {runtime.loads()} chunks executed`)
+
+-- Printed even on success. A harness that quietly did not check something reads
+-- exactly like one that checked it and passed.
+if #unverified > 0 then
+	print(`\n{#unverified} not verified:`)
+	for _, line in unverified do
+		print(`  - {line}`)
+	end
+end
 
 if #failures > 0 then
 	print("\nfailed:")
