@@ -36,13 +36,33 @@ installed 5 packages into RARN_MODULE
   5 downloaded, 0 cached, resolved  1139ms
 ```
 
-> **Status: pre-alpha.** The install path is complete and tested; publishing works but
-> has not been run against the live registry. See [PLAN.md](PLAN.md) for the roadmap
-> and [CLAUDE.md](CLAUDE.md) for the architecture and the platform constraints behind it.
+> **Status: 0.1.0.** The install path is complete and verified — against a real Studio, a
+> real `wally install`, and a require harness that models Roblox's instance-cached
+> `require`. Publishing works but has only been run with `--dry-run`. The manifest and
+> lockfile formats are not stable until 1.0. See [CHANGELOG.md](CHANGELOG.md) for what is
+> in this release, [PLAN.md](PLAN.md) for the roadmap, and [CLAUDE.md](CLAUDE.md) for the
+> platform constraints the design is built around.
 
 ## Install
 
-Rarn is a single self-contained binary with no runtime dependencies.
+Rarn is a single self-contained binary with no runtime dependencies — no Bun, no Node, no
+Rojo, no git.
+
+```toml
+# rokit.toml
+[tools]
+rarn = "Hawakiki/roblox-rarn@0.1.0"
+```
+
+```bash
+rokit install
+```
+
+Or take the archive for your platform from
+[Releases](https://github.com/Hawakiki/roblox-rarn/releases) and put the binary on your PATH.
+Windows x86-64, macOS arm64 and Linux x86-64 are built.
+
+### From source
 
 ```bash
 git clone https://github.com/Hawakiki/roblox-rarn
@@ -51,7 +71,9 @@ bun install
 bun run build          # -> dist/rarn(.exe)
 ```
 
-Cross-compiling works from any host:
+Cross-compiling works from any host, with one exception — see
+[CLAUDE.md](CLAUDE.md#verifying-an-install) for why a Windows target must not be
+cross-compiled with `--bytecode`:
 
 ```bash
 bun build --compile --target=bun-windows-x64  src/cli.ts --outfile dist/rarn.exe
@@ -143,6 +165,23 @@ job.
 Exit codes: `0` fine, `1` your project or arguments, `2` the registry or the network.
 Errors carry a stable code — `RN0210` means the same thing forever, whatever the
 wording around it becomes.
+
+The number says which layer, which is usually enough to know whose problem it is:
+
+| | |
+|---|---|
+| `RN00xx` | the CLI, or `rarn.json` |
+| `RN01xx` | the registry or the network |
+| `RN02xx` | resolution — conflicts, realms, cycles |
+| `RN03xx` | the cache, downloads, archives |
+| `RN04xx` | interpreting a project file, or writing the tree |
+| `RN05xx` | `rarn.lock` |
+| `RN06xx` | auth, packing, publishing |
+| `RN07xx` | importing a `wally.toml` |
+
+The full list is `src/util/codes.ts`. A shipped code is never reused for a different
+meaning and a retired one is never deleted, so a search for a number always lands on one
+thing.
 
 ## The manifest
 

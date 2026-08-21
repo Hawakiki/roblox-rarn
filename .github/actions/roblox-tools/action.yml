@@ -1,0 +1,45 @@
+name: Install Roblox-side tools
+description: >
+  Installs the lune and rojo versions pinned in rokit.toml, into the directory
+  rokit would use. Two test suites skip themselves without these, and a CI that
+  accepts those skips is weaker than a laptop.
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        # rokit 을 부트스트랩하는 대신 바이너리를 rokit 이 두는 자리에 그대로 둔다.
+        # 테스트가 그 경로를 직접 보므로 PATH 를 건드릴 필요가 없고, 윈도우에서
+        # MSYS 경로를 네이티브 경로로 번역하는 문제도 생기지 않는다.
+        mkdir -p "$HOME/.rokit/bin"
+
+        install_tool() {
+          local tool=$1 repo=$2
+          local version
+          # `|` 로 구분한다. repo 이름에 `/` 가 들어 있어 s/.../.../ 는 파싱되지 않는다.
+          version=$(sed -n "s|^$tool *= *\"$repo@\([^\"]*\)\".*|\1|p" rokit.toml)
+          [ -n "$version" ] || { echo "rokit.toml 에서 $tool 핀을 못 읽었다" >&2; exit 1; }
+
+          case "$RUNNER_OS" in
+            Linux)   local asset="$tool-$version-linux-x86_64.zip" ;;
+            Windows) local asset="$tool-$version-windows-x86_64.zip" ;;
+            macOS)   local asset="$tool-$version-macos-aarch64.zip" ;;
+            *) echo "지원하지 않는 러너: $RUNNER_OS" >&2; exit 1 ;;
+          esac
+
+          curl -fsSL -o "/tmp/$tool.zip" \
+            "https://github.com/$repo/releases/download/v$version/$asset"
+
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            7z x -y -o"$HOME/.rokit/bin" "/tmp/$tool.zip" > /dev/null
+          else
+            unzip -oq "/tmp/$tool.zip" -d "$HOME/.rokit/bin"
+            chmod +x "$HOME/.rokit/bin/$tool"
+          fi
+
+          "$HOME/.rokit/bin/$tool" --version
+        }
+
+        install_tool lune lune-org/lune
+        install_tool rojo rojo-rbx/rojo
