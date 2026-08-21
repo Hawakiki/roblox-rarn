@@ -2,6 +2,7 @@ import { appendFile, readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import chalk from 'chalk'
+import { RETIRED_PREFIX, STAGING_DIR } from '../../linker/swap.ts'
 import { manifestPath, suggestPackageName } from '../../manifest/read.ts'
 import {
   DEFAULT_PACKAGE_DIR,
@@ -134,7 +135,16 @@ async function ensureGitignore(dir: string, packageDir: string): Promise<boolean
   }
 
   const dirs = realmDirs(packageDir)
-  const wanted = [`${dirs.shared}/`, `${dirs.server}/`, `${dirs.dev}/`]
+  // The staging directories are transient — the next install clears whatever an
+  // interrupted one left — but "the next install" can be days away, and in between
+  // is exactly when someone commits a half-built tree without noticing it is there.
+  const wanted = [
+    `${dirs.shared}/`,
+    `${dirs.server}/`,
+    `${dirs.dev}/`,
+    `${STAGING_DIR}/`,
+    `${RETIRED_PREFIX}*/`,
+  ]
   const existing = new Set(current.split('\n').map((line) => line.trim()))
   const missing = wanted.filter((entry) => !existing.has(entry))
   if (missing.length === 0) return false

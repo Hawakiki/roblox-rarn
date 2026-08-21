@@ -226,13 +226,54 @@ So the layout in constraint 2 is not free to optimize away later. Measured, not 
 see `docs/pnp-feasibility.md`, which also records why a Yarn-PnP-style resolver was
 investigated and rejected. Revisit only if Roblox ships `.luaurc` alias maps.
 
-### 2b. Install by deleting and rebuilding
+### 2b. Install by rebuilding, then swapping
 
-Wipe the realm directories and rebuild them from the lockfile. No incremental updates, no
+Rebuild the realm directories from the lockfile every time. No incremental updates, no
 orphan tracking — a half-updated tree is far worse than a slightly slower install, and the
 copy is cheap once the cache is warm. Scope deletion strictly to Rarn's own directories.
 
+**Build into `.rarn-tmp/`, then rename into place.** Deleting the old tree first and writing
+over the top is identical work right up until something interrupts it, and then the
+difference is everything the user had: with staging they keep the previous install, without
+it they keep neither. The previous tree moves to `.rarn-old-<token>/` and is deleted only
+once every realm is in place.
+
+Three properties that are easy to lose when touching `linker/swap.ts`:
+
+- **One realm at a time, aside then in.** Moving all three aside first and then moving all
+  three in leaves a moment where every realm is missing at once — the one state where an
+  interrupted run looks like a deliberate uninstall.
+- **A realm nothing was placed into is not rebuilt**, so retiring it is what makes removing
+  the last server dependency actually reach the tree.
+- **A failed rollback must say where the old tree is.** On Windows a file held open by
+  Studio or a Rojo serve will refuse a rename, and the reverse rename can fail for the same
+  reason. Reporting `RN0420` with the directory name is the difference between a bad moment
+  and lost work.
+
+It is **not** atomic across the three realms, and nothing can make it so. The claim is only
+that the window is two renames on one filesystem with all the slow work already done.
+
+`cache/store.ts` has a function that looks like this one and is deliberately not shared. There
+an existing target means another process won a race, so the right move is to keep theirs and
+drop ours; here the target is the user's previous install and it must lose.
+
 Shims are written as `.luau`. (Wally writes `.lua`; both load fine.)
+
+### 2c. Offline is a guarantee, not a coincidence
+
+A fresh lockfile already makes an install do no network I/O — but *already does* and *cannot*
+are different promises, and only the second one is worth anything on a train. `--offline`
+(global) and `RARN_NO_NETWORK` are the same guard, reached two ways; both fail with `RN0130`
+the moment anything reaches for the registry.
+
+The guard wraps the global `fetch` rather than checking at each call site, so a request added
+later is covered by default. It deliberately does **not** wrap an injected `fetch` — a
+stand-in is not the network, and blocking it would turn the guard from a safety net into a
+thing that fails the test suite.
+
+There is no `--prefer-offline`. Yarn's version prefers cached *metadata*; Rarn caches
+archives, not metadata, so the flag would describe behaviour that already happens and change
+nothing. It comes back the day metadata is cached, and not before.
 
 ### 3. A Wally package zip is the whole source repo, not a module tree
 

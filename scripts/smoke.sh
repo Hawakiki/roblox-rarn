@@ -108,4 +108,14 @@ else
   echo "  skip RARN_NO_NETWORK 미설정"
 fi
 
+# 7. The flag, which is the same guard reached a different way. Checked separately
+#    because it carries its own message, and a message is exactly the kind of thing
+#    that compiles fine and comes out wrong.
+flagged=$("$BIN" search promise --offline --cwd "$WORK" 2>&1 || true)
+case $flagged in
+  *RN0130*--offline*) pass "--offline 이 자기 이름으로 설명한다" ;;
+  *RN0130*) fail "RN0130 은 나왔지만 --offline 을 언급하지 않는다: $flagged" ;;
+  *) fail "--offline 이 네트워크를 막지 않았다: $flagged" ;;
+esac
+
 echo "smoke: 전부 통과"

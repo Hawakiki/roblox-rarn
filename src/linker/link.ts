@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DEPENDENCY_SECTIONS, type NormalizedManifest } from '../manifest/types.ts'
@@ -15,6 +16,7 @@ import {
   entryDir,
 } from './layout.ts'
 import { crossRealmShim, requirePlacePath, rootShim, siblingShim } from './shim.ts'
+import { STAGING_DIR, clearLeftovers, swapIn } from './swap.ts'
 
 export interface LinkOptions {
   projectDir: string
@@ -45,18 +47,47 @@ export interface LinkResult {
 /**
  * Writes the install tree.
  *
- * Every realm directory is deleted and rebuilt rather than updated in place. An
+ * Every realm directory is rebuilt from scratch rather than updated in place. An
  * incremental update has to work out which entries are now orphaned, and getting
  * that wrong leaves a stale package that still resolves — far worse than the cost of
  * recopying from a warm cache, which is only a file copy.
+ *
+ * The rebuild happens in a staging directory and is renamed into place at the end.
+ * Deleting first and writing over the top is the same amount of work right up until
+ * something interrupts it, at which point the difference is the user's whole install:
+ * with staging they keep the tree they had, without it they keep neither.
  */
 export async function link(options: LinkOptions): Promise<LinkResult> {
-  const { projectDir, manifest, resolution, sources } = options
-  const layout = createLayout(projectDir, manifest)
+  const final = createLayout(options.projectDir, options.manifest)
 
-  await Promise.all(
-    Object.values(layout.realms).map((dir) => rm(dir, { recursive: true, force: true })),
-  )
+  await clearLeftovers(final.projectDir)
+
+  // The staged tree is built at a different root, which is only safe because no shim
+  // ever names a filesystem path — they are `script.Parent…` walks or DataModel paths
+  // out of `place`. If that ever stops being true, this stops working.
+  const token = randomUUID().slice(0, 8)
+  const layout = createLayout(join(final.projectDir, STAGING_DIR), options.manifest)
+
+  try {
+    return await build(final, layout, token, options)
+  } finally {
+    // A failed build has already left a partial tree in here. Removing it is not
+    // optional politeness: the next run would clear it anyway, but until then the
+    // user is looking at a directory full of half-installed packages that nothing
+    // explains. Errors are swallowed so cleanup cannot replace the real failure.
+    await rm(join(final.projectDir, STAGING_DIR), { recursive: true, force: true }).catch(
+      () => undefined,
+    )
+  }
+}
+
+async function build(
+  final: InstallLayout,
+  layout: InstallLayout,
+  token: string,
+  options: LinkOptions,
+): Promise<LinkResult> {
+  const { manifest, resolution, sources } = options
 
   const used = new Set<Placement>()
   const notes = new Map<string, string>()
@@ -93,8 +124,12 @@ export async function link(options: LinkOptions): Promise<LinkResult> {
   shims += await writeDependencyShims(layout, manifest, resolution, packages)
   shims += await writeRootShims(layout, manifest, resolution, used)
 
+  await swapIn(final, layout, token)
+
   return {
-    layout,
+    // The final layout, not the staging one. Callers print these paths and `rarn why`
+    // reads them; a staging path in either would name a directory that no longer exists.
+    layout: final,
     usedRealms: [...used],
     shims,
     archiveFiles,
