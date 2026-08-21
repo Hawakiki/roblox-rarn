@@ -14,13 +14,27 @@ import { parseWallyName } from '../src/util/package-name.ts'
 
 const promise = parseWallyName('evaera/promise')
 
-/** A real ZIP, so extraction is exercised rather than mocked. */
+/**
+ * A real ZIP, so extraction is exercised rather than mocked.
+ *
+ * The timestamp is fixed for the same reason `pack` fixes it: without it `zipSync`
+ * stamps the current time, so building the same input twice produces different
+ * bytes and therefore a different digest. Several tests here compare the digest the
+ * store recorded against a freshly built archive, and those only disagree when the
+ * two calls land either side of a DOS timestamp tick — which is to say they pass
+ * locally, pass in review, and fail on a CI runner one time in however many.
+ * It took exactly one Windows run to find.
+ *
+ * 1980-01-01 rather than 0, since a DOS date cannot encode anything earlier.
+ */
+const ZIP_EPOCH = Date.UTC(1980, 0, 1)
+
 function makeZip(files: Record<string, string>): Uint8Array {
   const entries: Record<string, Uint8Array> = {}
   for (const [path, body] of Object.entries(files)) {
     entries[path] = new TextEncoder().encode(body)
   }
-  return zipSync(entries)
+  return zipSync(entries, { mtime: ZIP_EPOCH })
 }
 
 async function expectRejection(fn: () => Promise<unknown>): Promise<RarnError> {

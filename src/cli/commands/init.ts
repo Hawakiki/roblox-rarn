@@ -2,7 +2,8 @@ import { appendFile, readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import chalk from 'chalk'
-import { manifestPath, suggestPackageName } from '../../manifest/read.ts'
+import { RETIRED_PREFIX, STAGING_DIR } from '../../linker/swap.ts'
+import { manifestPath, normalizeManifest, suggestPackageName } from '../../manifest/read.ts'
 import {
   DEFAULT_PACKAGE_DIR,
   MANIFEST_FILE_NAME,
@@ -12,6 +13,8 @@ import {
 } from '../../manifest/types.ts'
 import { validateManifest } from '../../manifest/validate.ts'
 import { writeManifest } from '../../manifest/write.ts'
+import { rojoSnippet, scanPlaceProject } from '../../project/place.ts'
+import { PROJECT_FILE_NAME } from '../../project/rojo.ts'
 import { Code } from '../../util/codes.ts'
 import { RarnError } from '../../util/errors.ts'
 import { isNotFoundError, pathExists } from '../../util/fs.ts'
@@ -58,6 +61,7 @@ export async function init(options: InitOptions): Promise<void> {
     [
       `${chalk.green('created')} ${MANIFEST_FILE_NAME}`,
       ignored ? `${chalk.green('updated')} .gitignore` : null,
+      ...(await rojoAdvice(dir)),
       '',
       `Next: ${chalk.cyan('rarn add @evaera/promise')}`,
       '',
@@ -65,6 +69,37 @@ export async function init(options: InitOptions): Promise<void> {
       .filter((line) => line !== null)
       .join('\n'),
   )
+}
+
+/**
+ * Tells a Rojo project what to add, at the one moment it is not yet a problem.
+ *
+ * An unmounted package directory produces no error anywhere: the install works, the
+ * files are correct, and the packages are simply absent in Studio. Saying it here
+ * costs three lines. Discovering it later costs a debugging session that starts in
+ * the wrong place, because the symptom shows up in whichever script required first,
+ * as `Requested module experienced an error while loading`.
+ *
+ * Printed, not inserted. Rewriting the project file would reorder its keys and
+ * reformat it — a large edit to make on someone's behalf for something they can
+ * paste in ten seconds.
+ */
+async function rojoAdvice(dir: string): Promise<(string | null)[]> {
+  const probe = normalizeManifest({
+    name: '@rarn/probe',
+    version: '0.0.0',
+    packageDir: DEFAULT_PACKAGE_DIR,
+  })
+  const scan = await scanPlaceProject(dir, probe)
+  if (!scan.scanned || scan.found.has(DEFAULT_PACKAGE_DIR)) return []
+
+  return [
+    '',
+    `${chalk.yellow('note')} ${PROJECT_FILE_NAME} does not put ${DEFAULT_PACKAGE_DIR}/ anywhere yet.`,
+    chalk.dim('  Rojo syncs only what the project file names, so add something like:'),
+    '',
+    chalk.dim(rojoSnippet(DEFAULT_PACKAGE_DIR, 'ReplicatedStorage')),
+  ]
 }
 
 interface Answers {
@@ -134,7 +169,16 @@ async function ensureGitignore(dir: string, packageDir: string): Promise<boolean
   }
 
   const dirs = realmDirs(packageDir)
-  const wanted = [`${dirs.shared}/`, `${dirs.server}/`, `${dirs.dev}/`]
+  // The staging directories are transient — the next install clears whatever an
+  // interrupted one left — but "the next install" can be days away, and in between
+  // is exactly when someone commits a half-built tree without noticing it is there.
+  const wanted = [
+    `${dirs.shared}/`,
+    `${dirs.server}/`,
+    `${dirs.dev}/`,
+    `${STAGING_DIR}/`,
+    `${RETIRED_PREFIX}*/`,
+  ]
   const existing = new Set(current.split('\n').map((line) => line.trim()))
   const missing = wanted.filter((entry) => !existing.has(entry))
   if (missing.length === 0) return false

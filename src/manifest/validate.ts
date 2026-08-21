@@ -80,6 +80,13 @@ function preValidateVersions(data: unknown, where: string): void {
  * Turning them back into `dependencies["@evaera/promise"]` is most of the work.
  */
 function formatSchemaErrors(errors: readonly ErrorObject[]): string {
+  // Where `propertyNames` rejected a key, ajv also emits the inner pattern failure
+  // *at the same path*. The outer error knows which key was rejected and the inner
+  // one carries no data, so the inner one is the duplicate — but only there.
+  const byPropertyNames = new Set(
+    errors.filter((error) => error.keyword === 'propertyNames').map((error) => error.instancePath),
+  )
+
   const seen = new Set<string>()
   const lines: string[] = []
 
@@ -87,17 +94,24 @@ function formatSchemaErrors(errors: readonly ErrorObject[]): string {
     // A failing `$ref`/`anyOf` branch also reports its parent, which would double
     // every message; the specific child error is the useful one.
     if (error.keyword === 'if' || error.keyword === 'anyOf') continue
-
-    // When `propertyNames` rejects a key, ajv also emits the inner pattern failure.
-    // That inner error carries no data — it would print "'undefined' has the wrong
-    // form" — while the outer one knows which key was rejected. Keep the outer.
-    if (error.keyword === 'pattern' && error.data === undefined) continue
+    if (error.keyword === 'pattern' && byPropertyNames.has(error.instancePath)) continue
 
     const location = pointerToPath(error.instancePath)
     const line = `  ${location || '(root)'}: ${describe(error)}`
     if (seen.has(line)) continue
     seen.add(line)
     lines.push(line)
+  }
+
+  // The filters above once removed every error there was, and the message became
+  // "does not match the schema" followed by nothing, under a `how` that said to fix
+  // the fields listed above. A noisy list beats an empty one: whatever survives the
+  // filter is a guess about which error is most useful, and a guess that leaves the
+  // reader with no information at all is the one failure mode worth ruling out.
+  if (lines.length === 0 && errors.length > 0) {
+    return errors
+      .map((error) => `  ${pointerToPath(error.instancePath) || '(root)'}: ${describe(error)}`)
+      .join('\n')
   }
 
   return lines.join('\n')

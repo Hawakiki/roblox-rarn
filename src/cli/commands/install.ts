@@ -9,6 +9,7 @@ import { LOCKFILE_NAME } from '../../lockfile/types.ts'
 import { buildLockfile, writeLockfile } from '../../lockfile/write.ts'
 import { readManifest } from '../../manifest/read.ts'
 import type { NormalizedManifest } from '../../manifest/types.ts'
+import { resolvePlace, unmountedRealms } from '../../project/place.ts'
 import { createRegistryClient } from '../../registry/client.ts'
 import { DEFAULT_API_URL } from '../../registry/types.ts'
 import type { RegistryClient } from '../../registry/types.ts'
@@ -29,6 +30,8 @@ export interface InstallOptions {
 
 export interface InstallOutcome {
   readonly manifest: NormalizedManifest
+  /** Disagreements between rarn.json and default.project.json. Always worth printing. */
+  readonly placeNotes: readonly string[]
   readonly resolution: Resolution
   readonly link: LinkResult
   readonly cached: number
@@ -121,7 +124,17 @@ async function run(
 
   progress.stage('linking')
   const sources = new Map(summary.packages.map((p) => [p.key, p.dir]))
-  const linked = await link({ projectDir, manifest, resolution, sources })
+
+  // The Rojo file is read here rather than at manifest-normalization time, because
+  // normalizing is filesystem-free by design and this needs a file on disk. What it
+  // fills in only matters for cross-realm links, and those are decided at link time.
+  const place = await resolvePlace(projectDir, manifest)
+  const linked = await link({
+    projectDir,
+    manifest: { ...manifest, place: place.place },
+    resolution,
+    sources,
+  })
 
   // Written after linking so that `moduleRoot` records what actually happened rather
   // than what was predicted. Skipped for --production, whose graph is a subset.
@@ -140,6 +153,10 @@ async function run(
 
   const outcome: InstallOutcome = {
     manifest,
+    // Checked after linking rather than before, because only linking knows which
+    // realms actually received anything — warning about an empty realm nobody uses
+    // would be noise on every install that has no server dependencies.
+    placeNotes: [...place.notes, ...unmountedRealms(place.scan, manifest, linked.usedRealms)],
     resolution,
     link: linked,
     cached: summary.cached,
@@ -206,6 +223,14 @@ function report(outcome: InstallOutcome, projectDir: string): string {
       `${chalk.yellow('duplicate')} ${name} installed at ${versions.join(' and ')}`,
       chalk.dim('  these are separate modules at runtime; run `rarn why` to see who asked'),
     )
+  }
+
+  // Not dimmed like the notes below it. Every one of these means two files disagree
+  // about where a directory lives, and the runtime's answer when it matters is
+  // "Requested module experienced an error while loading" — measured in Studio, with
+  // no path and no missing name in it.
+  for (const note of outcome.placeNotes) {
+    lines.push(`${chalk.yellow('place')} ${note}`)
   }
 
   for (const [key, note] of linked.notes) {

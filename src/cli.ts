@@ -5,6 +5,7 @@ import { add } from './cli/commands/add.ts'
 import { cache } from './cli/commands/cache.ts'
 import { dedupe } from './cli/commands/dedupe.ts'
 import { doctor } from './cli/commands/doctor.ts'
+import { importWally } from './cli/commands/import.ts'
 import { info } from './cli/commands/info.ts'
 import { init } from './cli/commands/init.ts'
 import { install } from './cli/commands/install.ts'
@@ -21,6 +22,7 @@ import { whoami } from './cli/commands/whoami.ts'
 import { why } from './cli/commands/why.ts'
 import { configureOutput } from './cli/output.ts'
 import { exitCodeFor, renderError } from './cli/render.ts'
+import { blockNetwork } from './util/network.ts'
 
 /**
  * Command wiring only. Every command body delegates immediately — business logic
@@ -42,10 +44,27 @@ async function main(argv: readonly string[]): Promise<void> {
     .option('--verbose', 'show every step', false)
     .option('--silent', 'print only errors', false)
     .option('--no-color', 'disable colored output')
+    // Global, like --silent, because it is a process-wide fact rather than one
+    // command's argument. Every command that can reach the registry gets it for
+    // free, and none of them has to remember to thread it through.
+    .option('--offline', 'fail instead of using the network', false)
     // Applied before any command runs so that every later print, including the
     // error renderer, sees the same switches.
     .hook('preAction', () => {
+      const options = program.opts<{ offline: boolean }>()
       configureOutput(program.opts())
+      if (options.offline) blockNetwork()
+    })
+
+  program
+    .command('import')
+    .description('create a rarn.json from an existing wally.toml')
+    .option('-f, --force', 'overwrite an existing rarn.json', false)
+    .option('--dry-run', 'print what would be written without writing it', false)
+    .option('--json', 'emit machine-readable output', false)
+    .action(async (options: { force: boolean; dryRun: boolean; json: boolean }) => {
+      const { cwd } = program.opts<{ cwd: string }>()
+      await importWally({ cwd, force: options.force, dryRun: options.dryRun, json: options.json })
     })
 
   program

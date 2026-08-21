@@ -193,6 +193,27 @@ describe('pack', () => {
     return dir
   }
 
+  // `rarn init` names a project after its folder, so a bare name reaches this from
+  // Rarn's own output rather than from anything the user typed. The old message came
+  // out of `parsePackageName` inside `renderWallyToml` and read as an accusation.
+  test('a bare name is refused with a message about scopes, not about a missing @', async () => {
+    const dir = await project({ 'init.luau': 'return 1' })
+    let thrown: unknown
+    try {
+      await pack(dir, manifestOf({ name: 'mygame' }))
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(RarnError)
+    const error = thrown as RarnError
+    expect(error.code).toBe(Code.UnscopedPackage)
+    expect(error.what).toContain('mygame')
+    expect(error.how).toContain('@<your-github-name>/mygame')
+    // The old failure. Reaching it again means the guard stopped running.
+    expect(error.code).not.toBe(Code.InvalidPackageName)
+  })
+
   test('always adds a generated wally.toml', async () => {
     const dir = await project({ 'init.luau': 'return 1' })
     const result = await pack(dir, manifestOf())

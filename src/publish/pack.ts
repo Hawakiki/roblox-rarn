@@ -33,6 +33,8 @@ export interface PackResult {
  * and version out of that file rather than from anything Rarn sends alongside.
  */
 export async function pack(projectDir: string, manifest: NormalizedManifest): Promise<PackResult> {
+  requireScopedName(manifest)
+
   const files = await collect(projectDir, manifest)
 
   if (files.length === 0) {
@@ -80,6 +82,36 @@ export async function pack(projectDir: string, manifest: NormalizedManifest): Pr
   }
 
   return { archive, entries: all, totalBytes: archive.byteLength }
+}
+
+/**
+ * Refuses a project whose name has no scope, before any work is done.
+ *
+ * A bare name is not a mistake — the schema allows it and `rarn init` writes one on
+ * purpose, since a game is named after its folder and never published. But the
+ * registry identifies every package as `@scope/name`, so the two facts collide the
+ * first time someone packs a game.
+ *
+ * Without this the collision surfaces from `parsePackageName` deep inside
+ * `renderWallyToml`, as `RN0020: Package name 'mygame' is missing its leading '@'`.
+ * That message is written for a hand-edited manifest and reads as an accusation for
+ * a name the user never typed — Rarn wrote it. Here the same situation says which
+ * of the two things is true and what to change.
+ */
+function requireScopedName(manifest: NormalizedManifest): void {
+  if (manifest.name.startsWith('@')) return
+
+  throw new RarnError({
+    code: Code.UnscopedPackage,
+    what: `"${manifest.name}" has no scope, so there is nothing to publish it as.`,
+    where: 'rarn.json',
+    detail: [
+      '  A bare name is fine for a game — `rarn init` writes one deliberately — but the',
+      '  registry identifies packages as @scope/name, where the scope is a GitHub user or',
+      '  organisation. Packing is the point where a project stops being only a game.',
+    ].join('\n'),
+    how: `Rename it to "@<your-github-name>/${manifest.name}" in rarn.json, or leave it as it is if this project is not meant to be published.`,
+  })
 }
 
 /**

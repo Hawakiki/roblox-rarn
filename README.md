@@ -23,19 +23,51 @@ rarn init
 rarn add @sleitnick/knit
 ```
 
+Already using Wally? Two lines:
+
+```bash
+rarn import          # wally.toml -> rarn.json
+rarn install
+```
+
 ```
 installed 5 packages into RARN_MODULE
   26 files, 6 links, 338 pruned
   5 downloaded, 0 cached, resolved  1139ms
 ```
 
-> **Status: pre-alpha.** The install path is complete and tested; publishing works but
-> has not been run against the live registry. See [PLAN.md](PLAN.md) for the roadmap
-> and [CLAUDE.md](CLAUDE.md) for the architecture and the platform constraints behind it.
+> **Status: 0.1.0.** The install path is complete and verified — against a real Studio, a
+> real `wally install`, and a require harness that models Roblox's instance-cached
+> `require`. Publishing works but has only been run with `--dry-run`. The manifest and
+> lockfile formats are not stable until 1.0. See [CHANGELOG.md](CHANGELOG.md) for what is
+> in this release, [PLAN.md](PLAN.md) for the roadmap, and [CLAUDE.md](CLAUDE.md) for the
+> platform constraints the design is built around.
 
 ## Install
 
-Rarn is a single self-contained binary with no runtime dependencies.
+Rarn is a single self-contained binary with no runtime dependencies — no Bun, no Node, no
+Rojo, no git.
+
+```toml
+# rokit.toml
+[tools]
+rarn = "Hawakiki/roblox-rarn@0.1.0"
+```
+
+```bash
+rokit trust Hawakiki/roblox-rarn
+rokit install
+```
+
+The trust step is Rokit's, not Rarn's: it refuses to run a tool nobody has vouched for, and
+without it `rokit install` stops with *"has not been marked as trusted"*. It is asked once
+per machine.
+
+Or take the archive for your platform from
+[Releases](https://github.com/Hawakiki/roblox-rarn/releases) and put the binary on your PATH.
+Windows x86-64, macOS arm64 and Linux x86-64 are built.
+
+### From source
 
 ```bash
 git clone https://github.com/Hawakiki/roblox-rarn
@@ -44,7 +76,9 @@ bun install
 bun run build          # -> dist/rarn(.exe)
 ```
 
-Cross-compiling works from any host:
+Cross-compiling works from any host, with one exception — see
+[CLAUDE.md](CLAUDE.md#verifying-an-install) for why a Windows target must not be
+cross-compiled with `--bytecode`:
 
 ```bash
 bun build --compile --target=bun-windows-x64  src/cli.ts --outfile dist/rarn.exe
@@ -91,6 +125,7 @@ Yarn's names, because Rarn is Yarn's model applied to Roblox.
 | | |
 |---|---|
 | `rarn init` | create a `rarn.json` |
+| `rarn import` | create one from an existing `wally.toml`. `--dry-run` |
 | `rarn add <pkg…>` | add and install. `-D` dev, `--server` server, `-E` exact |
 | `rarn install` | install what the manifest asks for. `--frozen-lockfile`, `--production` |
 | `rarn remove <pkg…>` | drop from the manifest and reinstall |
@@ -106,6 +141,11 @@ Yarn's names, because Rarn is Yarn's model applied to Roblox.
 | `rarn outdated` | installed vs newest-in-range vs newest. `--check` for CI |
 | `rarn doctor` | requires in the installed source vs the declared dependencies |
 
+`place` is read out of `default.project.json` when `rarn.json` does not declare it, and
+Rarn says so when the two disagree — or when a package directory has packages in it that
+the Rojo project does not carry. Roblox reports a wrong path as `Requested module
+experienced an error while loading`, with no path in it, so the check has to happen here.
+
 ### Registry
 
 | | |
@@ -118,11 +158,35 @@ Yarn's names, because Rarn is Yarn's model applied to Roblox.
 
 ### Everywhere
 
-`--cwd <path>` · `--verbose` · `--silent` · `--no-color` · `--json` on most read commands.
+`--cwd <path>` · `--verbose` · `--silent` · `--no-color` · `--offline` · `--json` on most
+read commands.
+
+`--offline` refuses to touch the network rather than quietly reaching for it. With an
+up-to-date `rarn.lock` and a warm cache an install needs none, so this costs nothing and
+turns "it happened not to need the network" into "it cannot use it" — which is the version
+worth having on a train. `RARN_NO_NETWORK=1` does the same thing for a whole shell or a CI
+job.
 
 Exit codes: `0` fine, `1` your project or arguments, `2` the registry or the network.
 Errors carry a stable code — `RN0210` means the same thing forever, whatever the
 wording around it becomes.
+
+The number says which layer, which is usually enough to know whose problem it is:
+
+| | |
+|---|---|
+| `RN00xx` | the CLI, or `rarn.json` |
+| `RN01xx` | the registry or the network |
+| `RN02xx` | resolution — conflicts, realms, cycles |
+| `RN03xx` | the cache, downloads, archives |
+| `RN04xx` | interpreting a project file, or writing the tree |
+| `RN05xx` | `rarn.lock` |
+| `RN06xx` | auth, packing, publishing |
+| `RN07xx` | importing a `wally.toml` |
+
+The full list is `src/util/codes.ts`. A shipped code is never reused for a different
+meaning and a retired one is never deleted, so a search for a number always lands on one
+thing.
 
 ## The manifest
 
@@ -146,9 +210,13 @@ wording around it becomes.
 ```
 
 Ranges are npm syntax — `^1.2.3`, `~1.2.3`, `>=1.2.0 <2.0.0`, `1.2.x`, `*`, `||`.
-Wally's own manifests use Cargo syntax, where `,` is the AND separator; Rarn translates
-in both directions and refuses to publish a range Cargo cannot express rather than
-quietly widening it.
+
+Wally uses Cargo syntax, which differs twice over. `,` is its AND separator, and **a bare
+version is a caret requirement** — Cargo reads `1.0.0` as `^1.0.0` where npm reads it as an
+exact pin. Neither difference throws, so both are translated explicitly rather than hoped
+about: `rarn import` turns `red-blox/spawn@1.0.0` into `^1.0.0`, which is what the registry
+itself stored for that line. Going the other way, `rarn publish` refuses a range Cargo cannot
+express instead of quietly widening it.
 
 ## What the install looks like
 

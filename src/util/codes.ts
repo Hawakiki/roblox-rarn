@@ -36,6 +36,7 @@ export const Code = {
   VersionNotFound: 'RN0111',
   WallyVersionHeaderRejected: 'RN0120',
   RegistryAuthRequired: 'RN0121',
+  NetworkBlocked: 'RN0130',
 
   // RN0200-RN0299 — resolution
   UnresolvableRange: 'RN0200',
@@ -55,6 +56,7 @@ export const Code = {
   ProjectFileUnsupported: 'RN0400',
   ModuleRootMissing: 'RN0401',
   LinkTargetMissing: 'RN0410',
+  InstallSwapFailed: 'RN0420',
 
   // RN0500-RN0599 — lockfile
   LockfileInvalid: 'RN0500',
@@ -72,6 +74,11 @@ export const Code = {
   VersionAlreadyPublished: 'RN0622',
   PublishForbidden: 'RN0623',
   PrivatePackage: 'RN0624',
+  UnscopedPackage: 'RN0625',
+
+  // RN0700-RN0799 — importing another package manager's manifest
+  WallyManifestMissing: 'RN0700',
+  WallyManifestInvalid: 'RN0701',
 } as const
 
 export type Code = (typeof Code)[keyof typeof Code]

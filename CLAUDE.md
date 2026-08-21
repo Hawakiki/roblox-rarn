@@ -26,10 +26,15 @@ bun run format:fix                   # biome check --write
 bun run lint                         # eslint, type-aware rules
 bun run check                        # format + lint + typecheck + test, in that order
 bun run build                        # bun build --compile -> dist/rarn(.exe)
+bash scripts/smoke.sh dist/rarn.exe  # prove a compiled binary actually starts
 ```
 
-`bun run check` is what the pre-commit hook runs. Run it before committing rather
-than discovering it at commit time.
+`bun run check` is what the pre-commit hook runs, and what CI runs. Run it before
+committing rather than discovering it at commit time.
+
+`scripts/smoke.sh` exists because a compiled binary can build cleanly and still fail
+at launch — the JSON schemas arrive through import attributes and `--bytecode` rewrites
+the module graph, so the failures show up on the first run, never in the build log.
 
 ### Verifying an install
 
@@ -49,6 +54,17 @@ runtime, when every singleton inside quietly becomes two.
 `bun test` runs it automatically on a synthetic tree, with three deliberately broken
 trees alongside — a harness nothing can fail is worth nothing.
 
+It **skips, loudly, when `lune` is absent**, since nothing about building Rarn needs a
+Roblox-side tool. CI installs `lune` rather than accepting the skip: this is the only
+test that can tell one shared package from two copies of it, and a harness that quietly
+did not run reads exactly like one that ran and passed.
+
+`rojo sourcemap` is the **second** Roblox-side check, and it answers a different question: not
+whether requires resolve inside a realm, but whether the realm is where Rarn told the shims it
+would be. `tests/place-sourcemap.test.ts` compares the DataModel path derived from a project
+file against the instance tree Rojo really builds — the closest thing to asking Rojo directly,
+with no Studio and no network. It skips loudly when `rojo` is absent, and CI installs it.
+
 Package code is **not** executed by default. A real package calls `game:GetService`
 and `task.defer` at module scope, so running it measures stub completeness rather
 than install correctness; package modules resolve to a per-instance sentinel instead.
@@ -58,12 +74,73 @@ than install correctness; package modules resolve to a per-instance sentinel ins
 under a *model* of Roblox. If the model is wrong the harness passes and Studio breaks,
 so the manual check stays — run it whenever the linker changes.
 
+#### The model has been checked against real Studio, once
+
+2026-08-21, over the Studio MCP bridge, on a `rojo build` of `test/roblox/` (knit → comm →
+promise/option/signal). The harness scored 17/17 on the same tree, and Studio agreed on every
+point:
+
+| claim | held in Studio |
+|---|---|
+| two copies of one source are two tables | yes — this is why dedupe is correctness, not disk |
+| one instance required twice is one table | yes |
+| `script.Parent.Parent.X` reaches a sibling | yes |
+| an instance may be named `luau-polyfill`, reached by `Parent["luau-polyfill"]` | yes |
+| three shims for one package return **one** table | yes, and the shim instances really are distinct |
+| a package reached across realms is still that one table | yes |
+| `Knit.Util` is the `_Index` entry folder | yes — `Knit.Util.Name == "sleitnick_knit@1.7.0"` |
+| Knit, Promise and Signal actually run | yes — `Promise.resolve(42):awaitStatus()` → `Resolved 42` |
+
+Two things that only a real DataModel could show:
+
+- **A `_Index` Folder and an `_Index` ModuleScript coexist under one parent.** Roblox does not
+  complain; `FindFirstChild` returns whichever was added first and the other is simply
+  unreachable. An alias of `_Index` is therefore a silent shadowing, not an error.
+- **A wrong `place` fails with nothing useful.** Every cause — wrong folder, missing version,
+  misspelt service — produces the same `Requested module experienced an error while loading`.
+  The real message (`Packages is not a valid member of ReplicatedStorage`) is one layer down,
+  visible only as a second line in Output. Nothing before runtime sees it: the install
+  succeeds, the tree is correct, and the harness passes. That is the whole argument for
+  validating `place` at install time.
+
 `wally install` on an equivalent `wally.toml` is the other useful comparison: the
 skeleton and shim bodies should match, and only pruning should differ.
 
 `bun build --compile --target=bun-windows-x64|bun-darwin-arm64|bun-linux-x64` cross-compiles
-from any host. `bun-windows-arm64` is not supported by Bun. Native `.node` addons do not
-cross-compile, so **keep every dependency pure JS**.
+from any host, **except that a Windows target must not be cross-compiled with `--bytecode`**.
+`bun-windows-arm64` is not supported by Bun. Native `.node` addons do not cross-compile, so
+**keep every dependency pure JS**.
+
+The Windows exception is measured, not assumed. On Bun 1.3.14, a `bun-windows-x64` binary
+built on ubuntu with `--bytecode` segfaults at startup — on `--version`, before any Rarn
+code runs. The same host with `--bytecode` removed passes every smoke check; the same host
+targeting `bun-darwin-arm64` with `--bytecode` is fine on macOS; and building on Windows
+with `--bytecode` is fine too. So the broken combination is exactly *Windows target +
+cross-compiled + bytecode*.
+
+Bytecode is worth keeping — it moves startup from 178ms to 152ms — so CI builds the Windows
+binary on a Windows runner and cross-compiles the other two from ubuntu. If Bun fixes this,
+the giveaway will be the `smoke` job passing after moving `windows-x64` back to ubuntu, not
+this paragraph.
+
+### CI
+
+`.github/workflows/ci.yml`. Three jobs, and **each one's matrix axis is different** — the
+temptation to merge them is the thing to resist:
+
+| 잡 | axis | why that axis |
+|---|---|---|
+| `check` | `os: [ubuntu, windows]` | `renameIntoPlace` rests on "Windows will not rename onto an existing path". A Linux-only CI never executes that branch. Development happens on Windows, so Linux is the *un*tested side |
+| `build` | target (Windows native, other two cross-compiled from ubuntu) | see above |
+| `smoke` | runner OS ↔ artifact (macOS pinned to `macos-26`; the artifact is arm64 and `macos-latest` is GitHubs to change) | building is not running. The ubuntu-built Windows binary compiled cleanly and crashed on launch; only this job saw it |
+
+`RARN_NO_NETWORK=1` is set for the whole workflow. Every test injects its own fetch, so the
+suite is offline by construction — but that is a convention, and one test with a real request
+would pass locally, pass review, and then fail whenever the registry has a bad day. With the
+variable set it fails immediately with `RN0130`. Only the global fetch is wrapped; an injected
+one is a stand-in by definition, so the guard never touches the suite.
+
+`scripts/smoke.sh <binary>` runs anywhere, not just in CI.
 
 ## Hard constraints — read before designing anything
 
@@ -131,8 +208,32 @@ absolute DataModel path taken from the manifest's `place`:
 return require(game.ReplicatedStorage.Packages._Index["evaera_promise@4.0.0"].promise)
 ```
 
-If a cross-realm link is needed and `place` does not declare that path, fail with an
-explanation of what to add — there is no way to synthesize it.
+`place` is **derived from `default.project.json` when the manifest does not declare it**, by
+walking the tree for a node whose `$path` is a realm directory and reading the DataModel path
+back off the trail. It cannot be guessed from `packageDir`: the instance name and the folder
+name are independent, and real projects use that (`"SharedPackages": { "$path": "Packages" }`).
+
+If a cross-realm link is needed and neither source supplies the path, fail with an explanation
+of what to add — there is no way to synthesize it.
+
+Three things the project-file walker has to get right, all taken from real files rather than
+imagined:
+
+- **A service node need not carry `$className`.** `"ReplicatedStorage": { "Packages": {...} }`
+  is enough, and requiring the field silently skips the most common template.
+- **`$path` is not always a string.** `{ "optional": "Packages" }` is Rojo's form for a path
+  that may not exist yet — which is precisely what a project using a package manager writes.
+- **A node can carry `$path` *and* children.** Stopping at the first `$path` misses whatever is
+  below it.
+
+When the two sources disagree the manifest wins and the disagreement is printed. Someone who
+wrote a path down meant it; but one of the two is wrong, and the runtime will not say which —
+see the Studio measurements above for what it says instead.
+
+**A realm directory the project file does not mount is a warning, not an error.** The install
+succeeds, the tree is right, and the packages simply never reach Studio. This is exactly what a
+Wally import produces: Wally used `ServerPackages`, Rarn derives `Packages_SERVER` by suffix, and
+the old Rojo entry does not cover it.
 
 Two related rules:
 
@@ -184,13 +285,54 @@ So the layout in constraint 2 is not free to optimize away later. Measured, not 
 see `docs/pnp-feasibility.md`, which also records why a Yarn-PnP-style resolver was
 investigated and rejected. Revisit only if Roblox ships `.luaurc` alias maps.
 
-### 2b. Install by deleting and rebuilding
+### 2b. Install by rebuilding, then swapping
 
-Wipe the realm directories and rebuild them from the lockfile. No incremental updates, no
+Rebuild the realm directories from the lockfile every time. No incremental updates, no
 orphan tracking — a half-updated tree is far worse than a slightly slower install, and the
 copy is cheap once the cache is warm. Scope deletion strictly to Rarn's own directories.
 
+**Build into `.rarn-tmp/`, then rename into place.** Deleting the old tree first and writing
+over the top is identical work right up until something interrupts it, and then the
+difference is everything the user had: with staging they keep the previous install, without
+it they keep neither. The previous tree moves to `.rarn-old-<token>/` and is deleted only
+once every realm is in place.
+
+Three properties that are easy to lose when touching `linker/swap.ts`:
+
+- **One realm at a time, aside then in.** Moving all three aside first and then moving all
+  three in leaves a moment where every realm is missing at once — the one state where an
+  interrupted run looks like a deliberate uninstall.
+- **A realm nothing was placed into is not rebuilt**, so retiring it is what makes removing
+  the last server dependency actually reach the tree.
+- **A failed rollback must say where the old tree is.** On Windows a file held open by
+  Studio or a Rojo serve will refuse a rename, and the reverse rename can fail for the same
+  reason. Reporting `RN0420` with the directory name is the difference between a bad moment
+  and lost work.
+
+It is **not** atomic across the three realms, and nothing can make it so. The claim is only
+that the window is two renames on one filesystem with all the slow work already done.
+
+`cache/store.ts` has a function that looks like this one and is deliberately not shared. There
+an existing target means another process won a race, so the right move is to keep theirs and
+drop ours; here the target is the user's previous install and it must lose.
+
 Shims are written as `.luau`. (Wally writes `.lua`; both load fine.)
+
+### 2c. Offline is a guarantee, not a coincidence
+
+A fresh lockfile already makes an install do no network I/O — but *already does* and *cannot*
+are different promises, and only the second one is worth anything on a train. `--offline`
+(global) and `RARN_NO_NETWORK` are the same guard, reached two ways; both fail with `RN0130`
+the moment anything reaches for the registry.
+
+The guard wraps the global `fetch` rather than checking at each call site, so a request added
+later is covered by default. It deliberately does **not** wrap an injected `fetch` — a
+stand-in is not the network, and blocking it would turn the guard from a safety net into a
+thing that fails the test suite.
+
+There is no `--prefer-offline`. Yarn's version prefers cached *metadata*; Rarn caches
+archives, not metadata, so the flag would describe behaviour that already happens and change
+nothing. It comes back the day metadata is cached, and not before.
 
 ### 3. A Wally package zip is the whole source repo, not a module tree
 
@@ -247,9 +389,21 @@ going. Never fail the install over this.
 - The API base URL comes from `config.json` in the index repo: `https://api.wally.run/`.
 - **Metadata alone carries the full dependency graph**, so resolution never needs to download a
   zip or clone the index. Download only after the version set is final.
-- Version ranges use **Cargo syntax, where `,` means AND**: `"evaera/promise@>=4.0.0, <5.0.0"`.
-  npm's `semver` package uses a *space* for AND. Translating `, ` to ` ` before handing a range
-  to `semver` is required — skipping it silently misparses every multi-comparator range.
+- Version ranges use **Cargo syntax**, which differs from npm's in two ways and fails silently
+  on both. `,` means AND where npm uses a space, and **a bare version is a caret requirement** —
+  Cargo reads `4.0.0` as `^4.0.0` where npm reads it as an exact pin. Use `fromCargoRange`
+  for anything coming from Wally and `normalizeRange` for anything written in `rarn.json`;
+  they read the same text and are not interchangeable.
+
+  The caret rule is not an edge case, it is how most `wally.toml` files are written. Verified
+  by comparing published manifests against what the index stored: `sleitnick/comm@1.0.1`
+  declares `evaera/promise@4` and the index holds `>=4.0.0, <5.0.0`; `red-blox/signal@2.0.2`
+  declares `red-blox/spawn@1.0.0` and the index holds `>=1.0.0, <2.0.0`.
+
+  The *index* itself only ever stores the expanded form — 76 of 76 requirements across 60
+  packages and 231 versions were `>=X, <Y` — so the registry path never exercises the caret
+  rule today. It goes through it anyway, because the alternative on the day that changes is
+  Rarn quietly disagreeing with Wally about what a version means.
 - Registry packages are immutable, so `{scope}_{name}@{version}` is a sufficient cache key.
 - Each version declares `realm` (`shared` | `server`).
 - Auth is a `Authorization: Bearer <token>` header and is optional; public packages need none.
@@ -294,6 +448,8 @@ rarn.json -> resolve -> fetch -> extract -> prune -> link -> rarn.lock
 | `lockfile` | read/write/verify `rarn.lock` | resolve anything itself |
 | `doctor` | scan installed Luau for requires, compare against declared deps | fetch or resolve anything |
 | `publish` | archive building, `wally.toml` generation, GitHub device flow | know about `RARN_MODULE` layout |
+| `import` | `wally.toml` text in, a `Manifest` out | touch the filesystem or the network |
+| `project` (place) | read `default.project.json`, say where each realm lands in the DataModel | ever throw; an uninterpretable project file is a note |
 | `cli` | commander wiring, output, exit codes | contain business logic |
 
 Business logic lives in the layers; `cli/` only wires and prints. Anything worth testing must
@@ -319,6 +475,17 @@ other project sharing the cache. A `--linked` opt-in may come later.
 - The Luau shim filename (the alias) is derived by PascalCasing the name part:
   `@evaera/promise` becomes `Promise.luau`. Collisions are a hard error, overridable via the
   manifest's `aliases` map.
+- **An alias may contain a hyphen.** Both schemas allowed only Luau identifiers, on the
+  reasoning that `require(Packages.Alias)` should parse. The reasoning was fine and the rule
+  was wrong: the entire `jsdotlua` family publishes `luau-polyfill`, `es7-types`,
+  `instance-of`, `symbol-luau`, and their own source requires by those names, so a shim
+  cannot be called anything else. `Packages["luau-polyfill"]` works.
+
+  The lockfile schema carried the same pattern over `dependencies`, whose keys come from
+  registry metadata rather than from anything Rarn chose — so `rarn install` of any react-lua
+  package wrote a lockfile it then refused to read, and advised deleting the lockfile, which
+  regenerated the same one. A schema constraining data the tool does not author has to
+  describe what the registry actually contains.
 - `_Index` folder names use Wally's own form, `{scope}_{name}@{version}`, so the layout stays
   legible to anyone who already knows Wally.
 
@@ -440,7 +607,12 @@ is one that eventually contradicts it.
 - Biome formats and catches syntax; ESLint carries **only** type-aware rules that Biome
   structurally cannot express (`no-floating-promises` above all — an unawaited download
   leaves a half-written cache and no error). Do not duplicate a rule across both.
-- `.husky/pre-commit` runs the full `check`. If commits get slow enough to tempt
+- `.husky/pre-commit` runs the full `check`, and CI runs the same command so a green
+  hook and a green PR mean the same thing. If commits get slow enough to tempt
   `--no-verify`, move `typecheck`/`test` to `pre-push` rather than skipping the hook.
+- A test must produce the same bytes twice. `zipSync` stamps the current time unless
+  given an `mtime`, so any fixture archive fixes it — a digest comparison against a
+  rebuilt archive otherwise fails only when the two calls straddle a timestamp tick,
+  which is to say rarely, remotely, and never while you are looking.
 - Every Wally API claim in this file was verified against the live service. If behavior looks
   different, re-verify with `curl` and **update this file in the same commit** as the fix.

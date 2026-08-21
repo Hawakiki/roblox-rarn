@@ -6,6 +6,7 @@ import { parseMetadata } from '../src/registry/parse.ts'
 import { DEFAULT_API_URL } from '../src/registry/types.ts'
 import { Code } from '../src/util/codes.ts'
 import { RarnError } from '../src/util/errors.ts'
+import { blockNetwork, networkBlocked, unblockNetwork } from '../src/util/network.ts'
 import { parseWallyName } from '../src/util/package-name.ts'
 
 const FIXTURES = join(import.meta.dir, 'fixtures', 'registry')
@@ -485,5 +486,111 @@ describe('search', () => {
 
     await client.search('a b&c')
     expect(urls[0]).toContain('query=a%20b%26c')
+  })
+})
+
+describe('RARN_NO_NETWORK', () => {
+  /**
+   * Async on purpose. A synchronous version restores the variable the moment
+   * `run` returns its promise — before the request it started has been made — so
+   * the guard would be off by the time it mattered and the test would quietly go
+   * out to the real registry. It did, the first time this was written.
+   */
+  async function withBlock<T>(value: string | undefined, run: () => T | Promise<T>): Promise<T> {
+    const previous = process.env.RARN_NO_NETWORK
+    set(value)
+    try {
+      return await run()
+    } finally {
+      set(previous)
+    }
+  }
+
+  /**
+   * Unset goes through `Reflect.deleteProperty`, not `delete`.
+   *
+   * Not a style choice — biome's `noDelete` rule offers to rewrite `delete` as
+   * `process.env.X = undefined`, and on `process.env` that assigns the *string*
+   * `"undefined"`. The variable would then be set to a truthy value, so accepting
+   * that fix turns "restore it to unset" into "leave the block switched on" and
+   * every test after this one inherits it.
+   */
+  function set(value: string | undefined): void {
+    if (value === undefined) Reflect.deleteProperty(process.env, 'RARN_NO_NETWORK')
+    else process.env.RARN_NO_NETWORK = value
+  }
+
+  test('refuses a real request instead of making it', async () => {
+    // No `fetch` option, so this client would genuinely go out to api.wally.run.
+    // That is the case the guard exists for, and the only way to test it is to let
+    // the client be the real one.
+    const client = createRegistryClient()
+    const error = await withBlock('1', async () => {
+      try {
+        await client.getMetadata(promise)
+        return undefined
+      } catch (thrown) {
+        return thrown
+      }
+    })
+
+    expect(error).toBeInstanceOf(RarnError)
+    expect((error as RarnError).code).toBe(Code.NetworkBlocked)
+    expect((error as RarnError).where).toContain('api.wally.run')
+  })
+
+  // The guard has to be invisible to the suite, or turning it on in CI would fail
+  // every test that models the registry rather than the one test that calls it.
+  test('leaves an injected fetch alone', async () => {
+    const client = createRegistryClient({
+      apiUrl: DEFAULT_API_URL,
+      fetch: fakeFetch({
+        'package-metadata': { body: await fixture('evaera-promise.metadata.json') },
+      }),
+    })
+
+    const metadata = await withBlock('1', async () => await client.getMetadata(promise))
+    expect(metadata.versions.length).toBeGreaterThan(0)
+  })
+
+  // `--offline` reuses the same guard rather than growing a second one. What it does
+  // not reuse is the message: telling someone who typed `--offline` to unset an
+  // environment variable they never set reads as a misdiagnosis, and a reader who
+  // decides the tool has misread them stops reading the rest of it.
+  test('--offline blocks too, and says so in its own terms', async () => {
+    const client = createRegistryClient()
+    blockNetwork()
+    try {
+      await client.getMetadata(promise)
+      throw new Error('expected a rejection')
+    } catch (thrown) {
+      expect(thrown).toBeInstanceOf(RarnError)
+      const error = thrown as RarnError
+      expect(error.code).toBe(Code.NetworkBlocked)
+      expect(error.detail).toContain('--offline')
+      expect(error.detail).not.toContain('RARN_NO_NETWORK')
+      expect(error.how).toContain('--offline')
+    } finally {
+      unblockNetwork()
+    }
+  })
+
+  test('the flag wins over an unset variable', async () => {
+    expect(await withBlock(undefined, () => networkBlocked())).toBe(false)
+    blockNetwork()
+    try {
+      expect(await withBlock(undefined, () => networkBlocked())).toBe(true)
+    } finally {
+      unblockNetwork()
+    }
+    expect(await withBlock(undefined, () => networkBlocked())).toBe(false)
+  })
+
+  test('0 means off, so a job can opt back in', async () => {
+    expect(await withBlock('0', () => networkBlocked())).toBe(false)
+    expect(await withBlock('', () => networkBlocked())).toBe(false)
+    expect(await withBlock(undefined, () => networkBlocked())).toBe(false)
+    expect(await withBlock('1', () => networkBlocked())).toBe(true)
+    expect(await withBlock('false', () => networkBlocked())).toBe(true)
   })
 })
