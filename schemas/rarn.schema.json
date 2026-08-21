@@ -156,8 +156,8 @@
 
     "alias": {
       "type": "string",
-      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-      "description": "Filename of the generated Luau shim, minus the extension. Must be a valid Luau identifier so that require(Packages.Alias) reads naturally."
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_-]*$",
+      "description": "Filename of the generated Luau shim, minus the extension. A hyphen is allowed even though it stops require(Packages.Alias) from parsing: the whole jsdotlua family publishes names like 'luau-polyfill' and 'es7-types', their own source requires by those names, and Packages[\"luau-polyfill\"] works. Requiring a Luau identifier here would reject the packages the rule was supposed to help. Dots and path separators stay out, because the alias becomes a filename."
     },
 
     "realm": {

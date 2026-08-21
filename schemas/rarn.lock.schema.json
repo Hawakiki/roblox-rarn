@@ -163,8 +163,8 @@
 
     "alias": {
       "type": "string",
-      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-      "description": "Luau identifier used as the shim filename."
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_-]*$",
+      "description": "Shim filename, minus the extension. Comes from the package's own metadata rather than from anything Rarn chose, so it has to accept what the registry actually contains - jsdotlua/luau-polyfill declares dependencies called es7-types, instance-of and symbol-luau. A stricter pattern here made install write a lockfile it then refused to read."
     },
 
     "rangeMap": {
