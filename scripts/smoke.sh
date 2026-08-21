@@ -104,6 +104,28 @@ case $imported in
 esac
 rm -f "$WORK/wally.toml"
 
+# 4c. The install refuses a directory it does not own. This shipped broken in 0.1.0
+#     and cost a release: `packages/` and `Packages` are one directory on Windows and
+#     macOS, so a monorepo's source tree was the install target.
+mkdir -p "$WORK/NotOurs/mine"
+printf 'return 1\n' > "$WORK/NotOurs/mine/init.luau"
+cat > "$WORK/rarn.json" <<'MANIFEST'
+{
+  "name": "@rarn-smoke/demo",
+  "version": "0.1.0",
+  "realm": "shared",
+  "packageDir": "NotOurs",
+  "dependencies": {}
+}
+MANIFEST
+refused=$("$BIN" install --cwd "$WORK" 2>&1 || true)
+case $refused in
+  *RN0421*) pass "설치가 남의 디렉터리를 거부한다" ;;
+  *) fail "RN0421 을 기대했는데: $refused" ;;
+esac
+[ -f "$WORK/NotOurs/mine/init.luau" ] || fail "거부했는데도 소스가 사라졌다"
+rm -rf "$WORK/NotOurs"
+
 # 5. A failure has to fail. A binary that exits 0 on everything satisfies every
 #    check above. The code is asserted rather than just the exit status — "not zero"
 #    is satisfied by any failure, including the network block set below, which would

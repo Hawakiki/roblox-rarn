@@ -10,6 +10,17 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ### Fixed
 
+- **`rarn install` could delete a directory it did not create** (RN-1). Installing
+  replaces the realm directories wholesale, and the only thing separating that from a
+  user's source tree was the directory *name* — which on Windows and macOS does not
+  even distinguish `Packages` from `packages`. Since `rarn import` writes
+  `packageDir: "Packages"`, a monorepo with a `packages/` source directory lost it to
+  `rarn import && rarn install`, with no warning and a success line. Installing now
+  refuses (`RN0421`) unless the directory holds `_Index/` or nothing but Rarn's own
+  generated shims, and says so before any download rather than at swap time. An
+  existing Wally install still passes, because replacing one is what migrating means.
+  `rarn import` warns about the same collision at the moment it picks the name.
+
 - **The require harness could not check a cross-realm shim, and reported the correct
   form as broken** (RN-2). A shim crossing realms names an absolute DataModel path,
   and the harness's `game` stub returned a bare table, so the path resolved to nil.

@@ -288,6 +288,14 @@ difference is everything the user had: with staging they keep the previous insta
 it they keep neither. The previous tree moves to `.rarn-old-<token>/` and is deleted only
 once every realm is in place.
 
+**Never replace a directory Rarn did not create.** `linker/ownership.ts` runs before any
+work and refuses unless the realm directory holds `_Index/`, holds only Rarn-generated
+shims, or is empty. `assertSafePackageDir` constrains the *shape* of the path and nothing
+more — it once claimed otherwise, and the gap between the claim and the code is what
+withdrew 0.1.0: on a case-insensitive filesystem `packageDir: "Packages"` names a
+`packages/` source tree, and the install replaced it. An existing Wally install passes the
+check deliberately; replacing one is what migrating means.
+
 Three properties that are easy to lose when touching `linker/swap.ts`:
 
 - **One realm at a time, aside then in.** Moving all three aside first and then moving all
