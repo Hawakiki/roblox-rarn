@@ -23,16 +23,28 @@ import { parseWallyName } from '../src/util/package-name.ts'
 
 const REPO = join(import.meta.dir, '..')
 
-/** rokit's shim if it is installed, otherwise whatever is on PATH. */
-function findLune(): string {
+/** rokit's shim if it is installed, otherwise whatever is on PATH, otherwise nothing. */
+function findLune(): string | null {
   const local = join(homedir(), '.rokit', 'bin', process.platform === 'win32' ? 'lune.exe' : 'lune')
-  return existsSync(local) ? local : 'lune'
+  if (existsSync(local)) return local
+  return Bun.which('lune')
 }
 
 const lune = findLune()
 
+// The skip is announced. A harness that quietly does not run reads exactly like a
+// harness that ran and passed, and this is the only test that can tell one shared
+// package from two copies of it — the failure it catches is invisible on disk.
+if (lune === null) {
+  console.warn(
+    '\n  lune 이 없어 require 하니스를 건너뛴다. `rokit install` 로 rokit.toml 의 핀을 설치하면 실행된다.\n',
+  )
+}
+
 async function runHarness(installDir: string): Promise<{ code: number; output: string }> {
-  const proc = Bun.spawn([lune, 'run', 'tests/roblox/verify.luau', '--', installDir], {
+  // The fallback is unreachable — the suite below is skipped when `lune` is null —
+  // and exists so the type stays honest without an assertion.
+  const proc = Bun.spawn([lune ?? 'lune', 'run', 'tests/roblox/verify.luau', '--', installDir], {
     cwd: REPO,
     stdout: 'pipe',
     stderr: 'pipe',
@@ -109,7 +121,7 @@ async function buildDiamond(): Promise<string> {
   return join(project, 'RARN_MODULE')
 }
 
-describe('Lune require harness', () => {
+describe.skipIf(lune === null)('Lune require harness', () => {
   test('a linked tree resolves and deduplicates', async () => {
     const installDir = await buildDiamond()
     const { code, output } = await runHarness(installDir)

@@ -47,6 +47,40 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      # 하니스는 lune 없이는 스스로 건너뛴다. 건너뛰게 두면 CI 가 로컬보다 약해지고,
+      # 하필 건너뛰는 것이 한 패키지와 그 사본 두 개를 구분할 수 있는 유일한 테스트다.
+      # 그 차이는 디스크에서 보이지 않는다.
+      #
+      # 버전은 rokit.toml 에서 읽는다. 여기 숫자를 적으면 핀이 두 군데가 되고, 둘이
+      # 갈라지는 순간 CI 는 아무도 쓰지 않는 lune 을 검증하게 된다.
+      - name: install lune
+        shell: bash
+        run: |
+          version=$(sed -n 's/^lune *= *"lune-org\/lune@\([^"]*\)".*/\1/p' rokit.toml)
+          [ -n "$version" ] || { echo "rokit.toml 에서 lune 핀을 못 읽었다" >&2; exit 1; }
+
+          case "${{ runner.os }}" in
+            Linux)   asset="lune-$version-linux-x86_64.zip" ;;
+            Windows) asset="lune-$version-windows-x86_64.zip" ;;
+            *) echo "지원하지 않는 러너: ${{ runner.os }}" >&2; exit 1 ;;
+          esac
+
+          # rokit 을 부트스트랩하는 대신 바이너리를 rokit 이 두는 자리에 그대로 둔다.
+          # 테스트가 그 경로를 직접 보므로 PATH 를 건드릴 필요가 없고, 윈도우에서
+          # MSYS 경로를 네이티브 경로로 번역하는 문제도 생기지 않는다.
+          mkdir -p "$HOME/.rokit/bin"
+          curl -fsSL -o /tmp/lune.zip \
+            "https://github.com/lune-org/lune/releases/download/v$version/$asset"
+
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z x -y -o"$HOME/.rokit/bin" /tmp/lune.zip > /dev/null
+          else
+            unzip -oq /tmp/lune.zip -d "$HOME/.rokit/bin"
+            chmod +x "$HOME/.rokit/bin/lune"
+          fi
+
+          "$HOME/.rokit/bin/lune" --version
+
       # format -> lint -> typecheck -> test. 훅이 돌리는 것과 같은 명령이다.
       - run: bun run check
 
