@@ -68,6 +68,35 @@ than install correctness; package modules resolve to a per-instance sentinel ins
 under a *model* of Roblox. If the model is wrong the harness passes and Studio breaks,
 so the manual check stays — run it whenever the linker changes.
 
+#### The model has been checked against real Studio, once
+
+2026-08-21, over the Studio MCP bridge, on a `rojo build` of `test/roblox/` (knit → comm →
+promise/option/signal). The harness scored 17/17 on the same tree, and Studio agreed on every
+point:
+
+| claim | held in Studio |
+|---|---|
+| two copies of one source are two tables | yes — this is why dedupe is correctness, not disk |
+| one instance required twice is one table | yes |
+| `script.Parent.Parent.X` reaches a sibling | yes |
+| an instance may be named `luau-polyfill`, reached by `Parent["luau-polyfill"]` | yes |
+| three shims for one package return **one** table | yes, and the shim instances really are distinct |
+| a package reached across realms is still that one table | yes |
+| `Knit.Util` is the `_Index` entry folder | yes — `Knit.Util.Name == "sleitnick_knit@1.7.0"` |
+| Knit, Promise and Signal actually run | yes — `Promise.resolve(42):awaitStatus()` → `Resolved 42` |
+
+Two things that only a real DataModel could show:
+
+- **A `_Index` Folder and an `_Index` ModuleScript coexist under one parent.** Roblox does not
+  complain; `FindFirstChild` returns whichever was added first and the other is simply
+  unreachable. An alias of `_Index` is therefore a silent shadowing, not an error.
+- **A wrong `place` fails with nothing useful.** Every cause — wrong folder, missing version,
+  misspelt service — produces the same `Requested module experienced an error while loading`.
+  The real message (`Packages is not a valid member of ReplicatedStorage`) is one layer down,
+  visible only as a second line in Output. Nothing before runtime sees it: the install
+  succeeds, the tree is correct, and the harness passes. That is the whole argument for
+  validating `place` at install time.
+
 `wally install` on an equivalent `wally.toml` is the other useful comparison: the
 skeleton and shim bodies should match, and only pruning should differ.
 

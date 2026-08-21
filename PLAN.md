@@ -2090,6 +2090,20 @@ $ rarn install     # 같은 락파일 -> RN0500, "지우고 다시 설치하세�
 트리. 어긋나면 교차 realm shim 이 **존재하지 않는 DataModel 경로** 를 가리키는데, 이건 파일
 트리 스냅샷으로도 Lune 하니스로도 잡히지 않는다. Studio 에서 처음 터진다.
 
+그리고 터질 때 아무것도 알려주지 않는다. 2026-08-21 에 Studio 에서 실제로 재현했다 —
+place 가 틀린 경우, 버전 폴더가 없는 경우, 서비스명에 오타가 난 경우가 **전부 같은 한 줄**
+로 나온다:
+
+```
+Requested module experienced an error while loading
+```
+
+경로도, 무엇이 없는지도 없다. 진짜 원인(`Packages is not a valid member of
+ReplicatedStorage`)은 한 겹 아래에 있고 Output 의 두 번째 줄로만 보인다.
+
+즉 이 실패는 설치도 성공하고, 파일 트리도 맞고, 하니스도 통과한 뒤, 런타임에 저 한 줄로
+나타난다. **설치 시점에 잡아야 한다는 주장은 이제 추론이 아니라 측정이다.**
+
 | 항목 | 내용 |
 |---|---|
 | 파생 | `default.project.json` 에서 `$path` 가 realm 디렉터리인 노드를 찾아 그 DataModel 경로를 `place` 로 사용 |
@@ -2232,9 +2246,16 @@ print("✓ dedupe 확인")
 `direct == viaKnit` 이 참이어야 한다. 거짓이면 ModuleScript 인스턴스가 둘이라는 뜻이고,
 싱글톤이 깨진다 — 파일 트리 스냅샷 테스트로는 절대 잡을 수 없는 종류의 버그다.
 
-절차: `rarn install` → `rojo build` 또는 `rojo serve` → Studio에서 실행 → 출력 확인.
-Studio MCP를 쓰지 않으므로 **마지막 실행은 수동**이다. M6 완료 시 최소 1회, 이후 링커를
-건드릴 때마다 반복한다.
+절차: `rarn install` → `rojo build` → Studio에서 열기 → `execute_luau` 로 검증.
+
+**Studio MCP 를 쓸 수 있게 되어 이 단계가 더 이상 수동이 아니다.** 2026-08-21 에 처음
+돌렸고, 결과는 CLAUDE.md 의 "The model has been checked against real Studio" 에 있다.
+요약하면 하니스가 모델 안에서 주장하던 것이 전부 실제로도 참이었다 — dedupe 동일성,
+교차 realm 동일성, `Knit.Util` 이 `_Index` 엔트리 폴더라는 것, 그리고 knit/promise/signal
+이 실제로 실행된다는 것.
+
+모델이 맞다고 확인된 것은 **이 트리 모양 하나**다. 링커를 건드리면 다시 돌린다 —
+자동화된 것은 하니스이고, 하니스가 옳은지는 여기서만 확인된다.
 
 ---
 
