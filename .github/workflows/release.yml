@@ -143,8 +143,10 @@ jobs:
           draft: true
           generate_release_notes: true
           files: release/*.zip
+          # 릴리스 노트는 영어다 — 사용자가 읽는 표면은 영어, 작업 문서는 한국어라는
+          # 언어 정책(CLAUDE.md Conventions). 0.1.0 은 이 본문이 한국어로 나갔었다.
           body: |
-            ## 설치
+            ## Install
 
             ```toml
             # rokit.toml
@@ -152,4 +154,12 @@ jobs:
             rarn = "Hawakiki/roblox-rarn@${{ needs.version.outputs.value }}"
             ```
 
-            또는 아래 자산을 직접 받아 PATH 에 두면 된다.
+            ```bash
+            rokit trust Hawakiki/roblox-rarn
+            rokit install
+            ```
+
+            The trust step is Rokit's own policy — without it the install stops with
+            "has not been marked as trusted". It is asked once per machine.
+
+            Or download the archive for your platform below and put the binary on your PATH.
