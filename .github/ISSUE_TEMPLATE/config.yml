@@ -1,0 +1,19 @@
+# 빈 이슈를 막지는 않는다. 템플릿에 맞지 않는 보고가 안 올라오는 것보다는,
+# 형식 없이라도 올라오는 쪽이 낫다.
+#
+# Blank issues stay enabled on purpose: a report that does not fit a template is
+# still worth more than a report nobody sent.
+blank_issues_enabled: true
+
+contact_links:
+  - name: 쓰고 있다고 알려주기 / Tell us you are using it
+    url: https://github.com/Hawakiki/roblox-rarn/issues/47
+    about: 버그가 아니어도 좋습니다. 한 줄이면 됩니다 — 밖에서는 아무도 안 쓰는 것과 쓰면서 말 안 하는 것이 똑같아 보입니다.
+
+  - name: 왜 이렇게 만들었나 / Why it works this way
+    url: https://github.com/Hawakiki/roblox-rarn/blob/develop/CLAUDE.md
+    about: 이상해 보이는 결정에는 대개 측정값이 붙어 있습니다. 이슈를 쓰기 전에 한 번 보시면 답이 있을 수도 있습니다.
+
+  - name: 알려진 문제 / Known issues
+    url: https://github.com/Hawakiki/roblox-rarn/blob/develop/docs/known-issues.md
+    about: 재현된 결함만 번호를 달아 적어 둡니다. 고쳐진 것이 어느 릴리스에 실렸는지도 여기 있습니다.

@@ -66,6 +66,7 @@ place and leave for Rojo to sort out at sync time.
 | [Speed](#speed) | and [the 506-package comparison](#against-wally-on-506-real-packages) against Wally |
 | [`rarn doctor`](#rarn-doctor) | what the installed source actually requires |
 | [Publishing](#publishing) | and what is excluded by default |
+| [Using it?](#using-it) | leave a line so we can tell silence from absence |
 | [Development](#development) | building, testing, the Roblox-side checks |
 
 New here? [Why not just Wally?](#why-not-just-wally) is the two-minute version, and
@@ -474,6 +475,16 @@ recognised by shape because Rarn cannot know what someone else's directory was c
 A published version is permanent and public, with no unpublish, so shipping one file too
 few breaks an install and gets fixed in minutes while shipping one too many cannot be
 undone at all. Naming a file exactly in `include` overrides that; a glob does not.
+
+## Using it?
+
+**[Leave a line here](https://github.com/Hawakiki/roblox-rarn/issues/47)** — ten seconds,
+no link required, private projects very much included. From the outside, *nobody has tried
+this* and *people use it and never say anything* look identical, and the manifest and
+lockfile formats freeze at 1.0. Freezing a format nobody has used is guesswork, so that
+thread is what says whether the moment has come.
+
+Bugs and ideas go in their own issue; that one is a roll call.
 
 ## Development
 
