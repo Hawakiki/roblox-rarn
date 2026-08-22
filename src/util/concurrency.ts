@@ -65,3 +65,16 @@ export const DEFAULT_CONCURRENCY = 8
  * dependencies opened 506 sockets at once and spent 43s where 5s was available.
  */
 export const METADATA_CONCURRENCY = 32
+
+/**
+ * How many small local files to read at once.
+ *
+ * Not a network limit: these are entry modules already on disk, read to find the type
+ * aliases a shim forwards. Doing them in turn inside the install loop cost 225ms on a
+ * 52-package project — Windows charges real latency per open, and none of these reads
+ * depends on another.
+ *
+ * Higher than the download limit because nothing is held afterwards; bounded at all
+ * because a 506-package graph should not open 506 handles to save microseconds.
+ */
+export const FILE_READ_CONCURRENCY = 32

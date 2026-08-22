@@ -371,6 +371,47 @@ So the layout in constraint 2 is not free to optimize away later. Measured, not 
 see `docs/research/r1-pnp-feasibility.md`, which also records why a Yarn-PnP-style resolver was
 investigated and rejected. Revisit only if Roblox ships `.luaurc` alias maps.
 
+### 2a-3. A shim carries the module's value; its types have to be forwarded by hand
+
+Luau passes a required module's **value** through a link and none of its **type aliases**.
+So a one-line shim gives a `React` whose `createElement` type-checks and whose `React.Node` is
+`Unknown type 'React.Node'` — at every call site, which makes a `--!strict` signature against
+any typed package impossible to write. Measured: 300 of the 584 packages in a warm cache export
+types from their entry module, 1943 aliases between them. Wally has the same hole.
+
+The fix is one line per type, and it is the reason a shim is no longer always one line:
+
+```lua
+local Module = require(script.Parent._Index["jsdotlua_react@17.2.1"]["react"])
+
+export type Node = Module.Node
+export type PureComponent<Props, State = nil> = Module.PureComponent<Props, State>
+
+return Module
+```
+
+Four things this rests on, all measured rather than assumed:
+
+- **The forward works, generics included.** Verified with `luau-lsp analyze`: through the
+  one-line form `L.Node` is `Unknown type`, through this form both `L.Node` and
+  `L.Box<number>` resolve.
+- **Only the entry module is read.** A type declared in a submodule reaches the outside only
+  if the entry re-exports it, and then it is here under the name a user would write.
+- **Silence is the failure mode.** Anything not understood is left out. A missed type costs
+  the annotation someone was going to write by hand; a wrongly forwarded one puts an error in
+  a generated file they did not write and cannot fix. That is why a declaration whose default
+  names a type the module keeps private is dropped whole — it compiles in the package and not
+  in the shim — and why the drop repeats to a fixed point, since dropping one can strand
+  another.
+- **A package that exports nothing keeps the one-line shim**, which is most of them.
+
+The marker stays on the first line, so `linker/ownership.ts` and the Lune harness still
+recognise an install. Both match on substring, and a shape check would have broken here.
+
+**Where this shows up as a cost**: when a require cannot be resolved at all — analysing a realm
+against a sourcemap that does not mount it — one diagnostic becomes one per forwarded type.
+Nothing new is broken; the same require was already unresolvable.
+
 ### 2b. Install by rebuilding, then swapping
 
 Rebuild the realm directories from the lockfile every time. No incremental updates, no

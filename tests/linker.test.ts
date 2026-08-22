@@ -247,6 +247,59 @@ describe('shim contents', () => {
   })
 })
 
+describe('forwarding a package’s types', () => {
+  const TYPED = 'export type Node = string\nexport type Box<T> = { value: T }\nreturn {}'
+
+  test('a top-level shim re-exports what the module exports', async () => {
+    await run({ 'a/ui': { files: { 'init.lua': TYPED } } }, { dependencies: { '@a/ui': '^1.0.0' } })
+
+    const shim = await readFile(shared('Ui.luau'), 'utf8')
+    expect(shim).toContain('export type Node = Module.Node')
+    expect(shim).toContain('export type Box<T> = Module.Box<T>')
+  })
+
+  // Read once per package, not once per shim: the same aliases have to reach every
+  // requester, including the one two levels down.
+  test('a dependency shim gets them too', async () => {
+    await run(
+      { 'a/app': { deps: { Ui: '@a/ui@1.0.0' } }, 'a/ui': { files: { 'init.lua': TYPED } } },
+      { dependencies: { '@a/app': '^1.0.0' } },
+    )
+
+    const shim = await readFile(shared('_Index/a_app@1.0.0/Ui.luau'), 'utf8')
+    expect(shim).toContain('export type Node = Module.Node')
+  })
+
+  test('a module that exports nothing keeps the one-line shim', async () => {
+    await run({ 'a/plain': {} }, { dependencies: { '@a/plain': '^1.0.0' } })
+
+    const shim = await readFile(shared('Plain.luau'), 'utf8')
+    expect(shim.trimEnd().split('\n')).toHaveLength(2)
+    expect(shim).toContain('return require(')
+  })
+
+  // The module root can be a single file rather than a directory, and the types are
+  // in whichever one it is.
+  test('a single-file module is read too', async () => {
+    await run(
+      {
+        'a/signal': {
+          files: {
+            'Signal.luau': TYPED,
+            'default.project.json': JSON.stringify({
+              name: 'signal',
+              tree: { $path: 'Signal.luau' },
+            }),
+          },
+        },
+      },
+      { dependencies: { '@a/signal': '^1.0.0' } },
+    )
+
+    expect(await readFile(shared('Signal.luau'), 'utf8')).toContain('export type Node =')
+  })
+})
+
 describe('cross-realm shim paths', () => {
   /**
    * `place` is written and derived as dot-separated names, but an *instance* name has

@@ -95,7 +95,13 @@ async function buildDiamond(): Promise<string> {
     const key = `@${spec.name}@1.0.0`
     const source = join(dir, 'cache', `${name.scope}_${name.name}`)
     await mkdir(source, { recursive: true })
-    await writeFile(join(source, 'init.lua'), `return { name = "${name.name}" }`)
+    // `a/base` exports a type, so its three shims are the multi-line form that
+    // forwards aliases rather than the one-line require. A shim is a ModuleScript
+    // like any other: the point of running the real thing over it is that
+    // `export type` in a generated file must not change what `require` returns, and
+    // in particular must not turn one instance into two.
+    const exports = name.name === 'base' ? 'export type Id = string\n' : ''
+    await writeFile(join(source, 'init.lua'), `${exports}return { name = "${name.name}" }`)
     sources.set(key, source)
 
     packages.set(key, {

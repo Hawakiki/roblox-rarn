@@ -93,9 +93,11 @@ rarn.lock
 | M5 | 문서·주장 감사 | ✅ | 낡은 것 3, 빠진 것 2. 나머지는 맞았다 — [기록](docs/milestones/v1/m05-doc-audit.md) |
 | M6 | 현장 보고 대응 | ✅ | 결함 4(RN-7~RN-10), 메시지 2, 문서 3 — [기록](docs/milestones/v1/m06-field-report.md) |
 | M6b | 하니스 보강 | ✅ | 결함 3(RN-11~RN-13). `--execute` 로드 5/38 → 34/38 — [기록](docs/milestones/v1/m06b-harness-selfcheck.md) |
-| M7 | shim 이 타입을 전달하게 | | `--!strict` 로 타입 있는 패키지를 쓸 수 있어야 한다 |
+| M7 | shim 이 타입을 전달하게 | ✅ | 현장 파사드가 필요 없어졌다. 설치 +50ms — [기록](docs/milestones/v1/m07-shim-type-exports.md) |
 
-M4b 와 M7 이 남았다. M4b 는 게이트에 걸려 있고, M7 은 걸려 있지 않다.
+**M4b 만 남았고, 그것은 게이트에 걸려 있다.** 스키마를 건드릴 마지막 후보였던 M7 이 끝났고,
+스키마에 닿지 않았다 — shim 내용은 매니페스트도 락파일도 아니다. 게이트의 "마지막 스키마
+변경 후 한 달" 시계는 M4a(2026-08-22)부터 돌고 있다.
 
 ### M6b — 하니스 보강 ✅
 
@@ -112,39 +114,28 @@ M4b 와 M7 이 남았다. M4b 는 게이트에 걸려 있고, M7 은 걸려 있�
 아래서 옳은가*를 묻는다면 이건 *모델이 자기 주장대로 하는가*를 묻는다. 결함 셋 다 그
 틈에 있었다. 상세는 [기록](docs/milestones/v1/m06b-harness-selfcheck.md).
 
-### M7 — shim 이 타입을 전달하게
+### M7 — shim 이 타입을 전달하게 ✅
 
-링크 shim 은 모듈의 **값**만 넘기고 **exported type alias 는 안 넘긴다.** 그래서
-`React.createElement` 는 타입 체크가 되는데 `React.Node` 는 `Unknown type` 이 나고,
-`--!strict` 컴포넌트 시그니처를 쓸 수 없다. 현장 보고에서 **가장 오래 걸린 항목**이었다.
+링크 shim 이 모듈의 **값**만 넘기고 **exported type alias 는 안 넘겨서**, `React.Node` 가
+호출부마다 `Unknown type` 이었다. 현장 보고에서 가장 오래 걸린 항목이었다.
 
-회피책이 둘 다 나쁘다는 것이 이걸 마일스톤으로 만드는 이유다. `_Index` 경로를 직접
-require 하면 타입은 되지만 버전 문자열이 앱 코드에 박히고, 파사드를 손으로 쓰면 패키지마다
-써야 한다.
+타입을 export 하는 패키지의 shim 이 이제 모듈을 바인딩하고 그것을 재수출한다. 캐시
+584패키지 중 **300개(51%)** 가 해당하고, 합 1943개다. **Wally 도 같은 구멍이 있다** — 결함
+수정이 아니라 차별점이다.
 
-해법은 luau-lsp 로 확인했다 — 제네릭까지 넘어온다:
+**침묵이 실패 모드다.** 이해 못 한 것은 추측하지 않고 뺀다. 비대칭이 분명하기 때문이다 —
+빠뜨린 타입은 어차피 손으로 쓰려던 주석 하나를 뺏고, 잘못 넘긴 타입은 사용자가 쓰지도
+않았고 고칠 수도 없는 파일에 에러를 넣는다.
 
-```lua
-local M = require(script.Parent._Index["jsdotlua_react@17.2.1"]["react"])
-export type Node = M.Node
-export type Element<C> = M.Element<C>
-return M
-```
+**끝나는 조건은 현장이 정했다**: 그 세션이 손으로 쓴 파사드를 지울 수 있는가. 파사드의
+`export type Node = any` 를 `= React.Node` 로 바꾸고 프로젝트 전체를 분석해 **진단 0**.
+생성 트리(shim 224개 중 211개가 타입 전달) 전체도 **진단 0**.
 
-**끝나는 조건**: 타입 있는 패키지를 `--!strict` 로 쓸 때 파사드가 필요 없다. `test/game`
-과 현장 프로젝트 양쪽에서 `luau-lsp analyze` 가 통과해야 한다.
+**성능 회귀를 하나 냈다가 잡았다.** 첫 구현이 +225ms(60%). 프로파일해 보니 파싱은 7ms 였고
+전부 I/O 였다 — 상위 계층이 이미 아는 사실(`root.kind`)을 `pathExists` 로 다시 물었고,
+독립적인 읽기 52개를 설치 루프 안에서 줄 세웠다. 고친 뒤 **+50ms(13%)**.
 
-**어려운 부분**: 엔트리 파일에서 `export type Name<params>` 헤더를 뽑아야 하고, 기본값
-(`State = nil`)과 제네릭 팩(`A...`)이 섞여 있다 — LHS 는 그대로 두고 RHS 는 이름만 적용해야
-한다. react 하나가 31개다.
-
-**실패 모드는 부드럽다**: 재수출이 틀려도 런타임은 안 깨진다(타입 에러는 분석 도구에만
-나온다). 하지만 사용자의 `luau-lsp analyze` 출력에 우리가 생성한 파일이 등장하게 되므로
-파싱이 확실하지 않으면 재수출을 붙이지 않는 쪽이 옳다.
-
-**동결과 무관하다**: shim 내용은 매니페스트도 락파일도 아니고, `SHIM_MARKER` 검사는
-`src/linker/ownership.ts` 와 `tests/roblox/emulate.luau` 양쪽 다 `includes`/`find` 라
-여러 줄이어도 기존 설치를 인식한다. 순수 추가다.
+상세는 [기록](docs/milestones/v1/m07-shim-type-exports.md).
 
 ### M1 — 라이브 발행 1회 ✅
 
