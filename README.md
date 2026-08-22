@@ -271,6 +271,39 @@ The cache stores extracted trees, not just archives, so a warm install does no n
 I/O and no unzip. It copies rather than hardlinks — an edit in one project must not
 propagate to every other project sharing the cache.
 
+### Against Wally, on 506 real packages
+
+506 packages taken from the live registry by how often other packages depend on them,
+575 once their transitive dependencies are counted. Windows 11, Bun 1.3.14, Wally 0.3.2.
+The method, the other set sizes, and how the set was chosen are in
+[test/benchmark](test/benchmark/README.md).
+
+| | rarn | wally |
+|---|---:|---:|
+| install, warm cache | **5.6 s** — no network at all | 9.8 s — re-downloads all 575 |
+| install, cold cache | 37.3 s | 9.8 s |
+| first run on a machine | 37.3 s | 9.8 s **+ 12 s** index clone (46 MB, needs `git`) |
+| files written | **7,045** | 12,956 |
+| bytes written | **43.3 MB** | 107.9 MB |
+| module roots that resolve without Rojo | **548 / 556 (98.6%)** | 148 / 575 (25.7%) |
+
+Three things that table is not hiding:
+
+- **Wally wins the cold install.** It clones the registry index, so resolving costs it no
+  network; Rarn asks over HTTP and spends 8.9 s of those 37.3 s doing it. That is the
+  price of not needing `git` and not keeping a 46 MB clone.
+- **Wally has no package cache.** Only the index is cached, so every install downloads
+  every archive again. That is why its column has one number and not two, and why CI is
+  where the difference shows.
+- **The last row is not about speed.** A Wally install leans on Rojo to reinterpret each
+  package's nested project file at sync time, so three quarters of its module folders have
+  no `init` at their root. Rarn does that work at install time instead. There were **no
+  packages Wally could install and Rarn could not.**
+
+Writing the benchmark turned up two shipped defects, neither visible on a small graph: an
+archive holding a file over 512 KiB could not be unpacked at all, and resolution opened one
+socket per package. Both are fixed — see the CHANGELOG.
+
 Freshness is deliberately asymmetric. Calling a usable lockfile stale costs one round
 trip; calling a stale one usable installs versions the manifest no longer asks for
 **and reports success**. Every comparison errs toward stale.
