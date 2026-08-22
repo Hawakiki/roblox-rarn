@@ -3,6 +3,7 @@ import { join, posix, relative, sep } from 'node:path'
 import { zipSync } from 'fflate'
 import type { NormalizedManifest } from '../manifest/types.ts'
 import { realmDirs } from '../manifest/types.ts'
+import { INDEX_DIR_NAME } from '../project/place.ts'
 import { Code } from '../util/codes.ts'
 import { RarnError } from '../util/errors.ts'
 import { listFiles } from '../util/fs.ts'
@@ -131,6 +132,7 @@ export async function collect(
 
   const include = manifest.include ?? []
   const defaults = alwaysExcluded(manifest)
+  const installed = installedTreeRoots(found)
   const exclude = manifest.exclude ?? []
 
   // An exact path in `include` overrides the built-in exclusions; a glob does not.
@@ -144,6 +146,9 @@ export async function collect(
       .filter((path) => include.length === 0 || include.some((pattern) => matches(path, pattern)))
       .filter(
         (path) => namedExactly.has(path) || !defaults.some((pattern) => matches(path, pattern)),
+      )
+      .filter(
+        (path) => namedExactly.has(path) || !installed.some((root) => path.startsWith(`${root}/`)),
       )
       // The author's own `exclude` is last and wins over everything, including their
       // own `include` — the narrower instruction is the more recent intent.
@@ -190,6 +195,31 @@ function alwaysExcluded(manifest: NormalizedManifest): string[] {
     '**/*.key',
     ...Object.values(realms).map((dir) => `${dir}/**`),
   ]
+}
+
+/**
+ * Directories holding an installed dependency tree, found by shape rather than name.
+ *
+ * `alwaysExcluded` covers Rarn's own realm directories because it can derive them from
+ * `packageDir`. It cannot know what another tool called *its*: Wally installs into
+ * `Packages/`, `ServerPackages/` and `DevPackages/`, and a project that migrated still
+ * has them sitting there. Measured while publishing the first real package — 339 of the
+ * 388 files in that archive were a `DevPackages/` nobody meant to ship, and a published
+ * version cannot be taken back.
+ *
+ * **Matching the names would be the obvious fix and the wrong one.** A project whose
+ * *source* lives in `Packages/` would then publish nothing at all, and `include` cannot
+ * rescue it because only an exactly-named path overrides a default exclusion — which is
+ * impractical for a directory. `_Index` is the reserved name the layout is built on, and
+ * it is what actually separates an install from a folder that happens to share a name.
+ */
+function installedTreeRoots(paths: readonly string[]): string[] {
+  const roots = new Set<string>()
+  for (const path of paths) {
+    const at = path.indexOf(`/${INDEX_DIR_NAME}/`)
+    if (at > 0) roots.add(path.slice(0, at))
+  }
+  return [...roots]
 }
 
 /**

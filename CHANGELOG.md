@@ -39,6 +39,23 @@ rather than silently misread, and a `0.x` release may bump it.
   Inflation is now synchronous. The parallelism it cost was measured at 23ms for that
   archive, against a class of package that could not be installed at all.
 
+## Unreleased
+
+### Fixed
+
+- **`rarn publish` could ship another package manager's install directory.** The
+  built-in exclusions cover Rarn's own realm directories, which it derives from
+  `packageDir` — but not Wally's `Packages/`, `ServerPackages/` and `DevPackages/`,
+  which a migrated project still has sitting in it. Publishing the first real package
+  produced an archive of 388 files, 339 of them a `DevPackages/` nobody meant to ship,
+  and a published version cannot be taken back.
+
+  An installed tree is now recognised by shape: any directory holding an `_Index/` is
+  excluded along with the shims beside it. Matching the names would have been the
+  obvious fix and the wrong one — a project whose *source* lives in `Packages/` would
+  then publish nothing, and `include` cannot rescue a whole directory because only an
+  exactly-named path overrides a default exclusion.
+
 ## 0.1.1 — 2026-08-22
 
 **0.1.0 is withdrawn; this replaces it.** R2, a research pass over what a workspace would

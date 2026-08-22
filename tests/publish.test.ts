@@ -128,6 +128,79 @@ describe('matches', () => {
   })
 })
 
+describe('collect and installed trees', () => {
+  async function tree(files: Record<string, string>) {
+    const dir = await mkdtemp(join(tmpdir(), 'rarn-pack-'))
+    for (const [path, body] of Object.entries(files)) {
+      const full = join(dir, ...path.split('/'))
+      await mkdir(join(full, '..'), { recursive: true })
+      await writeFile(full, body)
+    }
+    return dir
+  }
+
+  /**
+   * Wally installs into `Packages/`, `ServerPackages/` and `DevPackages/`, and Rarn
+   * cannot derive those from `packageDir` because they are another tool's names. A
+   * project that migrated still has them, and publishing is permanent — the first real
+   * package Rarn published came to 388 files before this, 339 of them a `DevPackages/`
+   * nobody meant to ship.
+   */
+  test("another tool's install directories are not published", async () => {
+    const dir = await tree({
+      'init.luau': 'return 1',
+      'Packages/Promise.luau': 'return 1',
+      'Packages/_Index/evaera_promise@4.0.0/promise/init.luau': 'return 1',
+      'DevPackages/_Index/roblox_testez@0.4.1/testez/init.luau': 'return 1',
+    })
+
+    expect(await collect(dir, manifestOf())).toEqual(['init.luau'])
+  })
+
+  // The shim beside `_Index` belongs to the install too, so excluding only what is
+  // *under* `_Index` would leave the top-level shims behind.
+  test('the shims beside _Index go with it', async () => {
+    const dir = await tree({
+      'init.luau': 'return 1',
+      'Packages/Promise.luau': 'return 1',
+      'Packages/_Index/a@1.0.0/a/init.luau': 'return 1',
+    })
+
+    const files = await collect(dir, manifestOf())
+    expect(files).not.toContain('Packages/Promise.luau')
+  })
+
+  /**
+   * The reason this looks for `_Index` instead of matching the names: a project is
+   * free to keep its own source in a directory called `Packages`, and excluding it by
+   * name would publish an empty archive with no way for `include` to rescue it.
+   */
+  test('a source directory that merely shares the name still ships', async () => {
+    const dir = await tree({
+      'init.luau': 'return 1',
+      'Packages/mine.luau': 'return 1',
+      'Packages/deep/also.luau': 'return 1',
+    })
+
+    expect(await collect(dir, manifestOf())).toEqual([
+      'Packages/deep/also.luau',
+      'Packages/mine.luau',
+      'init.luau',
+    ])
+  })
+
+  // Rarn's own realms were already excluded by name, which still works when the realm
+  // holds nothing but root shims and therefore has no `_Index` to recognise.
+  test("Rarn's own realm is excluded even with no _Index in it", async () => {
+    const dir = await tree({
+      'init.luau': 'return 1',
+      'RARN_MODULE/Promise.luau': 'return 1',
+    })
+
+    expect(await collect(dir, manifestOf())).toEqual(['init.luau'])
+  })
+})
+
 describe('collect', () => {
   const project = async (files: Record<string, string>): Promise<string> => {
     const dir = await mkdtemp(join(tmpdir(), 'rarn-pack-'))
