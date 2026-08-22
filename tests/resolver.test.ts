@@ -9,6 +9,7 @@ import type {
 } from '../src/registry/types.ts'
 import { resolve } from '../src/resolver/resolve.ts'
 import { Code } from '../src/util/codes.ts'
+import { METADATA_CONCURRENCY } from '../src/util/concurrency.ts'
 import { RarnError } from '../src/util/errors.ts'
 import { type PackageName, parseWallyName, toWallyName } from '../src/util/package-name.ts'
 import { parsePackageReq } from '../src/util/version-range.ts'
@@ -103,6 +104,55 @@ async function run(
 function keys(result: Awaited<ReturnType<typeof run>>['result']): string[] {
   return [...result.packages.keys()].sort()
 }
+
+describe('metadata fetching', () => {
+  /**
+   * Resolution walks the graph breadth-first, so one round is every package at one
+   * depth. That used to be a bare `Promise.all`, which for a project with 506 direct
+   * dependencies opened 506 sockets at the same instant — measured against the live
+   * registry at twelve times slower than running 32 at a time, and the shape is a
+   * cliff rather than a slope.
+   *
+   * Counting requests in flight is the only way a test can see this: the resolution
+   * is identical either way, and only the timing differs.
+   */
+  test('never has more than METADATA_CONCURRENCY requests in flight', async () => {
+    const width = METADATA_CONCURRENCY * 3
+    const spec: Spec = {}
+    for (let i = 0; i < width; i++) spec[`wide/pkg${i}`] = { '1.0.0': {} }
+
+    const registry = registryOf(spec)
+    let inFlight = 0
+    let peak = 0
+    const counted: RegistryClient = {
+      ...registry,
+      async getMetadata(name: PackageName): Promise<PackageMetadata> {
+        inFlight++
+        peak = Math.max(peak, inFlight)
+        try {
+          // A real tick, or every call settles before the next starts and the pool
+          // is never under pressure — the test would pass with no limit at all.
+          await new Promise((resolve) => setTimeout(resolve, 1))
+          return await registry.getMetadata(name)
+        } finally {
+          inFlight--
+        }
+      },
+    }
+
+    const result = await resolve({
+      manifest: manifestOf({
+        dependencies: Object.fromEntries(Object.keys(spec).map((name) => [`@${name}`, '^1.0.0'])),
+      }),
+      registry: counted,
+    })
+
+    expect(result.packages.size).toBe(width)
+    expect(peak).toBeLessThanOrEqual(METADATA_CONCURRENCY)
+    // Bounded, not serialised — a limit of one would also satisfy the line above.
+    expect(peak).toBeGreaterThan(1)
+  })
+})
 
 describe('basic resolution', () => {
   test('resolves a single dependency to the newest matching version', async () => {
