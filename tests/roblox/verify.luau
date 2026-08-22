@@ -140,10 +140,27 @@ local runtime = Emulator.runtime(root, {
 
 print(`\nverifying {installDir}{if execute then " (executing package code)" else ""}\n`)
 
+-- A realm directory with no `_Index` is not broken; it holds nothing but cross-realm
+-- shims. Placement resolves to the widest requester, so a package declared under
+-- `serverDependencies` that a shared package also needs ends up stored in the shared
+-- realm, and the server directory keeps only the shim that points across at it.
+--
+-- This used to exit 1 on that, which meant the harness reported a correct install as
+-- broken — the same shape of mistake as reporting an unmounted cross-realm shim as a
+-- failure. Nothing to check here is not the same as a failed check.
 local indexNode = root.Children._Index
-check("_Index exists", indexNode ~= nil)
 if indexNode == nil then
-	process.exit(1)
+	local shims = 0
+	for _, node in root.Children do
+		if node.ClassName == "ModuleScript" then
+			shims += 1
+		end
+	end
+	if shims == 0 then
+		check("_Index exists, or the realm holds cross-realm shims", false)
+		process.exit(1)
+	end
+	print(`  note  no _Index — this realm holds {shims} cross-realm shim(s) and nothing else`)
 end
 
 -- 1. Top-level shims: the names a person writes in their own code. A failure here
@@ -162,7 +179,13 @@ end
 
 -- 2. Every `_Index` entry must expose its package as a ModuleScript. A pruning
 --    mistake shows up here as a folder: the files are present, one level too deep.
-for entryName, entry in indexNode.Children do
+--
+--    Empty when the realm has no `_Index` at all, which is a realm holding nothing
+--    but cross-realm shims. The loops below then have nothing to walk, which is the
+--    correct amount of walking.
+local indexEntries = if indexNode == nil then {} else indexNode.Children
+
+for entryName, entry in indexEntries do
 	local moduleCount = 0
 	for _, child in entry.Children do
 		if child.ClassName == "ModuleScript" and not Emulator.isShim(child) then
@@ -177,7 +200,7 @@ for entryName, entry in indexNode.Children do
 end
 
 -- 3. Deduplication. Reaching one package from two directions must give one instance.
-for entryName, entry in indexNode.Children do
+for entryName, entry in indexEntries do
 	for shimName, shim in entry.Children do
 		if not Emulator.isShim(shim) then
 			continue

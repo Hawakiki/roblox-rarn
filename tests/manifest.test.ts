@@ -77,6 +77,54 @@ describe('validateManifest — shape', () => {
     expect(error.detail).toContain('dependencies')
     expect(error.detail).not.toContain('~1')
   })
+
+  /**
+   * "Unknown field" is true and useless on its own — the reader still has to find out
+   * what the field should have been. Both halves of that were reported from the field:
+   * a schema pointer to a repository path nobody installing a binary has, and a
+   * rejection with no hint of what was valid.
+   */
+  test('suggests the field a typo was reaching for', () => {
+    const error = expectCode(
+      () => validateManifest({ ...minimal, dependancies: {} }, 'rarn.json'),
+      Code.ManifestInvalid,
+    )
+    expect(error.detail).toContain("did you mean 'dependencies'?")
+  })
+
+  test('lists what a small object does take when the name was invented', () => {
+    const error = expectCode(
+      () => validateManifest({ ...minimal, place: { clientPackages: 'game.X' } }, 'rarn.json'),
+      Code.ManifestInvalid,
+    )
+    expect(error.detail).toContain('sharedPackages, serverPackages')
+  })
+
+  test('points somewhere a reader can actually open', () => {
+    const error = expectCode(
+      () => validateManifest({ ...minimal, nope: 1 }, 'rarn.json'),
+      Code.ManifestInvalid,
+    )
+    expect(error.how).toContain('https://')
+  })
+
+  /**
+   * Three dependency sections go in and `place` takes two entries, so people write a
+   * third. The generic message can only say the key is wrong; this one says where dev
+   * packages land, which is what was actually being asked.
+   */
+  test('place.devPackages is answered, not just rejected', () => {
+    const error = expectCode(
+      () =>
+        validateManifest(
+          { ...minimal, packageDir: 'Packages', place: { devPackages: 'game.X' } },
+          'rarn.json',
+        ),
+      Code.ManifestInvalid,
+    )
+    expect(error.detail).toContain('Packages_DEV/')
+    expect(error.how).toContain('widest realm')
+  })
 })
 
 describe('validateManifest — semantics', () => {
@@ -135,19 +183,56 @@ describe('alias collisions', () => {
     expect(error.how).toContain('aliases')
   })
 
-  test('detects a collision across different sections too', () => {
-    expectCode(
+  // The message has to say which section, because the same alias is fine in another
+  // one and "2 packages would both be installed as 'Promise'" does not say where.
+  test('the message names the section', () => {
+    const error = expectCode(
       () =>
         validateManifest(
-          {
-            ...minimal,
-            dependencies: { '@a/promise': '^1.0.0' },
-            devDependencies: { '@b/promise': '^1.0.0' },
-          },
+          { ...minimal, dependencies: { '@a/promise': '^1.0.0', '@b/promise': '^1.0.0' } },
           'rarn.json',
         ),
       Code.AliasCollision,
     )
+    expect(error.what).toContain('dependencies')
+  })
+
+  /**
+   * Root shims are written per section — `dependencies` into the shared realm
+   * directory, `serverDependencies` into the server one — so two aliases only collide
+   * when they came from the same section. Pooling all three refused an arrangement the
+   * layout has no objection to, and a person reaches the two through different Roblox
+   * services anyway.
+   */
+  test('the same alias in two sections is two files, not a collision', () => {
+    expect(() =>
+      validateManifest(
+        {
+          ...minimal,
+          dependencies: { '@a/promise': '^1.0.0' },
+          serverDependencies: { '@b/promise': '^1.0.0' },
+        },
+        'rarn.json',
+      ),
+    ).not.toThrow()
+  })
+
+  /**
+   * `writeRootShims` says a package declared in two sections should be reachable from
+   * both realm directories. Pooling the sections made that a collision of a package
+   * with itself, so the linker's documented behaviour was unreachable.
+   */
+  test('one package declared in two sections is not a collision with itself', () => {
+    expect(() =>
+      validateManifest(
+        {
+          ...minimal,
+          dependencies: { '@a/promise': '^1.0.0' },
+          devDependencies: { '@a/promise': '^1.0.0' },
+        },
+        'rarn.json',
+      ),
+    ).not.toThrow()
   })
 
   test('an aliases override resolves the collision', () => {

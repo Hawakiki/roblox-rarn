@@ -11,7 +11,7 @@
     "lockfileVersion": {
       "type": "integer",
       "const": 1,
-      "description": "Bumped only on a breaking format change. A newer lockfileVersion than the CLI understands is a hard error, not a warning."
+      "description": "Bumped only on a breaking format change. A newer lockfileVersion than the CLI understands is a hard error, not a warning. It tracks the format and not the release: reaching 1.0.0 does not move it, because bumping for ceremony would invalidate every lockfile already on disk for nothing and would teach the next reader that the number follows version numbers. If a breaking change is ever needed it lands as 2, in whatever release carries it."
     },
 
     "registry": {

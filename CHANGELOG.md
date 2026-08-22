@@ -6,6 +6,265 @@ Rarn follows semver, with one clarification that matters before 1.0: **the manif
 lockfile formats are not stable yet.** `lockfileVersion` exists so a change can be detected
 rather than silently misread, and a `0.x` release may bump it.
 
+## Unreleased
+
+Nothing yet.
+
+## 0.2.0 — 2026-08-22
+
+**Everything below has been sitting unreleased, and one of it matters more than the rest:
+RN-6 was recorded as fixed in 0.1.1 and was not.** The fix commit landed after the tag, so
+anyone on 0.1.1 still cannot install a package containing a file over 512 KiB — they get
+`RN0310 … The download may be corrupt. Try again`, on an archive that is not corrupt.
+Reproduced against the released binary before writing this.
+
+The formats are unchanged: `rarn.json` and `rarn.lock` written by 0.1.1 load here and
+nothing needs migrating. The minor bump is for what a shim looks like — packages that
+export types now get several lines instead of one — and for how much `rarn doctor` output
+changes on a real project.
+
+Most of this came from a session that had never seen Rarn building a React project in
+another folder and writing down where it got stuck, which found four defects and three
+documentation errors, and from answering "how realistic is the harness, roughly?", which
+found three more.
+
+### Added
+
+- **A link shim now forwards the package's exported types.** Luau carries a required
+  module's *value* through a link and none of its type aliases, so
+  `require(Packages.React)` gave a `React` whose `createElement` type-checked and whose
+  `React.Node` was `Unknown type 'React.Node'` — at every call site, which makes a
+  `--!strict` signature against any typed package impossible to write. 300 of the 584
+  packages in a warm cache export types this way, 1943 aliases between them, and Wally
+  has the same hole.
+
+  A shim for such a package binds the module and re-exports what it declares, generic
+  parameters and their defaults included:
+
+  ```lua
+  local Module = require(script.Parent._Index["jsdotlua_react@17.2.1"]["react"])
+
+  export type Node = Module.Node
+  export type PureComponent<Props, State = nil> = Module.PureComponent<Props, State>
+
+  return Module
+  ```
+
+  Only the entry module is read, and anything not understood is left out rather than
+  guessed at: a missed type costs the annotation someone was going to write by hand,
+  while a wrongly forwarded one puts an error in a generated file they did not write.
+  A declaration whose default names a type the package keeps private is dropped whole,
+  and the drop repeats to a fixed point because dropping one can strand another. A
+  package that exports no types keeps the one-line shim it always had.
+
+  Measured on the 52-package React project that reported the problem: 211 of 224 shims
+  forward types, `luau-lsp analyze` reports nothing across the whole install tree, and
+  the hand-written façade the project had needed — declaring `Node` and `Context<T>` as
+  `any` because the real ones could not be reached — type-checks against the real types
+  instead. Reading one entry file per package costs about 50ms on that install.
+
+  Then checked the other way, because a change that rewrites every shim deserves it:
+  shims generated for all 584 packages in a warm cache — 578 written, 318 of them
+  forwarding types — and `luau-lsp analyze` run over the lot. **All 318 are clean.** The
+  13 diagnostics that remain are on one-line shims that forward nothing, and are about
+  the packages' own contents (`Module does not return exactly 1 value`), not about
+  anything Rarn writes.
+
+  That sweep is also what caught the one real defect: a function type in a generic
+  default — `<Listener = (...any) -> ()>`, from `developmentfurthered/signal` — ended
+  the parameter list at the `>` of the arrow, and the shim came out as unparseable Luau.
+  Two packages of the 318, and nothing smaller than the whole registry would have found
+  it.
+
+### Fixed
+
+- **The require harness had no `:WaitForChild`** (RN-11), which is how most of the
+  registry navigates its own tree — 3256 calls across the 584 packages in a warm
+  cache, against 1052 for `:FindFirstChild` and none of the ten read-only queries
+  implemented at all. Nothing in the default checks noticed, because Rarn's own shims
+  index with `.Name` and `["Name"]`; it meant `--execute` could not load the JS-port
+  half of the registry, which is the half whose install correctness is hardest to
+  reason about by eye.
+
+  All ten are implemented now (`WaitForChild`, `FindFirstChild`,
+  `FindFirstChildOfClass`, `FindFirstAncestor`, `GetChildren`, `GetDescendants`,
+  `IsA`, `IsDescendantOf`, `IsAncestorOf`, `GetFullName`) — none of them engine
+  behaviour, each a pure function of the tree the harness already holds. `:Destroy`
+  and `:Clone` stay out on purpose. Measured over two real install trees, packages
+  that load under `--execute` went from **5/38 to 34/38**; the four that remain are
+  `Instance.new` and a Luau string require, which are the engine boundary rather than
+  a gap.
+
+- **A module that failed once was reported as a cyclic require ever after** (RN-12).
+  The in-flight flag was cleared after the chunk returned and not when it threw, so
+  the second attempt met its own leftover marker. Two lines reproduce it. It bites
+  hardest where it is least visible: `verify.luau` pcalls each shim and carries on, so
+  the first genuine failure in a run silently rewrote the diagnosis of everything
+  downstream of it — the wrong cause, in place of the one that was there.
+
+- **The `game` stub was a hard error in the one place it existed to prevent one**
+  (RN-13). Its own comment said unmounted paths stay permissive so that package code
+  calling `game:GetService` at module scope does not fail — but every key returned a
+  table, and calling a table is an error. 7 of 33 failed package loads under
+  `--execute` were this. Stubs are callable now, so a stub yields another stub. That
+  buys reach, not fidelity: a package that merely *touches* the engine gets past it,
+  and one that needs the engine to answer truthfully is still not being tested.
+
+- **`rarn doctor` could not read the require form that most of the registry uses**
+  (RN-7). Package sources reach their dependencies four ways —
+  `.Name`, `["Name"]`, `:WaitForChild("Name")`, `:FindFirstChild("Name")` — and the
+  scanner knew the first two. The JS-port half of the ecosystem (react-lua, jest-lua,
+  luau-polyfill, every `jsdotlua/*` package) writes the third and nothing else, so on a
+  real 52-package React install **1655 of 1663 requires were unreadable**. That did not
+  show up as "could not check"; it showed up as 310 lines reporting a correct install's
+  dependencies as declared-but-never-required.
+
+  All four spellings now read as one operation, and only the first lookup past the
+  parent chain counts as the dependency, so `script.Parent.Parent.Foo.Bar` reaches
+  `Foo` instead of being unreadable. A dot inside an instance name survives too: Rojo
+  strips one extension, so `ReactFiberWorkLoop.new.lua` is an instance called
+  `ReactFiberWorkLoop.new`, and the name used to be erased as punctuation.
+
+  On the same install: **1663 unreadable requires → 10**, output 310 lines → 46, and
+  every one of the remaining 10 is genuinely dynamic (Luau string requires, and names
+  built at runtime in test mocks).
+
+- **`rarn doctor` understated what it had read** (RN-10). The summary summed files over
+  the packages it had something to *report* on, then printed that beside the count of
+  all packages — "scanned 212 files across 52 packages" for a run that read 444. The
+  sentence read as coverage while measuring noise, and got quieter as the tool got
+  better.
+
+- **`rarn init` did nothing, silently, whenever stdin was not a terminal** (RN-8) —
+  every script, every CI job, every non-interactive caller. It printed the first prompt,
+  wrote no manifest, said nothing, and exited 0, which is the one failure
+  indistinguishable from success. It now uses the defaults and says so. Ending the input
+  mid-prompt (Ctrl+D) used to do the same thing and now reports `RN0004`.
+
+- **`rarn init`'s Rojo advice was silent in exactly the case that needed it** (RN-9).
+  An unmounted package directory produces no error anywhere, so `init` offers the
+  snippet to paste — but it skipped that when there was no project file at all, which is
+  the state every first `rarn init` is in. Walked in the field in this order: `init` in
+  an empty directory (silence), then `rarn add -D`, which failed with `RN0031` because
+  there was still nothing to derive `place` from.
+
+- **Resolution opened one socket per package and got slower the wider the graph
+  was.** Metadata fetching walks the dependency graph breadth-first, and each round
+  was a bare `Promise.all` over every package at that depth — for a project with 506
+  direct dependencies, 506 simultaneous requests. Measured against the live registry
+  on 150 packages, best of two runs:
+
+  ```
+   8 -> 5.0s     16 -> 2.8s     32 -> 1.8s     64 -> 7.4s     unbounded -> 21.9s
+  ```
+
+  The curve is a cliff, not a slope, and unbounded sat at the wrong end of it.
+  Requests are now bounded at 32. On a 506-package graph, resolution went from
+  **44.8s to 8.9s**. Downloads were already bounded; metadata was not, and on a wide
+  graph it is the larger of the two because every package is asked about while only
+  the chosen ones are downloaded.
+
+- **A package containing a file over 512 KiB could not be installed** (RN-6). **This was
+  recorded for a while as having shipped in 0.1.1, and it did not** — the fix commit is
+  after the tag, so anyone on 0.1.1 still cannot install one. Reproduced against the
+  released binary with a cold cache; it fails with `RN0310 … The download may be corrupt.
+  Try again`, which cannot work because the archive is not corrupt. fflate's
+  async `unzip` hands entries above that to a worker, and under Bun the worker returns
+  nothing — the callback reports `undefined is not an object (evaluating 'dat.length')`.
+  The same archives inflate correctly under Node, and the boundary is the *uncompressed*
+  size, so a kilobyte of compressed data that expands past the threshold fails too. Rarn
+  ships as a Bun binary, so this was every user, on every version.
+
+  It surfaced as `RN0310: the download may be corrupt. Try again` — advice that cannot
+  work, on archives that are not corrupt. `4x8matrix/class-index@3.0.0` carries a 2.7 MB
+  API dump and could not be installed by any release of Rarn; `wally install` handles it.
+  Inflation is now synchronous. The parallelism it cost was measured at 23ms for that
+  archive, against a class of package that could not be installed at all.
+
+- **The require harness reported a realm holding only cross-realm shims as broken.**
+  Placement resolves to the widest requester, so a package declared under
+  `serverDependencies` that a shared package also needs is stored in the shared realm —
+  and the server directory then keeps only the shim pointing across at it, with no
+  `_Index` at all. The harness exited 1 on that, calling a correct install broken. It
+  now says what it found and carries on; a realm with neither an `_Index` nor any shim
+  still fails, because nothing to check is not the same as nothing being there.
+
+- **A `place` path with a space in it produced Luau that does not parse.** `place` is
+  derived from the project's Rojo files when the manifest does not declare it, and an
+  *instance* name has none of Luau's restrictions — Rojo is perfectly happy with
+  `"My Packages"`. The generated cross-realm shim pasted the path in verbatim and came
+  out as `require(game.ReplicatedStorage.My Packages._Index[...])`, so the install
+  finished green, the tree was correct, and the file failed to parse in Studio. Segments
+  a dot cannot reach are now bracketed, and only those, so an ordinary path still reads
+  as `game.ReplicatedStorage.Packages`.
+
+- **A cross-realm link into the dev realm would have named the wrong service.**
+  `requirePlacePath` took any placement and fell through to `serverPackages` for
+  anything that was not `shared`. Unreachable today — placement resolves to the widest
+  requester, so nothing outside dev can point into it — but the signature now says so
+  and the boundary checks it, because unreachable today and unreachable tomorrow are
+  different claims.
+
+- **An alias only has to be unique within one manifest section.** Root shims are
+  written per section — `dependencies` into the shared realm directory,
+  `serverDependencies` into the server one — so two aliases only land on the same path
+  when they came from the same section. Pooling all three refused a shared
+  `@evaera/promise` beside a server `@nezuo/promise`, which are different files in
+  different directories, and refused the same package declared in two sections, which
+  the linker explicitly supports and which the pooled check read as a collision of a
+  package with itself. The message now names the section, because the same alias is
+  fine in another one.
+
+- **`rarn publish` could ship another package manager's install directory.** The
+  built-in exclusions cover Rarn's own realm directories, which it derives from
+  `packageDir` — but not Wally's `Packages/`, `ServerPackages/` and `DevPackages/`,
+  which a migrated project still has sitting in it. Publishing the first real package
+  produced an archive of 388 files, 339 of them a `DevPackages/` nobody meant to ship,
+  and a published version cannot be taken back.
+
+  An installed tree is now recognised by shape: any directory holding an `_Index/` is
+  excluded along with the shims beside it. Matching the names would have been the
+  obvious fix and the wrong one — a project whose *source* lives in `Packages/` would
+  then publish nothing, and `include` cannot rescue a whole directory because only an
+  exactly-named path overrides a default exclusion.
+
+### Changed
+
+- **`RN0012` pointed at a file nobody has.** Its advice ended *"The full schema is in
+  schemas/rarn.schema.json"* — a path in this repository, offered to people who
+  installed a binary. It now links to the schema, and says more before needing to: an
+  unknown field gets the field it was probably reaching for (`dependancies` → *did you
+  mean 'dependencies'?*), or the list of what that object does take, when the name was
+  invented rather than mistyped.
+
+- **`place.devPackages` is answered instead of merely refused.** Three dependency
+  sections go in and `place` has two entries, so people write a third; "unknown field"
+  is correct and leaves the harder half — where dev packages actually land. The message
+  now names `<packageDir>_DEV`, says to mount it wherever the test project likes, and
+  explains why nothing ever reaches *into* dev: a package lands in the widest realm that
+  asked for it, so anything requiring a dev package would have pulled it out of dev
+  already.
+
+### Documentation
+
+- **The install instructions produced a tool that could not be run.** README showed the
+  finished `rokit.toml` but not the command, and `rokit add Hawakiki/roblox-rarn` names
+  the tool after its repository — so `rarn` fails with *"Failed to find tool 'rarn' in
+  any project manifest file"* while a `rarn` shim sits in `~/.rokit/bin` looking
+  installed. The error reads as *add it*, so the obvious next move is to add it again,
+  which changes nothing. The alias is now in the command: `rokit add
+  Hawakiki/roblox-rarn rarn`.
+
+- **Where the three realm directories come from, and which of them need a `place`.**
+  `packageDir` plus `_SERVER` and `_DEV` was visible only as a diagram of the default,
+  so a project with `packageDir: "Packages"` had to guess `Packages_DEV` — or, as
+  happened, grep the generated shims for it.
+
+- **Packages that ship their own tests.** A module root may contain `init.spec.lua`, and
+  Rarn copies what the author declared rather than second-guessing it. Harmless as
+  bytes; not harmless if a test framework's default pattern discovers the package's
+  specs as yours. The fix belongs in `globIgnorePaths`, and the README now says so.
+
 ## 0.1.1 — 2026-08-22
 
 **0.1.0 is withdrawn; this replaces it.** R2, a research pass over what a workspace would

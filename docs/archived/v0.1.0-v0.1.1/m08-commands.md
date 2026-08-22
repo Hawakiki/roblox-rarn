@@ -57,7 +57,7 @@ M8 은 **10개**를 추가한다. 발행 계열은 이번에 넣지 않는다 (�
 - `cache verify` 는 `downloads/` 를 다시 해싱해 `extracted/` 와 대조한다.
   M4 의 무결성 코드를 그대로 쓴다.
 - `cache clean` 은 **되돌릴 수 없으므로** 지울 용량과 항목 수를 먼저 보여준다.
-- `doctor` 는 [R1 연구](docs/research/r1-pnp-feasibility.md) 5-2 에서 나온 항목이다. 패키지 소스가
+- `doctor` 는 [R1 연구](../../research/r1-pnp-feasibility.md) 5-2 에서 나온 항목이다. 패키지 소스가
   `script.Parent.Parent.X` 를 부르는데 `X` 가 선언된 의존성에 없으면 경고, 반대로 선언만
   하고 안 쓰면 경고. **표본의 4.5% 는 동적 require 라 검사 불가인데, 그 사실을 그대로 보고한다.**
   Wally 에 없는 영역이다.

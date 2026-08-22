@@ -3,7 +3,7 @@
 
 # R1 — PnP 가능성 연구 ✅ (M3 앞에 삽입)
 
-**결론: PnP식 해석 간접화는 도입하지 않는다.** 전문: [docs/research/r1-pnp-feasibility.md](docs/research/r1-pnp-feasibility.md)
+**결론: PnP식 해석 간접화는 도입하지 않는다.** 전문: [docs/research/r1-pnp-feasibility.md](../../research/r1-pnp-feasibility.md)
 
 | 기둥 | 판정 |
 |---|---|

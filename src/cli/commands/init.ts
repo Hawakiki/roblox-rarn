@@ -37,7 +37,15 @@ export async function init(options: InitOptions): Promise<void> {
     })
   }
 
-  const answers = options.yes ? defaults(dir) : await prompt(dir)
+  // Nobody is there to answer when stdin is not a terminal, and `--yes` already
+  // describes exactly what a non-interactive caller wants. So the choice is between
+  // failing in order to teach the flag and doing the obvious thing, and the obvious
+  // thing costs a printed line.
+  //
+  // What it replaces is worth naming: this used to print half a prompt, write no
+  // file, say nothing, and exit 0 — indistinguishable from having worked.
+  const interactive = !options.yes && process.stdin.isTTY
+  const answers = interactive ? await prompt(dir) : defaults(dir)
 
   // Built and validated before writing, so a bad answer fails with the same message
   // a hand-edited manifest would produce rather than writing a file that cannot load.
@@ -58,6 +66,9 @@ export async function init(options: InitOptions): Promise<void> {
 
   process.stdout.write(
     [
+      options.yes || interactive
+        ? null
+        : chalk.dim(`stdin is not a terminal — using defaults, as ${chalk.cyan('--yes')} would`),
       `${chalk.green('created')} ${MANIFEST_FILE_NAME}`,
       ignored ? `${chalk.green('updated')} .gitignore` : null,
       ...(await rojoAdvice(dir)),
@@ -79,6 +90,16 @@ export async function init(options: InitOptions): Promise<void> {
  * the wrong place, because the symptom shows up in whichever script required first,
  * as `Requested module experienced an error while loading`.
  *
+ * It also decides whether `place` can be derived at all, which is where the cost
+ * stops being hypothetical: with no project file to read from, the first cross-realm
+ * dependency fails with RN0031 and the person has to work out what to write.
+ *
+ * **A directory with no project file gets this advice too**, and that is the whole
+ * point of the change — it is the case with the least to go on, and it used to be
+ * the only case that got nothing. `install` still says nothing there, correctly: a
+ * project may be a library, whose realm directories no place is supposed to mount.
+ * At `init` the person is starting a project, so the advice has somewhere to land.
+ *
  * Printed, not inserted. Rewriting the project file would reorder its keys and
  * reformat it — a large edit to make on someone's behalf for something they can
  * paste in ten seconds.
@@ -90,15 +111,21 @@ async function rojoAdvice(dir: string): Promise<(string | null)[]> {
     packageDir: DEFAULT_PACKAGE_DIR,
   })
   const scan = await scanPlaceProject(dir, probe)
-  if (!scan.scanned) return []
   if (scan.found.has(DEFAULT_PACKAGE_DIR) || scan.disputed.has(DEFAULT_PACKAGE_DIR)) return []
+
+  const headline = scan.scanned
+    ? `no Rojo project file puts ${DEFAULT_PACKAGE_DIR}/ anywhere yet.`
+    : `no Rojo project file here yet. When you add one, give it ${DEFAULT_PACKAGE_DIR}/.`
 
   return [
     '',
-    `${chalk.yellow('note')} no Rojo project file puts ${DEFAULT_PACKAGE_DIR}/ anywhere yet.`,
+    `${chalk.yellow('note')} ${headline}`,
     chalk.dim('  Rojo syncs only what the project file names, so add something like:'),
     '',
     chalk.dim(rojoSnippet(DEFAULT_PACKAGE_DIR, 'ReplicatedStorage')),
+    '',
+    chalk.dim(`  Rarn reads it back to work out where ${DEFAULT_PACKAGE_DIR}/ lands in the`),
+    chalk.dim('  DataModel, which is what a server or dev package needs to reach a shared one.'),
   ]
 }
 
@@ -124,10 +151,18 @@ async function prompt(dir: string): Promise<Answers> {
   const base = defaults(dir)
   const rl = createInterface({ input: process.stdin, output: process.stdout })
 
+  // A question whose input ends first — Ctrl+D — never settles. Without this the
+  // event loop simply drains and the process exits 0, having printed a prompt and
+  // written nothing, which is the one outcome indistinguishable from success.
+  const ended = new AbortController()
+  rl.once('close', () => {
+    ended.abort()
+  })
+
   try {
     const ask = async (label: string, fallback: string): Promise<string> => {
       const suffix = fallback === '' ? '' : chalk.dim(` (${fallback})`)
-      const answer = await rl.question(`${label}${suffix}: `)
+      const answer = await rl.question(`${label}${suffix}: `, { signal: ended.signal })
       return answer.trim() === '' ? fallback : answer.trim()
     }
 
@@ -144,6 +179,15 @@ async function prompt(dir: string): Promise<Answers> {
       license,
       realm: realmAnswer === 'server' ? 'server' : 'shared',
     }
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new RarnError({
+        code: Code.PromptAborted,
+        what: `${MANIFEST_FILE_NAME} was not created: the input ended before the questions were answered.`,
+        how: 'Run `rarn init --yes` to accept the defaults without being asked.',
+      })
+    }
+    throw error
   } finally {
     rl.close()
   }

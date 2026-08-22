@@ -47,3 +47,34 @@ export async function mapWithConcurrency<T, R>(
  * low enough that a dozen large packages do not sit inflating in memory together.
  */
 export const DEFAULT_CONCURRENCY = 8
+
+/**
+ * How many metadata requests to run at once.
+ *
+ * Higher than the download limit because the bodies are small JSON and nothing is
+ * held in memory afterwards — the cost being overlapped is latency, not bytes.
+ *
+ * Measured against the live registry, 150 packages, best of two runs:
+ *
+ * ```
+ *  8 -> 5.0s    16 -> 2.8s    32 -> 1.8s    64 -> 7.4s    unbounded(150) -> 21.9s
+ * ```
+ *
+ * The curve turns hard after 32, and unbounded is twelve times slower than the
+ * best — which is what `fetchMissing` used to do. A graph with 506 direct
+ * dependencies opened 506 sockets at once and spent 43s where 5s was available.
+ */
+export const METADATA_CONCURRENCY = 32
+
+/**
+ * How many small local files to read at once.
+ *
+ * Not a network limit: these are entry modules already on disk, read to find the type
+ * aliases a shim forwards. Doing them in turn inside the install loop cost 225ms on a
+ * 52-package project — Windows charges real latency per open, and none of these reads
+ * depends on another.
+ *
+ * Higher than the download limit because nothing is held afterwards; bounded at all
+ * because a 506-package graph should not open 506 handles to save microseconds.
+ */
+export const FILE_READ_CONCURRENCY = 32

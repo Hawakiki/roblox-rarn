@@ -48,7 +48,7 @@ osyrisrblx/t               6     1    83%   lib [directory] / project-file
 
 > **절대 이것 때문에 설치를 실패시키지 않는다.** 해석 못 하면 전부 복사하고 넘어간다.
 
-**실측으로 계획을 정정했다** (표본 13개, [docs/research/r1-pnp-feasibility.md](docs/research/r1-pnp-feasibility.md) 7절):
+**실측으로 계획을 정정했다** (표본 13개, [docs/research/r1-pnp-feasibility.md](../../research/r1-pnp-feasibility.md) 7절):
 
 | 패키지 | 프로젝트 파일 | 모듈 루트 | 가지치기 효과 |
 |---|---|---|---|

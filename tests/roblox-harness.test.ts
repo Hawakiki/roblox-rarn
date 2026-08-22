@@ -95,7 +95,13 @@ async function buildDiamond(): Promise<string> {
     const key = `@${spec.name}@1.0.0`
     const source = join(dir, 'cache', `${name.scope}_${name.name}`)
     await mkdir(source, { recursive: true })
-    await writeFile(join(source, 'init.lua'), `return { name = "${name.name}" }`)
+    // `a/base` exports a type, so its three shims are the multi-line form that
+    // forwards aliases rather than the one-line require. A shim is a ModuleScript
+    // like any other: the point of running the real thing over it is that
+    // `export type` in a generated file must not change what `require` returns, and
+    // in particular must not turn one instance into two.
+    const exports = name.name === 'base' ? 'export type Id = string\n' : ''
+    await writeFile(join(source, 'init.lua'), `${exports}return { name = "${name.name}" }`)
     sources.set(key, source)
 
     packages.set(key, {
@@ -186,6 +192,58 @@ async function buildCrossRealm(): Promise<{ server: string; shared: string }> {
   return { server: join(project, 'RARN_MODULE_SERVER'), shared: join(project, 'RARN_MODULE') }
 }
 
+/**
+ * A realm that holds nothing but a cross-realm shim.
+ *
+ * Placement resolves to the widest requester, so a package declared under
+ * `serverDependencies` that a shared package also needs is stored in the shared realm.
+ * The server directory then keeps only the shim pointing across at it, and has no
+ * `_Index` at all — which is correct, and which the harness used to exit 1 on.
+ */
+async function buildShimOnlyRealm(): Promise<{ server: string; shared: string }> {
+  const project = join(dir, 'shim-only')
+  await mkdir(project, { recursive: true })
+
+  const name = parseWallyName('a/base')
+  const key = '@a/base@1.0.0'
+  const source = join(dir, 'shim-only-cache', 'a_base')
+  await mkdir(source, { recursive: true })
+  await writeFile(join(source, 'init.lua'), 'return { name = "base" }')
+
+  // Declared as a server dependency, but placed in shared because the root also
+  // depends on it there. That is what leaves the server realm with only a shim.
+  const packages = new Map<string, ResolvedPackage>([
+    [
+      key,
+      {
+        name,
+        version: '1.0.0',
+        realm: 'shared',
+        placement: 'shared',
+        dependencies: new Map(),
+        requestedBy: [{ from: 'root', range: '*', placement: 'shared' }],
+        dev: false,
+        forcedBy: undefined,
+      },
+    ],
+  ])
+
+  await link({
+    projectDir: project,
+    manifest: normalizeManifest({
+      name: 'game',
+      version: '1.0.0',
+      place: { sharedPackages: 'game.ReplicatedStorage.RARN_MODULE' },
+      dependencies: { '@a/base': '^1.0.0' },
+      serverDependencies: { '@a/base': '^1.0.0' },
+    }),
+    resolution: { packages, duplicates: new Map(), overrides: new Map() },
+    sources: new Map([[key, source]]),
+  })
+
+  return { server: join(project, 'RARN_MODULE_SERVER'), shared: join(project, 'RARN_MODULE') }
+}
+
 describe.skipIf(lune === null)('Lune require harness', () => {
   test('a linked tree resolves and deduplicates', async () => {
     const installDir = await buildDiamond()
@@ -265,6 +323,33 @@ describe.skipIf(lune === null)('Lune require harness', () => {
     expect(code).toBe(0)
   }, 30_000)
 
+  /**
+   * Found by `test/game`, which is what an over-built fixture is for. The harness
+   * exited 1 on a realm with no `_Index`, calling a correct install broken — the same
+   * shape of mistake as reporting an unmounted cross-realm shim as a failure.
+   */
+  test('a realm holding only cross-realm shims is not a failure', async () => {
+    const { server, shared } = await buildShimOnlyRealm()
+    const { code, output } = await runHarness(server, [
+      'RARN_MODULE_SERVER',
+      `--mount=game.ReplicatedStorage.RARN_MODULE=${shared}`,
+    ])
+
+    expect(code).toBe(0)
+    expect(output).toContain('no _Index')
+    expect(output).toContain('require(RARN_MODULE_SERVER.Base)')
+  })
+
+  // Nothing to check is not the same as nothing being there. An empty directory has
+  // no shims either, and that one really is broken.
+  test('a realm with neither _Index nor shims still fails', async () => {
+    const empty = join(dir, 'empty-realm')
+    await mkdir(empty, { recursive: true })
+
+    const { code } = await runHarness(empty, ['RARN_MODULE_SERVER'])
+    expect(code).not.toBe(0)
+  })
+
   test('catches a shim pointing at nothing', async () => {
     const installDir = await buildDiamond()
     await writeFile(
@@ -275,5 +360,29 @@ describe.skipIf(lune === null)('Lune require harness', () => {
     const { code, output } = await runHarness(installDir)
     expect(output).toContain('FAIL')
     expect(code).not.toBe(0)
+  }, 30_000)
+
+  /**
+   * The model checking itself, rather than a tree checked against the model.
+   *
+   * Everything above asks whether a tree Rarn built resolves under this emulator.
+   * Nothing asked whether the emulator behaves the way it says it does, and two
+   * defects lived in exactly that gap — a missing `:WaitForChild`, which is how the
+   * JS-port half of the registry navigates, and a failed require reported ever after
+   * as a cycle. The assertions live in Lune beside the emulator; this runs them.
+   */
+  test('the emulator behaves the way it claims to', async () => {
+    const scratch = join(dir, 'selftest')
+    await mkdir(scratch, { recursive: true })
+
+    const proc = Bun.spawn(
+      [lune ?? 'lune', 'run', 'tests/roblox/emulate-selftest.luau', '--', scratch],
+      { cwd: REPO, stdout: 'pipe', stderr: 'pipe' },
+    )
+    const output = await new Response(proc.stdout).text()
+    const code = await proc.exited
+
+    expect(output).not.toContain('FAIL')
+    expect(code).toBe(0)
   }, 30_000)
 })

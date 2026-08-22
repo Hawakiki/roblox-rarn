@@ -34,6 +34,12 @@ test/roblox/RARN_MODULE_SERVER/
 test/roblox/RARN_MODULE_DEV/
 test/roblox/rarn.lock
 
+# test/game 픽스처 산출물 — 매니페스트와 프로젝트 파일만 커밋한다
+test/game/Packages/
+test/game/Packages_SERVER/
+test/game/Packages_DEV/
+test/game/rarn.lock
+
 # 워크플로 도구가 저장하는 스크립트. 실행 산출물이고 단독 모듈이 아니라
 # (최상위 return) 린터도 통과하지 못한다. 결과는 docs/research/ 에 있다.
 .claude/workflows/

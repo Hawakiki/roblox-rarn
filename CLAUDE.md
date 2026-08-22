@@ -82,6 +82,33 @@ and `task.defer` at module scope, so running it measures stub completeness rathe
 than install correctness; package modules resolve to a per-instance sentinel instead.
 `--execute` opts in.
 
+**Where the model stops is a decision, and the line is drawn at mutation.** The
+read-only tree queries are implemented — `WaitForChild`, `FindFirstChild`,
+`FindFirstChildOfClass`, `FindFirstAncestor`, `GetChildren`, `GetDescendants`, `IsA`,
+`IsDescendantOf`, `IsAncestorOf`, `GetFullName` — because none of them is engine
+behaviour: each is a pure function of the tree already built, and `:WaitForChild("x")`
+is `["x"]` with a different spelling. Package code leans on them heavily (6171 calls
+across the 584 packages in a warm cache, `:WaitForChild` alone 3256), and without them
+`--execute` could not load the JS-port half of the registry at all.
+
+`:Destroy` and `:Clone` are common too (876 and 132) and are refused: a tree the code
+under test can mutate would put the identity guarantee this harness exists to check at
+the mercy of the thing being checked. Beyond that — `Enum` (4165), `Instance.new`
+(1845), `task` (1663), `RunService` (1644) — is the engine, and stays out. Adding
+stubs there widens the area in which a *passing* harness can be silently wrong, which
+is the one direction that costs more than it buys.
+
+Two places where the model knowingly differs from the engine, both commented at the
+source: `GetChildren` sorts by name, because a tree read off a filesystem has no
+insertion order to recover and a result that depends on `readDir` order is worse than
+one that is knowingly ordered differently; and `GetFullName` starts at whatever tree
+was loaded rather than at `game`.
+
+`tests/roblox/emulate-selftest.luau` checks the model against its own claims, which is
+a different question from every other test here — those ask whether a tree is correct
+*under* the model. Both defects that made it necessary were the harness answering
+confidently about something it had not implemented.
+
 **This does not replace `test/roblox/`.** The harness proves the tree is consistent
 under a *model* of Roblox. If the model is wrong the harness passes and Studio breaks,
 so the manual check stays — run it whenever the linker changes.
@@ -134,6 +161,20 @@ Bytecode is worth keeping — it moves startup from 178ms to 152ms — so CI bui
 binary on a Windows runner and cross-compiles the other two from ubuntu. If Bun fixes this,
 the giveaway will be the `smoke` job passing after moving `windows-x64` back to ubuntu, not
 this paragraph.
+
+**A library can behave differently under Bun than under Node, and the tests will not see
+it.** fflate's async `unzip` hands entries above 512 KiB to a worker, and under Bun that
+worker returns nothing — the callback reports `undefined is not an object (evaluating
+'dat.length')`. Measured: Bun fails at 600,000 bytes and passes at 500,000; Node passes at
+every size. The boundary is the *uncompressed* size, so a kilobyte of compressed data that
+expands past it fails too.
+
+Rarn ships as a Bun binary, so this was every user of every version, surfacing as
+`RN0310: the download may be corrupt. Try again` on archives that were not corrupt.
+Inflation is synchronous now. Two things follow for anything added later: **run the suite
+on the runtime that ships**, which the project already does, and remember that doing so is
+not enough by itself — the fixture also has to cross the boundary that matters, and no test
+here held a file that large until one was written on purpose.
 
 ### CI
 
@@ -213,10 +254,10 @@ RARN_MODULE_DEV/                   <- dev realm, same shape
 
 ```lua
 -- RARN_MODULE/Promise.luau
-return require(script.Parent._Index["evaera_promise@4.0.0"].promise)
+return require(script.Parent._Index["evaera_promise@4.0.0"]["promise"])
 
 -- RARN_MODULE/_Index/sleitnick_knit@1.7.0/Promise.luau
-return require(script.Parent.Parent["evaera_promise@4.0.0"].promise)
+return require(script.Parent.Parent["evaera_promise@4.0.0"]["promise"])
 ```
 
 The folder names `RARN_MODULE` and `_Index` are ours to rename. **The shape is not.**
@@ -240,7 +281,7 @@ shared one, the two directories sit under different services, so the shim must n
 absolute DataModel path taken from the manifest's `place`:
 
 ```lua
-return require(game.ReplicatedStorage.Packages._Index["evaera_promise@4.0.0"].promise)
+return require(game.ReplicatedStorage.Packages._Index["evaera_promise@4.0.0"]["promise"])
 ```
 
 `place` is **derived from the project's Rojo files when the manifest does not declare it**, by
@@ -293,6 +334,14 @@ nothing, and treating "found nothing" as "checked nothing" silenced this warning
 every publishable package uses. Silence is still right when there is no project file at all —
 then there is no place for the warning to be about.
 
+**`rarn init` is the exception, and it has to be.** At install time an absent project file is
+genuinely ambiguous: a library has no place, and warning it about one would be wrong. At
+`init` the person is starting a project, and an empty directory is the case with the least to
+go on — yet it was the only case that got no advice, because the same `scanned` check gated
+both. Measured in the field: `rarn init` in an empty directory (silence), then `rarn add -D`,
+which failed with `RN0031` because there was still no project file to derive `place` from.
+The two commands ask different questions of the same scan, so they get different answers.
+
 Two related rules:
 
 - **A `shared` package may only depend on `shared` packages.** `server` and `dev` may depend on
@@ -321,6 +370,56 @@ Two consequences, and both close doors:
 So the layout in constraint 2 is not free to optimize away later. Measured, not assumed:
 see `docs/research/r1-pnp-feasibility.md`, which also records why a Yarn-PnP-style resolver was
 investigated and rejected. Revisit only if Roblox ships `.luaurc` alias maps.
+
+### 2a-3. A shim carries the module's value; its types have to be forwarded by hand
+
+Luau passes a required module's **value** through a link and none of its **type aliases**.
+So a one-line shim gives a `React` whose `createElement` type-checks and whose `React.Node` is
+`Unknown type 'React.Node'` — at every call site, which makes a `--!strict` signature against
+any typed package impossible to write. Measured: 300 of the 584 packages in a warm cache export
+types from their entry module, 1943 aliases between them. Wally has the same hole.
+
+The fix is one line per type, and it is the reason a shim is no longer always one line:
+
+```lua
+local Module = require(script.Parent._Index["jsdotlua_react@17.2.1"]["react"])
+
+export type Node = Module.Node
+export type PureComponent<Props, State = nil> = Module.PureComponent<Props, State>
+
+return Module
+```
+
+Four things this rests on, all measured rather than assumed:
+
+- **The forward works, generics included.** Verified with `luau-lsp analyze`: through the
+  one-line form `L.Node` is `Unknown type`, through this form both `L.Node` and
+  `L.Box<number>` resolve.
+- **Only the entry module is read.** A type declared in a submodule reaches the outside only
+  if the entry re-exports it, and then it is here under the name a user would write.
+- **Silence is the failure mode.** Anything not understood is left out. A missed type costs
+  the annotation someone was going to write by hand; a wrongly forwarded one puts an error in
+  a generated file they did not write and cannot fix. That is why a declaration whose default
+  names a type the module keeps private is dropped whole — it compiles in the package and not
+  in the shim — and why the drop repeats to a fixed point, since dropping one can strand
+  another.
+- **A package that exports nothing keeps the one-line shim**, which is most of them.
+- **`->` is not a closing bracket.** A function type is an ordinary generic default —
+  `<Listener = (...any) -> (), A... = ...any>` is real — and counting the arrow's `>` as
+  the end of the parameter list cuts the declaration in half. Anything reading Luau type
+  syntax by matching brackets has to know this.
+
+**Verify a change here against the whole registry, not a project.** Shims generated for
+all 584 packages in a warm cache (578 written, 318 forwarding types) and analysed with
+`luau-lsp` is what found the arrow — two packages out of 318, producing a SyntaxError in
+a file the user never wrote. A 52-package project was clean and said nothing.
+
+The marker stays on the first line, so `linker/ownership.ts` and the Lune harness still
+recognise an install. Both match on substring, and a shape check would have broken here.
+
+**Where this shows up as a cost**: when a require cannot be resolved at all — analysing a realm
+against a sourcemap that does not mount it — one diagnostic becomes one per forwarded type.
+Nothing new is broken; the same require was already unresolvable.
 
 ### 2b. Install by rebuilding, then swapping
 
@@ -409,6 +508,28 @@ Three things a 13-package survey turned up that the obvious implementation gets 
 Fallback when a project file is too complex to interpret: copy the whole tree and keep
 going. Never fail the install over this.
 
+### 3a. Package sources reach their dependencies by `:WaitForChild`, not by indexing
+
+`require(script.Parent.Parent.Promise)` is the form the layout above implies, and it is not
+the form most of the registry writes. The JS-port half — react-lua, jest-lua, luau-polyfill,
+every `jsdotlua/*` package — writes `require(script.Parent.Parent:WaitForChild("promise"))`
+and nothing else. Measured across the 584 packages in a warm cache: of 8317 requires that a
+dot-and-bracket scanner could not read, **2772 were `:WaitForChild` and 280
+`:FindFirstChild`**. On a real 52-package react install the ratio is not 37% but **1655 of
+1663**.
+
+Anything that reads package source has to treat the four spellings as one operation:
+`.Name`, `["Name"]`, `:WaitForChild("Name")`, `:FindFirstChild("Name")`. Missing the last two
+does not fail loudly — `doctor` counted them as unreadable, and then reported every
+dependency they reached as declared-but-never-required, which is 310 lines of confident
+wrongness on a correct install.
+
+Two smaller traps in the same place. **An instance name may contain a dot**: Rojo strips one
+extension, so `ReactFiberWorkLoop.new.lua` becomes an instance called
+`ReactFiberWorkLoop.new`, and a scanner that reads the dot as punctuation erases the name.
+And **only the first lookup past the parent chain is the dependency** — `script.Parent.Parent.Foo.Bar`
+reaches `Foo`, and what follows is inside it.
+
 ### 4. Wally API facts (all verified live, 2026-08-20)
 
 | Endpoint | Auth / headers | Returns |
@@ -448,6 +569,19 @@ The Wally client itself does **not** use the metadata endpoint — it git-clones
 repository and reads files. Rarn's use of plain HTTP is what removes that clone, and with it
 any dependency on git being installed.
 
+**Every fan-out at this API needs a ceiling, and the curve is a cliff rather than a slope.**
+Measured against the live registry, 150 packages, best of two runs:
+
+```
+ 8 -> 5.0s    16 -> 2.8s    32 -> 1.8s    64 -> 7.4s    unbounded (150) -> 21.9s
+```
+
+Unbounded is twelve times slower than the best, which matters because resolution walks the
+graph breadth-first: one round is every package at one depth, so a project with 506 direct
+dependencies opened 506 sockets at the same instant and spent 44.8s where 8.9s was
+available. Metadata runs 32 at a time and downloads 8 — different numbers because the
+bodies are different sizes, and both chosen by measuring rather than by taste.
+
 ### 5. Dedupe policy: one version per major, resolved order-independently
 
 Wally allows two versions of a package to coexist only when they are semver-*incompatible*
@@ -486,6 +620,7 @@ rarn.json -> resolve -> fetch -> extract -> prune -> link -> rarn.lock
 | `publish` | archive building, `wally.toml` generation, GitHub device flow | know about `RARN_MODULE` layout |
 | `import` | `wally.toml` text in, a `Manifest` out | touch the filesystem or the network |
 | `project` (place) | read `default.project.json`, say where each realm lands in the DataModel | ever throw; an uninterpretable project file is a note |
+| `install` | the pipeline: read, resolve or reuse, fetch, link, record | print anything, or default its registry to the network |
 | `cli` | commander wiring, output, exit codes | contain business logic |
 
 Business logic lives in the layers; `cli/` only wires and prints. Anything worth testing must
@@ -511,6 +646,22 @@ other project sharing the cache. A `--linked` opt-in may come later.
 - The Luau shim filename (the alias) is derived by PascalCasing the name part:
   `@evaera/promise` becomes `Promise.luau`. Collisions are a hard error, overridable via the
   manifest's `aliases` map.
+- **An alias has to be unique within one manifest section, and nowhere wider.** Root shims
+  are written per section — `dependencies` into the shared realm directory,
+  `serverDependencies` into the server one, `devDependencies` into dev — so two aliases
+  only ever land on the same path when they came from the same section.
+
+  Pooling the three was stricter than the layout, and refused two arrangements it has no
+  objection to: a shared `@evaera/promise` beside a server `@nezuo/promise` (different
+  directories, and a person reaches them through different services), and the same package
+  declared in two sections, which the linker explicitly supports and which the pooled check
+  read as a collision of a package with itself. Both are measured — the second installs one
+  copy in `_Index` and reaches it from the other realm by absolute path, so constraint 1
+  still holds.
+
+  The width matters more than it looks: of the 506 most-depended-upon packages, **40 aliases
+  name more than one package** (`React` is published by `jsdotlua`, `haedrix` and
+  `core-packages`). A real project meets this at twenty or thirty dependencies, not at five.
 - **An alias may contain a hyphen.** Both schemas allowed only Luau identifiers, on the
   reasoning that `require(Packages.Alias)` should parse. The reasoning was fine and the rule
   was wrong: the entire `jsdotlua` family publishes `luau-polyfill`, `es7-types`,
@@ -583,6 +734,16 @@ timeout is a second publish), and the default exclude list covers `.env`, `*.key
 and `*.pem`. The two ways of being wrong are not symmetric — one file too few breaks
 an install and is fixed in minutes, one file too many cannot be undone at all.
 
+**An installed dependency tree is excluded by shape, not by name.** Rarn derives its own
+realm directories from `packageDir`, but it cannot derive what another tool called its:
+Wally installs into `Packages/`, `ServerPackages/` and `DevPackages/`, and a migrated
+project still has them. The first real package published came to 388 files before this,
+339 of them a `DevPackages/` nobody meant to ship. So any directory holding an `_Index/`
+is excluded along with the shims beside it. Matching the names would have been the
+obvious fix and the wrong one — a project whose *source* lives in `Packages/` would then
+publish nothing, and `include` cannot rescue a whole directory because only an
+exactly-named path overrides a default exclusion.
+
 **The first publish claims the scope.** A typo in the scope name takes that scope.
 
 `include` overrides the built-in exclusions only when it names a path exactly.
@@ -606,6 +767,12 @@ The point of a code is that it never changes. Wording gets rewritten; `RN0210` s
 Ranges are grouped by layer (`0001` CLI, `0010` manifest, `0100` registry, `0200`
 resolution, `0300` cache, `0400` linking, `0500` lockfile) with gaps left inside each.
 `tests/codes.test.ts` enforces uniqueness.
+
+**A `how` may only point at something the reader has.** `RN0012` said *"The full schema is in
+schemas/rarn.schema.json"* — a repository path, and every user of a released binary has a
+binary. The advice has to survive leaving this checkout: a URL, a flag, a command, or the
+answer itself. Preferably the answer: `RN0031` is the best-received message in the tool
+because it prints the JSON to paste, and the person who met it stopped looking.
 
 ## Yarn conventions
 
@@ -635,9 +802,24 @@ is one that eventually contradicts it.
 
 ## Where documents live
 
-- `PLAN.md` — decisions, the status table, and what is next. Deliberately thin: every
+- `PLAN.md` — decisions, the milestones, and the gates. Deliberately thin: every
   completed milestone's full record (with its measurements) moves to `docs/milestones/`
   at completion and is **frozen** there — link fixes only, never content edits.
+- `docs/milestones/<era>/` — records for the era being built now, currently `v1/` (the
+  road to 1.0.0). **Milestone numbers restart at M1 each era**, so the same number exists
+  in more than one place and the path is what distinguishes them. Unqualified `M1` means
+  the current era; anything older is named with its path.
+- `docs/archived/<version-range>/` — a closed era, whole. `v0.1.0-v0.1.1/` holds M0–M17,
+  which is everything from an empty directory to the 0.1.1 release. Closed means closed:
+  the folder's own README says what the era was for, and nothing inside it changes.
+
+  **A frozen record that turns out to be wrong gets a dated correction appended, never an
+  edit.** The freeze exists to stop history being quietly rewritten, and silently leaving
+  a false statement in place serves that goal no better than rewriting it would — a reader
+  has no way to know. So the original text stays exactly as written, a `> **정정 (date).**`
+  block says what is wrong and what is true, and the living document keeps the current
+  state. Reached for once, over the archived index summarising M17 as shipping RN-6 when
+  the fix commit is after the tag.
 - `docs/research/` — investigations whose conclusion is fixed (R1 PnP, R2 workspaces,
   the Wally internals read-through). Never edited after their conclusion; research that
   supersedes one gets a new file, it does not rewrite the old one.
@@ -654,11 +836,45 @@ is one that eventually contradicts it.
 - Documentation language: what a user reads is **English** (README, CHANGELOG, release
   notes, CLI output); working documents are **Korean** (PLAN.md, docs/, commit messages).
   This file stays English.
+
+  `README.ko.md` is the one exception, and it is a **translation, not a second document**:
+  `README.md` is the source of truth and gets edited first, the Korean follows in the same
+  commit, and the Korean file says so at the top. A translation that drifts is worse than
+  none, because a reader has no way to tell which half is stale. Nothing else is
+  translated — CHANGELOG and release notes stay English only.
 - Commit messages in Korean, `type: subject` — matching the existing history.
-- Git flow, local only: `master` (releases), `develop` (integration), `feat/*` (work).
-  Merge into `develop` with `--no-ff`. Never commit directly to `master`.
-  **`feat/*` is the only working-branch prefix** — a fix, a refactor, or a piece of
-  research all go on `feat/*` too. Do not invent `fix/*` or `research/*`.
+- **Git flow. Four branch kinds and no others**, enforced by `.husky/branch-guard.sh`
+  so that forgetting is not one of the outcomes:
+
+  | | what it is | cut from | merges into |
+  |---|---|---|---|
+  | `master` | what has been released | — | `release/*`, `hotfix/*` |
+  | `develop` | integration; every PR lands here | `master` | `master` via `release/*` |
+  | `feat/*` | all ordinary work | `develop` | `develop` |
+  | `release/*` | one version being finalised | `develop` | `master` **and** `develop` |
+  | `hotfix/*` | a released version is hurting users | `master` | `master` **and** `develop` |
+
+  **`feat/*` covers everything ordinary** — a fix, a refactor, a piece of research, a
+  doc pass. Do not invent `fix/*` or `chore/*`: what changed is the commit message's
+  job, and the only thing a prefix has to say is *where this work is going*.
+
+  **`release/*` exists so that finalising a version does not stop development.** Cut
+  `release/<version>` from `develop`, settle `package.json` and the CHANGELOG there,
+  then merge it into `master` (tag) **and back into `develop`**. Skipping the
+  back-merge is how the version bump goes missing from the next release.
+
+  **`hotfix/*` is only for a version that is already out and already hurting.** Cut it
+  from `master`, merge to both. Anything that merely feels urgent is still
+  `feat/*` → `develop`. RN-1 qualified, and the choice made then — withdrawing the
+  release rather than patching it — remains available and is often better.
+
+  Merge into `develop` with `--no-ff`. **Never commit directly to `master`**; commits
+  appear there only as merges from `release/*` or `hotfix/*`.
+
+  Two things the guard cannot check, so they are on us: that a branch was cut from the
+  right place, and that a stacked PR's parent merged first. **Both have gone wrong
+  here** — a stacked PR merged out of order once and RN-3 did not reach `develop` until
+  a recovery PR put it there.
 - Biome formats and catches syntax; ESLint carries **only** type-aware rules that Biome
   structurally cannot express (`no-floating-promises` above all — an unawaited download
   leaves a half-written cache and no error). Do not duplicate a rule across both.

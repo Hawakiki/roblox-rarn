@@ -6,6 +6,7 @@ import { pruneInto } from '../project/prune.ts'
 import type { Placement, Resolution, ResolvedPackage } from '../resolver/types.ts'
 import { SECTION_PLACEMENT } from '../resolver/types.ts'
 import { Code } from '../util/codes.ts'
+import { FILE_READ_CONCURRENCY, mapWithConcurrency } from '../util/concurrency.ts'
 import { RarnError } from '../util/errors.ts'
 import { deriveAlias, parsePackageName, toIndexDir, toWallyName } from '../util/package-name.ts'
 import {
@@ -16,8 +17,9 @@ import {
   entryDir,
 } from './layout.ts'
 import { assertRealmsAreOurs } from './ownership.ts'
-import { crossRealmShim, requirePlacePath, rootShim, siblingShim } from './shim.ts'
+import { assertCrossable, crossRealmShim, requirePlacePath, rootShim, siblingShim } from './shim.ts'
 import { STAGING_DIR, clearLeftovers, swapIn } from './swap.ts'
+import { type TypeExport, readTypeExports } from './type-exports.ts'
 
 export interface LinkOptions {
   projectDir: string
@@ -98,6 +100,7 @@ async function build(
   const used = new Set<Placement>()
   const notes = new Map<string, string>()
   const moduleRoots = new Map<string, string>()
+  const entries: { key: string; destination: string; isFile: boolean }[] = []
   let archiveFiles = 0
   let installedFiles = 0
 
@@ -124,11 +127,24 @@ async function build(
     installedFiles += result.installedFiles
     moduleRoots.set(key, result.root.path)
     if (result.root.note !== undefined) notes.set(key, result.root.note)
+
+    entries.push({ key, destination: result.destination, isFile: result.root.kind === 'file' })
   }
 
+  // Read from the pruned tree rather than the archive, because `pruneInto` is what
+  // knows whether the module became a directory or a single file. Once per package
+  // rather than once per shim — three requesters share one read — and after the loop
+  // rather than inside it: these are independent, and doing them in turn on a
+  // 52-package install cost 225ms of nothing but waiting.
+  const typeExports = new Map(
+    await mapWithConcurrency(entries, FILE_READ_CONCURRENCY, async (entry) => {
+      return [entry.key, await readTypeExports(entry.destination, entry.isFile)] as const
+    }),
+  )
+
   let shims = 0
-  shims += await writeDependencyShims(layout, manifest, resolution, packages)
-  shims += await writeRootShims(layout, manifest, resolution, used)
+  shims += await writeDependencyShims(layout, manifest, resolution, packages, typeExports)
+  shims += await writeRootShims(layout, manifest, resolution, used, typeExports)
 
   await swapIn(final, layout, token)
 
@@ -156,6 +172,7 @@ async function writeDependencyShims(
   manifest: NormalizedManifest,
   resolution: Resolution,
   packages: readonly (readonly [string, ResolvedPackage])[],
+  typeExports: ReadonlyMap<string, readonly TypeExport[]>,
 ): Promise<number> {
   let written = 0
 
@@ -186,7 +203,7 @@ async function writeDependencyShims(
 
       await writeFile(
         join(dir, `${alias}${SHIM_EXTENSION}`),
-        shimFor(pkg.placement, dep, manifest, key),
+        shimFor(pkg.placement, dep, manifest, key, typeExports.get(depKey) ?? []),
         'utf8',
       )
       written += 1
@@ -208,6 +225,7 @@ async function writeRootShims(
   manifest: NormalizedManifest,
   resolution: Resolution,
   used: Set<Placement>,
+  typeExports: ReadonlyMap<string, readonly TypeExport[]>,
 ): Promise<number> {
   let written = 0
 
@@ -221,17 +239,24 @@ async function writeRootShims(
 
     for (const rarnName of entries) {
       const name = parsePackageName(rarnName)
-      const pkg = findResolved(resolution, toWallyName(name))
-      if (pkg === undefined) continue
+      const found = findResolved(resolution, toWallyName(name))
+      if (found === undefined) continue
+      const [key, pkg] = found
 
       const alias = manifest.aliases[rarnName] ?? deriveAlias(name)
+      const types = typeExports.get(key) ?? []
       const source =
         pkg.placement === placement
-          ? rootShim(indexDirNameOf(pkg), moduleNameOf(pkg))
+          ? rootShim(indexDirNameOf(pkg), moduleNameOf(pkg), types)
           : crossRealmShim(
-              requirePlacePath(manifest.place, pkg.placement, `rarn.json (${section})`),
+              requirePlacePath(
+                manifest.place,
+                assertCrossable(pkg.placement, `rarn.json (${section})`),
+                `rarn.json (${section})`,
+              ),
               indexDirNameOf(pkg),
               moduleNameOf(pkg),
+              types,
             )
 
       await writeFile(join(layout.realms[placement], `${alias}${SHIM_EXTENSION}`), source, 'utf8')
@@ -247,14 +272,16 @@ function shimFor(
   dep: ResolvedPackage,
   manifest: NormalizedManifest,
   requester: string,
+  types: readonly TypeExport[],
 ): string {
   if (dep.placement === from) {
-    return siblingShim(indexDirNameOf(dep), moduleNameOf(dep))
+    return siblingShim(indexDirNameOf(dep), moduleNameOf(dep), types)
   }
   return crossRealmShim(
-    requirePlacePath(manifest.place, dep.placement, requester),
+    requirePlacePath(manifest.place, assertCrossable(dep.placement, requester), requester),
     indexDirNameOf(dep),
     moduleNameOf(dep),
+    types,
   )
 }
 
@@ -265,11 +292,15 @@ function shimFor(
  * shim points at; the one the root asked for is the right default because the
  * manifest is what asked for it in the first place.
  */
-function findResolved(resolution: Resolution, wallyName: string): ResolvedPackage | undefined {
-  const matches = [...resolution.packages.values()].filter(
-    (pkg) => toWallyName(pkg.name) === wallyName,
-  )
-  return matches.find((pkg) => pkg.requestedBy.some((c) => c.from === 'root')) ?? matches[0]
+function findResolved(
+  resolution: Resolution,
+  wallyName: string,
+): readonly [string, ResolvedPackage] | undefined {
+  // The key comes back with the package rather than being rebuilt from its fields:
+  // the format belongs to the resolver, and a second place that knows it is a second
+  // place to get it wrong.
+  const matches = [...resolution.packages].filter(([, pkg]) => toWallyName(pkg.name) === wallyName)
+  return matches.find(([, pkg]) => pkg.requestedBy.some((c) => c.from === 'root')) ?? matches[0]
 }
 
 /** `evaera_promise@4.0.0` */
