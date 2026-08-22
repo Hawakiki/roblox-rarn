@@ -84,6 +84,19 @@ export function stripCommentsAndStrings(source: string): string {
 }
 
 /**
+ * Whether the `>` at `i` closes a bracket, rather than being half of `->`.
+ *
+ * A function type is an ordinary thing to write inside a generic default —
+ * `<Listener = (...any) -> ()>` is real, from `developmentfurthered/signal` — and
+ * counting the arrow's `>` as a closer ends the parameter list in the middle of it.
+ * Whatever is built from that is not Luau: the shim written from this one came out as
+ * `export type NamedEvent<Listener = (...any) -> = Module.NamedEvent<Listener>`.
+ */
+export function closesBracket(text: string, i: number): boolean {
+  return text[i - 1] !== '-'
+}
+
+/**
  * The index of the bracket closing the one at `open`, or -1.
  *
  * Generic parameter lists nest — `<T, U = Map<string, T>>` — so finding the end means
@@ -93,7 +106,7 @@ export function matchBracket(text: string, open: number, opener: string, closer:
   let depth = 0
   for (let i = open; i < text.length; i++) {
     if (text[i] === opener) depth += 1
-    else if (text[i] === closer) {
+    else if (text[i] === closer && (closer !== '>' || closesBracket(text, i))) {
       depth -= 1
       if (depth === 0) return i
     }
