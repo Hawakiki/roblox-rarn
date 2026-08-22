@@ -186,6 +186,58 @@ async function buildCrossRealm(): Promise<{ server: string; shared: string }> {
   return { server: join(project, 'RARN_MODULE_SERVER'), shared: join(project, 'RARN_MODULE') }
 }
 
+/**
+ * A realm that holds nothing but a cross-realm shim.
+ *
+ * Placement resolves to the widest requester, so a package declared under
+ * `serverDependencies` that a shared package also needs is stored in the shared realm.
+ * The server directory then keeps only the shim pointing across at it, and has no
+ * `_Index` at all — which is correct, and which the harness used to exit 1 on.
+ */
+async function buildShimOnlyRealm(): Promise<{ server: string; shared: string }> {
+  const project = join(dir, 'shim-only')
+  await mkdir(project, { recursive: true })
+
+  const name = parseWallyName('a/base')
+  const key = '@a/base@1.0.0'
+  const source = join(dir, 'shim-only-cache', 'a_base')
+  await mkdir(source, { recursive: true })
+  await writeFile(join(source, 'init.lua'), 'return { name = "base" }')
+
+  // Declared as a server dependency, but placed in shared because the root also
+  // depends on it there. That is what leaves the server realm with only a shim.
+  const packages = new Map<string, ResolvedPackage>([
+    [
+      key,
+      {
+        name,
+        version: '1.0.0',
+        realm: 'shared',
+        placement: 'shared',
+        dependencies: new Map(),
+        requestedBy: [{ from: 'root', range: '*', placement: 'shared' }],
+        dev: false,
+        forcedBy: undefined,
+      },
+    ],
+  ])
+
+  await link({
+    projectDir: project,
+    manifest: normalizeManifest({
+      name: 'game',
+      version: '1.0.0',
+      place: { sharedPackages: 'game.ReplicatedStorage.RARN_MODULE' },
+      dependencies: { '@a/base': '^1.0.0' },
+      serverDependencies: { '@a/base': '^1.0.0' },
+    }),
+    resolution: { packages, duplicates: new Map(), overrides: new Map() },
+    sources: new Map([[key, source]]),
+  })
+
+  return { server: join(project, 'RARN_MODULE_SERVER'), shared: join(project, 'RARN_MODULE') }
+}
+
 describe.skipIf(lune === null)('Lune require harness', () => {
   test('a linked tree resolves and deduplicates', async () => {
     const installDir = await buildDiamond()
@@ -264,6 +316,33 @@ describe.skipIf(lune === null)('Lune require harness', () => {
     expect(output).not.toContain('FAIL')
     expect(code).toBe(0)
   }, 30_000)
+
+  /**
+   * Found by `test/game`, which is what an over-built fixture is for. The harness
+   * exited 1 on a realm with no `_Index`, calling a correct install broken — the same
+   * shape of mistake as reporting an unmounted cross-realm shim as a failure.
+   */
+  test('a realm holding only cross-realm shims is not a failure', async () => {
+    const { server, shared } = await buildShimOnlyRealm()
+    const { code, output } = await runHarness(server, [
+      'RARN_MODULE_SERVER',
+      `--mount=game.ReplicatedStorage.RARN_MODULE=${shared}`,
+    ])
+
+    expect(code).toBe(0)
+    expect(output).toContain('no _Index')
+    expect(output).toContain('require(RARN_MODULE_SERVER.Base)')
+  })
+
+  // Nothing to check is not the same as nothing being there. An empty directory has
+  // no shims either, and that one really is broken.
+  test('a realm with neither _Index nor shims still fails', async () => {
+    const empty = join(dir, 'empty-realm')
+    await mkdir(empty, { recursive: true })
+
+    const { code } = await runHarness(empty, ['RARN_MODULE_SERVER'])
+    expect(code).not.toBe(0)
+  })
 
   test('catches a shim pointing at nothing', async () => {
     const installDir = await buildDiamond()

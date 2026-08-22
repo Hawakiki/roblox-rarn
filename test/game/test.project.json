@@ -1,0 +1,13 @@
+{
+  "name": "rarn-overbuilt-game-tests",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Shared Packages": { "$path": { "optional": "Packages" } },
+      "DevPackages": { "$path": { "optional": "Packages_DEV" } }
+    },
+    "ServerScriptService": {
+      "ServerPackages": { "$path": { "optional": "Packages_SERVER" } }
+    }
+  }
+}
