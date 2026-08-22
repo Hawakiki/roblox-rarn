@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { matchBracket, stripCommentsAndStrings } from '../util/luau.ts'
+import { closesBracket, matchBracket, stripCommentsAndStrings } from '../util/luau.ts'
 
 /**
  * Finds the type aliases a package's entry module exports.
@@ -142,7 +142,9 @@ function parametersAt(code: string, at: number): { declared: string; applied: st
  * Splits a parameter list on the commas that separate parameters.
  *
  * `Props, State = { [string]: Foo<T, U> }` is two parameters, and every naive split
- * makes it four.
+ * makes it four. The `>` of an arrow is not a closer, for the same reason it is not one
+ * when finding the end of the list: `<Listener = (...any) -> (), A... = ...any>` drops
+ * to a negative depth on the arrow and then never splits at all.
  */
 function splitTop(list: string): string[] {
   const parts: string[] = []
@@ -152,9 +154,9 @@ function splitTop(list: string): string[] {
   for (let i = 0; i < list.length; i++) {
     const character = list[i]
     if (character === '<' || character === '{' || character === '(' || character === '[') depth += 1
-    else if (character === '>' || character === '}' || character === ')' || character === ']') {
-      depth -= 1
-    } else if (character === ',' && depth === 0) {
+    else if (character === '}' || character === ')' || character === ']') depth -= 1
+    else if (character === '>' && closesBracket(list, i)) depth -= 1
+    else if (character === ',' && depth === 0) {
       parts.push(list.slice(start, i))
       start = i + 1
     }

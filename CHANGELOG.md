@@ -43,6 +43,19 @@ rather than silently misread, and a `0.x` release may bump it.
   `any` because the real ones could not be reached — type-checks against the real types
   instead. Reading one entry file per package costs about 50ms on that install.
 
+  Then checked the other way, because a change that rewrites every shim deserves it:
+  shims generated for all 584 packages in a warm cache — 578 written, 318 of them
+  forwarding types — and `luau-lsp analyze` run over the lot. **All 318 are clean.** The
+  13 diagnostics that remain are on one-line shims that forward nothing, and are about
+  the packages' own contents (`Module does not return exactly 1 value`), not about
+  anything Rarn writes.
+
+  That sweep is also what caught the one real defect: a function type in a generic
+  default — `<Listener = (...any) -> ()>`, from `developmentfurthered/signal` — ended
+  the parameter list at the `>` of the arrow, and the shim came out as unparseable Luau.
+  Two packages of the 318, and nothing smaller than the whole registry would have found
+  it.
+
 ### Fixed
 
 - **The require harness had no `:WaitForChild`** (RN-11), which is how most of the

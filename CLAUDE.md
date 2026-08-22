@@ -404,6 +404,15 @@ Four things this rests on, all measured rather than assumed:
   in the shim — and why the drop repeats to a fixed point, since dropping one can strand
   another.
 - **A package that exports nothing keeps the one-line shim**, which is most of them.
+- **`->` is not a closing bracket.** A function type is an ordinary generic default —
+  `<Listener = (...any) -> (), A... = ...any>` is real — and counting the arrow's `>` as
+  the end of the parameter list cuts the declaration in half. Anything reading Luau type
+  syntax by matching brackets has to know this.
+
+**Verify a change here against the whole registry, not a project.** Shims generated for
+all 584 packages in a warm cache (578 written, 318 forwarding types) and analysed with
+`luau-lsp` is what found the arrow — two packages out of 318, producing a SyntaxError in
+a file the user never wrote. A 52-package project was clean and said nothing.
 
 The marker stays on the first line, so `linker/ownership.ts` and the Lune harness still
 recognise an install. Both match on substring, and a shape check would have broken here.
