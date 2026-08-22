@@ -635,9 +635,16 @@ is one that eventually contradicts it.
 
 ## Where documents live
 
-- `PLAN.md` — decisions, the status table, and what is next. Deliberately thin: every
+- `PLAN.md` — decisions, the milestones, and the gates. Deliberately thin: every
   completed milestone's full record (with its measurements) moves to `docs/milestones/`
   at completion and is **frozen** there — link fixes only, never content edits.
+- `docs/milestones/<era>/` — records for the era being built now, currently `v1/` (the
+  road to 1.0.0). **Milestone numbers restart at M1 each era**, so the same number exists
+  in more than one place and the path is what distinguishes them. Unqualified `M1` means
+  the current era; anything older is named with its path.
+- `docs/archived/<version-range>/` — a closed era, whole. `v0.1.0-v0.1.1/` holds M0–M17,
+  which is everything from an empty directory to the 0.1.1 release. Closed means closed:
+  the folder's own README says what the era was for, and nothing inside it changes.
 - `docs/research/` — investigations whose conclusion is fixed (R1 PnP, R2 workspaces,
   the Wally internals read-through). Never edited after their conclusion; research that
   supersedes one gets a new file, it does not rewrite the old one.
