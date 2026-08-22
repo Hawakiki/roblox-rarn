@@ -662,10 +662,38 @@ is one that eventually contradicts it.
   notes, CLI output); working documents are **Korean** (PLAN.md, docs/, commit messages).
   This file stays English.
 - Commit messages in Korean, `type: subject` — matching the existing history.
-- Git flow, local only: `master` (releases), `develop` (integration), `feat/*` (work).
-  Merge into `develop` with `--no-ff`. Never commit directly to `master`.
-  **`feat/*` is the only working-branch prefix** — a fix, a refactor, or a piece of
-  research all go on `feat/*` too. Do not invent `fix/*` or `research/*`.
+- **Git flow. Four branch kinds and no others**, enforced by `.husky/branch-guard.sh`
+  so that forgetting is not one of the outcomes:
+
+  | | what it is | cut from | merges into |
+  |---|---|---|---|
+  | `master` | what has been released | — | `release/*`, `hotfix/*` |
+  | `develop` | integration; every PR lands here | `master` | `master` via `release/*` |
+  | `feat/*` | all ordinary work | `develop` | `develop` |
+  | `release/*` | one version being finalised | `develop` | `master` **and** `develop` |
+  | `hotfix/*` | a released version is hurting users | `master` | `master` **and** `develop` |
+
+  **`feat/*` covers everything ordinary** — a fix, a refactor, a piece of research, a
+  doc pass. Do not invent `fix/*` or `chore/*`: what changed is the commit message's
+  job, and the only thing a prefix has to say is *where this work is going*.
+
+  **`release/*` exists so that finalising a version does not stop development.** Cut
+  `release/<version>` from `develop`, settle `package.json` and the CHANGELOG there,
+  then merge it into `master` (tag) **and back into `develop`**. Skipping the
+  back-merge is how the version bump goes missing from the next release.
+
+  **`hotfix/*` is only for a version that is already out and already hurting.** Cut it
+  from `master`, merge to both. Anything that merely feels urgent is still
+  `feat/*` → `develop`. RN-1 qualified, and the choice made then — withdrawing the
+  release rather than patching it — remains available and is often better.
+
+  Merge into `develop` with `--no-ff`. **Never commit directly to `master`**; commits
+  appear there only as merges from `release/*` or `hotfix/*`.
+
+  Two things the guard cannot check, so they are on us: that a branch was cut from the
+  right place, and that a stacked PR's parent merged first. **Both have gone wrong
+  here** — a stacked PR merged out of order once and RN-3 did not reach `develop` until
+  a recovery PR put it there.
 - Biome formats and catches syntax; ESLint carries **only** type-aware rules that Biome
   structurally cannot express (`no-floating-promises` above all — an unawaited download
   leaves a half-written cache and no error). Do not duplicate a rule across both.

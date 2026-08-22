@@ -13,6 +13,10 @@ command -v bun >/dev/null || {
   exit 1
 }
 
+# 브랜치 이름을 먼저 본다. 검사에 몇 분 쓰고 나서 "이 브랜치에는 커밋할 수
+# 없다" 는 말을 듣는 것만큼 훅을 미워하게 만드는 일이 없다.
+. "$(dirname "$0")/branch-guard.sh"
+
 bun run lint-staged
 bun run typecheck
 bun test
