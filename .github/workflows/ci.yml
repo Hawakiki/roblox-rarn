@@ -24,6 +24,43 @@ env:
   HUSKY: '0'
 
 jobs:
+  # master 로 들어가는 문은 release/* 와 hotfix/* 두 개뿐이다. `.husky/branch-guard.sh`
+  # 가 같은 규약을 지키지만 그것은 *커밋할 때 브랜치 이름*만 본다 — PR 의 base 는 보지
+  # 않고, 볼 수도 없다. 그래서 feat/* 를 master 로 겨누는 것은 여전히 클릭 한 번 거리다.
+  #
+  # 지금은 기본 브랜치가 develop 이라 그 클릭이 잘 일어나지 않는다. 그것은 규칙이 아니라
+  # 사고를 막아 주는 우연이고, 기본 브랜치를 master 로 바꾸는 순간 사라진다. 바꾸기 전에
+  # 우연을 규칙으로 옮겨 둔다.
+  #
+  # 빨간 X 로 보일 뿐 자동으로 막지는 않는다. 실제로 막으려면 이 잡을 master 의 브랜치
+  # 보호에서 required 로 지정해야 하고, 그것은 저장소 설정이다.
+  base:
+    name: PR base
+    if: github.event_name == 'pull_request' && (github.base_ref == 'master' || github.base_ref == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - name: master 로 오는 PR 은 release/* 나 hotfix/* 여야 한다
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          case "$HEAD_REF" in
+            release/*|hotfix/*)
+              echo "ok  $HEAD_REF -> $BASE_REF"
+              ;;
+            *)
+              echo "✗ $HEAD_REF 를 $BASE_REF 로 보낼 수 없다." >&2
+              echo >&2
+              echo "  $BASE_REF 에는 두 갈래로만 들어간다:" >&2
+              echo "    버전 올리기    develop 에서 release/<version> 을 딴다" >&2
+              echo "    나간 버전 수리  master 에서 hotfix/* 를 딴다" >&2
+              echo >&2
+              echo "  평범한 작업이라면 base 를 develop 으로 바꾸면 된다." >&2
+              exit 1
+              ;;
+          esac
+
   check:
     name: check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
