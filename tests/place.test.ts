@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { normalizeManifest } from '../src/manifest/read.ts'
 import type { Manifest } from '../src/manifest/types.ts'
 import { resolvePlace, scanPlaceProject, unmountedRealms } from '../src/project/place.ts'
@@ -119,12 +119,17 @@ describe('scanPlaceProject', () => {
     )
   })
 
-  // A library's project file is `{ "tree": { "$path": "src" } }`. It describes a
-  // module, not a place; walking it would find nothing while implying a check ran.
-  test('a library project file is not scanned at all', async () => {
+  /**
+   * A library's project file is `{ "tree": { "$path": "src" } }`. Walking it finds
+   * nothing, and that is correct — but it was also treated as *unscanned*, which
+   * silenced the unmounted-realm warning in the shape every publishable package uses.
+   * The two are separate facts: nothing was found, and a project file was read.
+   */
+  test('a library project file is read, even though it mounts nothing', async () => {
     const manifest = await project({ $path: 'src' })
     const scan = await scanPlaceProject(dir, manifest)
-    expect(scan.scanned).toBe(false)
+    expect(scan.scanned).toBe(true)
+    expect(scan.found.size).toBe(0)
     expect(scan.notes).toEqual([])
   })
 
@@ -154,7 +159,7 @@ describe('scanPlaceProject', () => {
       { packageDir: 'Packages' },
     )
     const scan = await scanPlaceProject(dir, manifest)
-    expect(scan.notes.join('\n')).toContain('mounts Packages/ at both')
+    expect(scan.notes.join('\n')).toContain('default.project.json mounts Packages/ at both')
   })
 
   test('a directory that is not a realm is ignored', async () => {
@@ -163,6 +168,139 @@ describe('scanPlaceProject', () => {
       ReplicatedStorage: { Models: { $path: 'models' } },
     })
     expect((await scanPlaceProject(dir, manifest)).found.size).toBe(0)
+  })
+})
+
+/**
+ * The shapes a fixed `default.project.json` lookup could not see.
+ *
+ * Of the multi-place repositories surveyed for R2, 25 of 30 have no
+ * `default.project.json` at the root — the file is named per place, or nested one
+ * directory per place. Those are the projects with a cross-realm link to derive, and
+ * they were the ones the scan returned nothing for.
+ */
+describe('scanPlaceProject across project files', () => {
+  async function write(path: string, tree: unknown) {
+    const full = join(dir, path)
+    await mkdir(dirname(full), { recursive: true })
+    await writeFile(full, JSON.stringify({ name: 'place', tree }, null, 2))
+  }
+
+  test('reads a project file that is not named default', async () => {
+    await write('client.project.json', {
+      $className: 'DataModel',
+      ReplicatedStorage: { Packages: { $path: 'RARN_MODULE' } },
+    })
+    const manifest = await project(undefined)
+
+    const scan = await scanPlaceProject(dir, manifest)
+    expect(scan.scanned).toBe(true)
+    expect(scan.found.get('RARN_MODULE')).toBe('game.ReplicatedStorage.Packages')
+  })
+
+  /**
+   * `places/lobby/default.project.json` reaches a realm directory at the repository
+   * root as `../../RARN_MODULE`. Comparing the literal string against the realm name
+   * matched only a file sitting at the root, which is the arrangement these repos
+   * do not use.
+   */
+  test('resolves $path against the project file, not the project root', async () => {
+    await write('places/lobby/default.project.json', {
+      $className: 'DataModel',
+      ReplicatedStorage: { Packages: { $path: '../../RARN_MODULE' } },
+    })
+    const manifest = await project(undefined)
+
+    expect((await scanPlaceProject(dir, manifest)).found.get('RARN_MODULE')).toBe(
+      'game.ReplicatedStorage.Packages',
+    )
+  })
+
+  // Measured for R2: 12 of 12 multi-place repositories that mount a dependency
+  // directory mount it at the same DataModel path in every place. Agreement is the
+  // normal case and must not read as a conflict.
+  test('two places agreeing on one path derive it without a note', async () => {
+    const tree = {
+      $className: 'DataModel',
+      ReplicatedStorage: { Packages: { $path: '../../RARN_MODULE' } },
+    }
+    await write('places/lobby/default.project.json', tree)
+    await write('places/game/default.project.json', tree)
+    const manifest = await project(undefined)
+
+    const scan = await scanPlaceProject(dir, manifest)
+    expect(scan.found.get('RARN_MODULE')).toBe('game.ReplicatedStorage.Packages')
+    expect(scan.notes).toEqual([])
+  })
+
+  /**
+   * Two DataModels putting one realm in different places means no single absolute
+   * path is right for both. A guess produces the opaque Studio failure, so nothing is
+   * derived and the reader is pointed at `place` — the actionable half.
+   */
+  test('two places disagreeing derive nothing and say so', async () => {
+    await write('places/lobby/default.project.json', {
+      $className: 'DataModel',
+      ReplicatedStorage: { Packages: { $path: '../../RARN_MODULE' } },
+    })
+    await write('places/game/default.project.json', {
+      $className: 'DataModel',
+      ServerStorage: { Shared: { $path: '../../RARN_MODULE' } },
+    })
+    const manifest = await project(undefined)
+
+    const scan = await scanPlaceProject(dir, manifest)
+    expect(scan.found.has('RARN_MODULE')).toBe(false)
+    expect(scan.disputed.has('RARN_MODULE')).toBe(true)
+    expect(scan.notes.join('\n')).toContain('Not deriving "place" from either')
+  })
+
+  // The dispute is already reported. Saying nothing mounts it would be the opposite
+  // of what was just measured.
+  test('a disputed realm is not also reported as unmounted', async () => {
+    await write('places/lobby/default.project.json', {
+      $className: 'DataModel',
+      ReplicatedStorage: { Packages: { $path: '../../RARN_MODULE' } },
+    })
+    await write('places/game/default.project.json', {
+      $className: 'DataModel',
+      ServerStorage: { Shared: { $path: '../../RARN_MODULE' } },
+    })
+    const manifest = await project(undefined)
+
+    const scan = await scanPlaceProject(dir, manifest)
+    expect(unmountedRealms(scan, manifest, ['shared'])).toEqual([])
+  })
+
+  /**
+   * A package install holds one `default.project.json` per package — hundreds of
+   * library-form files describing somebody else's module. Reading them would say
+   * nothing about this project and would make the scan cost scale with the install.
+   */
+  test('project files inside an install are not read', async () => {
+    await write('RARN_MODULE/_Index/evaera_promise@4.0.0/default.project.json', { $path: 'lib' })
+    const manifest = await project(undefined)
+
+    expect((await scanPlaceProject(dir, manifest)).scanned).toBe(false)
+  })
+
+  // The root default file claims a realm first, so a stray file deeper in the tree
+  // cannot turn the obvious answer into a dispute.
+  test('the root default file is read before anything nested', async () => {
+    await write('default.project.json', {
+      $className: 'DataModel',
+      ReplicatedStorage: { Packages: { $path: 'RARN_MODULE' } },
+    })
+    await write('places/other/default.project.json', {
+      $className: 'DataModel',
+      ServerStorage: { Shared: { $path: '../../RARN_MODULE' } },
+    })
+    const manifest = await project(undefined)
+
+    const scan = await scanPlaceProject(dir, manifest)
+    expect(scan.notes.join('\n')).toContain(
+      'default.project.json puts RARN_MODULE/ at game.ReplicatedStorage.Packages',
+    )
   })
 })
 
@@ -229,7 +367,7 @@ describe('unmountedRealms', () => {
     const warnings = unmountedRealms(scan, manifest, ['shared', 'server'])
     expect(warnings).toHaveLength(1)
     expect(warnings[0]).toContain('Packages_SERVER/')
-    expect(warnings[0]).toContain('Rojo will not sync it')
+    expect(warnings[0]).toContain('no Rojo project file puts it anywhere')
   })
 
   test('says nothing about a realm that received no packages', async () => {

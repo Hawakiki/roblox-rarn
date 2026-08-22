@@ -220,15 +220,15 @@ absolute DataModel path taken from the manifest's `place`:
 return require(game.ReplicatedStorage.Packages._Index["evaera_promise@4.0.0"].promise)
 ```
 
-`place` is **derived from `default.project.json` when the manifest does not declare it**, by
-walking the tree for a node whose `$path` is a realm directory and reading the DataModel path
+`place` is **derived from the project's Rojo files when the manifest does not declare it**, by
+walking each tree for a node whose `$path` is a realm directory and reading the DataModel path
 back off the trail. It cannot be guessed from `packageDir`: the instance name and the folder
 name are independent, and real projects use that (`"SharedPackages": { "$path": "Packages" }`).
 
 If a cross-realm link is needed and neither source supplies the path, fail with an explanation
 of what to add — there is no way to synthesize it.
 
-Three things the project-file walker has to get right, all taken from real files rather than
+Five things the project-file walker has to get right, all taken from real files rather than
 imagined:
 
 - **A service node need not carry `$className`.** `"ReplicatedStorage": { "Packages": {...} }`
@@ -237,15 +237,38 @@ imagined:
   that may not exist yet — which is precisely what a project using a package manager writes.
 - **A node can carry `$path` *and* children.** Stopping at the first `$path` misses whatever is
   below it.
+- **The file is not called `default.project.json`.** Rojo's convention is any `*.project.json`,
+  and of the 30 multi-place repositories surveyed for R2, **25 have no `default.project.json` at
+  the root** — the file is named per place (`client.project.json`) or nested one directory per
+  place (`places/lobby/default.project.json`). Reading one fixed name found nothing in exactly
+  the projects that have a cross-realm path to derive. Every `*.project.json` down to three
+  levels is read, skipping dot-directories, `node_modules`, the realm directories, and `_Index`
+  — an install holds one project file per package and none of them describe this project.
+- **`$path` is relative to the file, not to the project root.** A nested place file reaches a
+  root-level realm as `"../../Packages"`, so the string has to be resolved against the file's own
+  directory before it is compared. Matching the literal text worked only for a file sitting at
+  the root, which is the arrangement those 25 repositories do not use.
+
+Two project files are two DataModels. Where they agree on a realm — measured: **12 of 12**
+multi-place repositories that mount a dependency directory mount it at the same DataModel path
+in every place — the agreed path is derived. Where they disagree, no path is right for both, so
+nothing is derived and the disagreement is printed: guessing produces the opaque Studio failure
+described above, while not deriving produces `RN0031`, which says what to add.
 
 When the two sources disagree the manifest wins and the disagreement is printed. Someone who
 wrote a path down meant it; but one of the two is wrong, and the runtime will not say which —
 see the Studio measurements above for what it says instead.
 
-**A realm directory the project file does not mount is a warning, not an error.** The install
-succeeds, the tree is right, and the packages simply never reach Studio. This is exactly what a
-Wally import produces: Wally used `ServerPackages`, Rarn derives `Packages_SERVER` by suffix, and
-the old Rojo entry does not cover it.
+**A realm directory no project file mounts is a warning, not an error.** The install succeeds,
+the tree is right, and the packages simply never reach Studio. This is exactly what a Wally
+import produces: Wally used `ServerPackages`, Rarn derives `Packages_SERVER` by suffix, and the
+old Rojo entry does not cover it.
+
+The warning fires whenever a project file was **read**, which is not the same as one having
+mounted something. A library's project file is `{ "tree": { "$path": "src" } }`; walking it finds
+nothing, and treating "found nothing" as "checked nothing" silenced this warning in the shape
+every publishable package uses. Silence is still right when there is no project file at all —
+then there is no place for the warning to be about.
 
 Two related rules:
 
