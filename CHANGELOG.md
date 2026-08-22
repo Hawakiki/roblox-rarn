@@ -6,7 +6,28 @@ Rarn follows semver, with one clarification that matters before 1.0: **the manif
 lockfile formats are not stable yet.** `lockfileVersion` exists so a change can be detected
 rather than silently misread, and a `0.x` release may bump it.
 
-## Unreleased
+## 0.1.1 — 2026-08-22
+
+**0.1.0 is withdrawn; this replaces it.** R2, a research pass over what a workspace would
+mean on this platform, found five defects instead — one of which deleted a directory the
+user wrote. Each was reproduced before it was fixed, and two turned out not to be what the
+report said they were. Nothing here changes the manifest or lockfile format.
+
+### Install
+
+```toml
+# rokit.toml
+[tools]
+rarn = "Hawakiki/roblox-rarn@0.1.1"
+```
+
+```bash
+rokit trust Hawakiki/roblox-rarn
+rokit install
+```
+
+The trust step is Rokit's own policy — without it the install stops with "has not been
+marked as trusted". It is asked once per machine.
 
 ### Added
 
@@ -28,18 +49,6 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ### Fixed
 
-- **Resolution could install a version that does not satisfy a requirement, and
-  report success** (RN-5). When greedy grouping produced two versions sharing a
-  major, they were merged and the higher one kept — which is semver's contract for a
-  *caret* requirement and for nothing else. `~1.2.0` and `^1.5.0` share a major and
-  have an empty intersection, so the merge installed `1.9.0`, recorded `~1.2.0`
-  beside it in the lockfile as satisfied, and printed `installed`. The surviving
-  version is now re-checked against every constraint it absorbs — including the ones
-  the group already held, since raising the survivor can break those too — and
-  anything it cannot satisfy is reported as a conflict (`RN0200`) naming the
-  requesters and their ranges. Compatible ranges that genuinely do intersect, such as
-  `^1.2.0` and `^1.5.0`, still collapse to one version.
-
 - **`rarn install` could delete a directory it did not create** (RN-1). Installing
   replaces the realm directories wholesale, and the only thing separating that from a
   user's source tree was the directory *name* — which on Windows and macOS does not
@@ -51,14 +60,17 @@ rather than silently misread, and a `0.x` release may bump it.
   existing Wally install still passes, because replacing one is what migrating means.
   `rarn import` warns about the same collision at the moment it picks the name.
 
-- **The require harness could not check a cross-realm shim, and reported the correct
-  form as broken** (RN-2). A shim crossing realms names an absolute DataModel path,
-  and the harness's `game` stub returned a bare table, so the path resolved to nil.
-  `verify.luau` now takes `--mount=<DataModelPath>=<dir>` and the runtime builds
-  `game` from those mounts, wrapping them through the same proxy table as the primary
-  realm — so a package reached across a realm boundary still compares equal to itself.
-  Without a mount the check is reported as *not verified* rather than failed, and the
-  harness test now exercises both paths, which CI never did.
+- **Resolution could install a version that does not satisfy a requirement, and
+  report success** (RN-5). When greedy grouping produced two versions sharing a
+  major, they were merged and the higher one kept — which is semver's contract for a
+  *caret* requirement and for nothing else. `~1.2.0` and `^1.5.0` share a major and
+  have an empty intersection, so the merge installed `1.9.0`, recorded `~1.2.0`
+  beside it in the lockfile as satisfied, and printed `installed`. The surviving
+  version is now re-checked against every constraint it absorbs — including the ones
+  the group already held, since raising the survivor can break those too — and
+  anything it cannot satisfy is reported as a conflict (`RN0200`) naming the
+  requesters and their ranges. Compatible ranges that genuinely do intersect, such as
+  `^1.2.0` and `^1.5.0`, still collapse to one version.
 
 - **`place` was derived from one fixed filename, and found nothing in the projects
   that needed it** (RN-4). Only `<projectDir>/default.project.json` was read, but Rojo's
@@ -81,7 +93,21 @@ rather than silently misread, and a `0.x` release may bump it.
   With no project file at all it stays silent, since then there is no place for the
   warning to be about.
 
-## 0.1.0 — 2026-08-21
+- **The require harness could not check a cross-realm shim, and reported the correct
+  form as broken** (RN-2). A shim crossing realms names an absolute DataModel path,
+  and the harness's `game` stub returned a bare table, so the path resolved to nil.
+  `verify.luau` now takes `--mount=<DataModelPath>=<dir>` and the runtime builds
+  `game` from those mounts, wrapping them through the same proxy table as the primary
+  realm — so a package reached across a realm boundary still compares equal to itself.
+  Without a mount the check is reported as *not verified* rather than failed, and the
+  harness test now exercises both paths, which CI never did.
+
+## 0.1.0 — 2026-08-21 (withdrawn)
+
+**Withdrawn on 2026-08-22 and not installable.** `rarn install` could replace a directory it
+did not create: on a case-insensitive filesystem `packageDir: "Packages"` names a `packages/`
+source tree, and `rarn import` writes exactly that name. The release was deleted the day after
+it went out — four asset downloads, all our own. The tag stays as history. Use 0.1.1.
 
 First release. The install path is complete and verified; publishing works but has never been
 run against the live registry.
