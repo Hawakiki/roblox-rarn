@@ -10,6 +10,22 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ### Fixed
 
+- **Resolution opened one socket per package and got slower the wider the graph
+  was.** Metadata fetching walks the dependency graph breadth-first, and each round
+  was a bare `Promise.all` over every package at that depth — for a project with 506
+  direct dependencies, 506 simultaneous requests. Measured against the live registry
+  on 150 packages, best of two runs:
+
+  ```
+   8 -> 5.0s     16 -> 2.8s     32 -> 1.8s     64 -> 7.4s     unbounded -> 21.9s
+  ```
+
+  The curve is a cliff, not a slope, and unbounded sat at the wrong end of it.
+  Requests are now bounded at 32. On a 506-package graph, resolution went from
+  **44.8s to 8.9s**. Downloads were already bounded; metadata was not, and on a wide
+  graph it is the larger of the two because every package is asked about while only
+  the chosen ones are downloaded.
+
 - **A package containing a file over 512 KiB could not be installed** (RN-6). fflate's
   async `unzip` hands entries above that to a worker, and under Bun the worker returns
   nothing — the callback reports `undefined is not an object (evaluating 'dat.length')`.
