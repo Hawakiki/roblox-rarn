@@ -307,6 +307,14 @@ nothing, and treating "found nothing" as "checked nothing" silenced this warning
 every publishable package uses. Silence is still right when there is no project file at all —
 then there is no place for the warning to be about.
 
+**`rarn init` is the exception, and it has to be.** At install time an absent project file is
+genuinely ambiguous: a library has no place, and warning it about one would be wrong. At
+`init` the person is starting a project, and an empty directory is the case with the least to
+go on — yet it was the only case that got no advice, because the same `scanned` check gated
+both. Measured in the field: `rarn init` in an empty directory (silence), then `rarn add -D`,
+which failed with `RN0031` because there was still no project file to derive `place` from.
+The two commands ask different questions of the same scan, so they get different answers.
+
 Two related rules:
 
 - **A `shared` package may only depend on `shared` packages.** `server` and `dev` may depend on
@@ -422,6 +430,28 @@ Three things a 13-package survey turned up that the obvious implementation gets 
 
 Fallback when a project file is too complex to interpret: copy the whole tree and keep
 going. Never fail the install over this.
+
+### 3a. Package sources reach their dependencies by `:WaitForChild`, not by indexing
+
+`require(script.Parent.Parent.Promise)` is the form the layout above implies, and it is not
+the form most of the registry writes. The JS-port half — react-lua, jest-lua, luau-polyfill,
+every `jsdotlua/*` package — writes `require(script.Parent.Parent:WaitForChild("promise"))`
+and nothing else. Measured across the 584 packages in a warm cache: of 8317 requires that a
+dot-and-bracket scanner could not read, **2772 were `:WaitForChild` and 280
+`:FindFirstChild`**. On a real 52-package react install the ratio is not 37% but **1655 of
+1663**.
+
+Anything that reads package source has to treat the four spellings as one operation:
+`.Name`, `["Name"]`, `:WaitForChild("Name")`, `:FindFirstChild("Name")`. Missing the last two
+does not fail loudly — `doctor` counted them as unreadable, and then reported every
+dependency they reached as declared-but-never-required, which is 310 lines of confident
+wrongness on a correct install.
+
+Two smaller traps in the same place. **An instance name may contain a dot**: Rojo strips one
+extension, so `ReactFiberWorkLoop.new.lua` becomes an instance called
+`ReactFiberWorkLoop.new`, and a scanner that reads the dot as punctuation erases the name.
+And **only the first lookup past the parent chain is the dependency** — `script.Parent.Parent.Foo.Bar`
+reaches `Foo`, and what follows is inside it.
 
 ### 4. Wally API facts (all verified live, 2026-08-20)
 
@@ -660,6 +690,12 @@ The point of a code is that it never changes. Wording gets rewritten; `RN0210` s
 Ranges are grouped by layer (`0001` CLI, `0010` manifest, `0100` registry, `0200`
 resolution, `0300` cache, `0400` linking, `0500` lockfile) with gaps left inside each.
 `tests/codes.test.ts` enforces uniqueness.
+
+**A `how` may only point at something the reader has.** `RN0012` said *"The full schema is in
+schemas/rarn.schema.json"* — a repository path, and every user of a released binary has a
+binary. The advice has to survive leaving this checkout: a URL, a flag, a command, or the
+answer itself. Preferably the answer: `RN0031` is the best-received message in the tool
+because it prints the JSON to paste, and the person who met it stopped looking.
 
 ## Yarn conventions
 

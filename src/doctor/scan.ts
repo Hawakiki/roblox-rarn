@@ -113,7 +113,13 @@ export function stripCommentsAndStrings(source: string): string {
       // A plain name survives; anything else is blanked. Both halves matter:
       // `folder["Promise"]` is bracket indexing and the name is the whole point,
       // while a string long enough to hold `require(...)` is the case worth hiding.
-      out += /^(['"])[A-Za-z_][\w-]*\1$/.test(literal) ? literal : keepNewlines(literal)
+      //
+      // A dot is part of a name here, not a separator. Rojo derives an instance name
+      // by removing one extension, so `ReactFiberWorkLoop.new.lua` becomes an instance
+      // called `ReactFiberWorkLoop.new` — react-lua has dozens, and blanking them
+      // turned every `:WaitForChild("ReactFiberWorkLoop.new")` into an unreadable
+      // require.
+      out += /^(['"])[A-Za-z_][\w.-]*\1$/.test(literal) ? literal : keepNewlines(literal)
       i = stop
       continue
     }
@@ -220,28 +226,66 @@ interface Resolved {
   readonly tail: string
 }
 
-/** Works out how far up an expression reaches, and what it asks for there. */
+/**
+ * One lookup step, in every spelling Roblox accepts for the same operation.
+ *
+ * `:WaitForChild("x")` is the one that matters. It reads as a method call rather than
+ * an index, so a scanner built around `.Foo` and `["Foo"]` sees nothing — and the
+ * entire jsdotlua family (react-lua, jest-lua, luau-polyfill: the JS-port half of the
+ * registry) writes every single require that way. Measured on a 52-package install,
+ * 1655 of 1663 unreadable requires were this one form.
+ *
+ * The trailing `[^()]*` is `WaitForChild`'s optional timeout argument.
+ */
+const STEP =
+  /^(?:\.([A-Za-z_]\w*)|\[(['"])([^'"\]]+)\2\]|:(?:WaitForChild|FindFirstChild)\((['"])([^'"()]+)\4[^()]*\))/
+
+/** The name reached by the first lookup step in `rest`, if it starts with one. */
+function firstStep(rest: string): string | undefined {
+  const match = STEP.exec(rest)
+  if (match === null) return undefined
+  return match[1] ?? match[3] ?? match[5]
+}
+
+/**
+ * Works out how far up an expression reaches, and what it asks for there.
+ *
+ * Only the *first* step past the parent chain is the answer; anything after it is
+ * inside whatever that step reached and is none of our business. Requiring the whole
+ * expression to be one step — which this did — dropped `script.Parent.Parent.Foo.Bar`
+ * into the unreadable pile, where most of those are the package walking its own
+ * internals and should have been passed over in silence instead.
+ */
 function resolveExpression(
   expression: string,
   aliases: ReadonlyMap<string, number>,
 ): Resolved | undefined {
   const flat = normalize(expression)
 
-  const direct = /^script((?:\.Parent)*)(?:\.([A-Za-z_]\w*)|\["([^"]+)"\])$/.exec(flat)
-  if (direct !== null) {
-    const tail = direct[2] ?? direct[3]
+  // `\b` so that a variable named `scriptConfig` is not read as a chain from `script`.
+  const fromScript = /^script\b((?:\.Parent)*)/.exec(flat)
+  if (fromScript !== null) {
+    const tail = firstStep(flat.slice(fromScript[0].length))
     if (tail === undefined) return undefined
-    return { parents: (direct[1] ?? '').split('.Parent').length - 1, tail }
+    return { parents: (fromScript[1] ?? '').split('.Parent').length - 1, tail }
   }
 
-  // Through a name that was assigned a chain earlier in the same file.
-  const viaAlias = /^([A-Za-z_][\w.]*?)(?:\.([A-Za-z_]\w*)|\["([^"]+)"\])$/.exec(flat)
-  if (viaAlias !== null) {
-    const base = viaAlias[1]
-    const tail = viaAlias[2] ?? viaAlias[3]
-    if (base === undefined || tail === undefined) return undefined
-    const parents = aliases.get(base)
-    if (parents !== undefined) return { parents, tail }
+  // Through a name that was assigned a chain earlier in the same file. Tracked names
+  // may themselves contain dots (`KnitClient.Util`), so the longest prefix that was
+  // actually recorded wins and the rest of the expression is the lookup.
+  const base = /^[A-Za-z_][\w.]*/.exec(flat)
+  if (base === null) return undefined
+
+  for (let name = base[0]; name !== ''; ) {
+    const parents = aliases.get(name)
+    if (parents !== undefined) {
+      const tail = firstStep(flat.slice(name.length))
+      return tail === undefined ? undefined : { parents, tail }
+    }
+
+    const cut = name.lastIndexOf('.')
+    if (cut === -1) break
+    name = name.slice(0, cut)
   }
 
   return undefined

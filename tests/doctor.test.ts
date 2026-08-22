@@ -73,6 +73,71 @@ describe('depth', () => {
   })
 })
 
+describe('lookup forms', () => {
+  /**
+   * The form the JS-port half of the registry uses. Every jsdotlua package — react-lua,
+   * jest-lua, luau-polyfill — requires this way and nothing else, so a scanner that only
+   * knew `.Foo` reported 1655 of 1663 requires in a real 52-package install as
+   * unreadable, and then reported every dependency they reached as declared-but-unused.
+   */
+  test('reads :WaitForChild as an index', () => {
+    expect(found("require(script.Parent.Parent:WaitForChild('Promise'))", 1)).toEqual(['Promise'])
+  })
+
+  test('reads :FindFirstChild as an index', () => {
+    expect(found('require(script.Parent.Parent:FindFirstChild("Promise"))', 1)).toEqual(['Promise'])
+  })
+
+  test("WaitForChild's timeout argument does not hide the name", () => {
+    expect(found("require(script.Parent.Parent:WaitForChild('Promise', 5))", 1)).toEqual([
+      'Promise',
+    ])
+  })
+
+  test('follows :WaitForChild through a tracked variable', () => {
+    const source = ['local Util = script.Parent.Parent', "require(Util:WaitForChild('Promise'))"]
+    expect(found(source.join('\n'), 1)).toEqual(['Promise'])
+  })
+
+  // Only the first step past the parent chain is the dependency. What follows is
+  // inside whatever that step reached.
+  test('takes the first step of a longer path', () => {
+    expect(found('require(script.Parent.Parent.Promise.Some.Thing)', 1)).toEqual(['Promise'])
+    expect(found("require(script.Parent.Parent:WaitForChild('a'):WaitForChild('b'))", 1)).toEqual([
+      'a',
+    ])
+  })
+
+  /**
+   * Rojo names an instance by removing one extension, so `Foo.new.lua` becomes an
+   * instance called `Foo.new` — react-lua has dozens. The string blanker treated the
+   * dot as punctuation and erased the name, leaving a require with an empty argument.
+   */
+  test('a dot is part of an instance name, not punctuation', () => {
+    expect(found("require(script.Parent.Parent:WaitForChild('Fiber.new'))", 1)).toEqual([
+      'Fiber.new',
+    ])
+  })
+
+  test('a variable whose name merely starts with script is not a chain', () => {
+    const result = scanSource('require(scriptConfig.Promise)', 1)
+    expect(result.dependencies).toHaveLength(0)
+    expect(result.dynamic).toHaveLength(1)
+  })
+
+  // Luau's string require. Real, and genuinely unresolvable as an instance path —
+  // these files run outside Roblox.
+  test('a string require stays unreadable', () => {
+    expect(scanSource('require("@pkg/@jsdotlua/react-test-renderer")', 1).dynamic).toHaveLength(1)
+  })
+
+  test('a bare parent with no lookup is unreadable, not a dependency', () => {
+    const result = scanSource('require(script.Parent.Parent)', 1)
+    expect(result.dependencies).toHaveLength(0)
+    expect(result.dynamic).toHaveLength(1)
+  })
+})
+
 describe('requires through a variable', () => {
   // sleitnick/knit does exactly this. A scanner that only matched the literal chain
   // would report the most used framework in the ecosystem as entirely dynamic.

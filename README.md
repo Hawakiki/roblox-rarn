@@ -48,16 +48,23 @@ installed 5 packages into RARN_MODULE
 Rarn is a single self-contained binary with no runtime dependencies — no Bun, no Node, no
 Rojo, no git.
 
+```bash
+rokit add Hawakiki/roblox-rarn rarn      # the second word is the alias, and it matters
+rokit trust Hawakiki/roblox-rarn
+rokit install
+```
+
 ```toml
-# rokit.toml
+# rokit.toml, afterwards
 [tools]
 rarn = "Hawakiki/roblox-rarn@0.1.1"
 ```
 
-```bash
-rokit trust Hawakiki/roblox-rarn
-rokit install
-```
+**Give it the alias.** Rokit names a tool after its repository unless told otherwise, so
+plain `rokit add Hawakiki/roblox-rarn` installs it as `roblox-rarn`, and `rarn` then fails
+with *"Failed to find tool 'rarn' in any project manifest file"* — while a `rarn` shim sits
+in `~/.rokit/bin` looking installed. The error reads as *add it*, so the obvious next move
+is to add it again, which changes nothing. Editing the key in `rokit.toml` fixes it too.
 
 The trust step is Rokit's, not Rarn's: it refuses to run a tool nobody has vouched for, and
 without it `rokit install` stops with *"has not been marked as trusted"*. It is asked once
@@ -115,6 +122,22 @@ files — `docs/`, a `CHANGELOG.md`, a vendored TestEZ — while the module itse
 file at `lib/init.lua`. Wally extracts all of it and lets Rojo reinterpret the nested
 project file at sync time. Rarn reads `default.project.json`, resolves its `$path`,
 and copies only that. Which is why Rarn's output needs no Rojo to be correct.
+
+What it does **not** do is second-guess what the author put *inside* that module root.
+Some packages keep their own tests there — `jsdotlua/promise` ships an `init.spec.lua`
+beside its source — and those arrive in your place along with everything else. Usually
+that is a few kilobytes and no more; it stops being harmless if you run a test framework
+whose default pattern is `**/?(*.)+(spec|test)`, because jest-lua will then discover the
+package's specs as if they were yours. The fix belongs in your Rojo project, which is the
+layer that decides what reaches the place:
+
+```jsonc
+"globIgnorePaths": ["**/*.spec.lua", "**/*.spec.luau", "**/__tests__/**"]
+```
+
+Rarn will not strip them itself. The module root is the author's declaration of what the
+package is, and a package manager that quietly disagrees with it is a worse problem than
+a stray spec file.
 
 ## Commands
 
@@ -256,6 +279,24 @@ service. A shim can only walk relatively within one realm, so a server package t
 depends on a shared one needs an absolute DataModel path — that is what `place` is for.
 A `shared` package may only depend on `shared` packages: shared code replicates to
 clients, so a shared→server edge breaks at runtime.
+
+**The two sibling names come from `packageDir`**, by appending `_SERVER` and `_DEV`. Set
+`packageDir` to `Packages` and the three directories are `Packages/`, `Packages_SERVER/`
+and `Packages_DEV/`. They are not configurable separately, and `rarn install` prints the
+ones it wrote.
+
+Each needs a Rojo entry to reach Studio, and only two of them need a `place`:
+
+| directory | mount it | `place` entry |
+|---|---|---|
+| `Packages/` | wherever shared code lives, usually `ReplicatedStorage` | `sharedPackages` |
+| `Packages_SERVER/` | a server-only service, usually `ServerScriptService` | `serverPackages` |
+| `Packages_DEV/` | anywhere, in whichever project file runs your tests | none — see below |
+
+There is no `place.devPackages`, and there is no third directory missing from the table.
+A package lands in the **widest** realm that asked for it, so anything requiring a
+dev-placed package would have pulled it out of dev already — nothing ever has to reach
+*into* dev by absolute path. The other two do, which is the whole reason `place` exists.
 
 ## Speed
 

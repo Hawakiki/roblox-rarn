@@ -47,6 +47,13 @@ export async function runDoctor(
   const layout = createLayout(projectDir, manifest)
   const packages: PackageReport[] = []
 
+  // Counted across every package, not only the ones with something to report. These
+  // two numbers are printed in one sentence with the package count, and summing them
+  // over the reported subset made "scanned 212 files across 52 packages" out of a run
+  // that had read 441 — the sentence read as coverage while measuring noise.
+  let filesScanned = 0
+  let dynamicTotal = 0
+
   for (const [key, pkg] of [...resolution.packages].sort(([a], [b]) => a.localeCompare(b))) {
     const entry = join(
       layout.realms[pkg.placement],
@@ -61,13 +68,13 @@ export async function runDoctor(
     const declared = new Set(pkg.dependencies.keys())
     const required = new Map<string, { file: string; line: number }>()
     let dynamic = 0
-    let filesScanned = 0
+    let filesInPackage = 0
 
     for (const file of await luauFiles(moduleRoot.path)) {
       const source = await readFile(file, 'utf8').catch(() => null)
       if (source === null) continue
 
-      filesScanned += 1
+      filesInPackage += 1
       const result = scanSource(source, depthOf(moduleRoot, file))
       dynamic += result.dynamic.length
 
@@ -88,15 +95,18 @@ export async function runDoctor(
 
     const unused = [...declared].filter((alias) => !required.has(alias)).sort()
 
+    filesScanned += filesInPackage
+    dynamicTotal += dynamic
+
     if (missing.length > 0 || unused.length > 0 || dynamic > 0) {
-      packages.push({ key, missing, unused, dynamic, filesScanned })
+      packages.push({ key, missing, unused, dynamic, filesScanned: filesInPackage })
     }
   }
 
   return {
     packages,
-    filesScanned: packages.reduce((sum, p) => sum + p.filesScanned, 0),
-    dynamicTotal: packages.reduce((sum, p) => sum + p.dynamic, 0),
+    filesScanned,
+    dynamicTotal,
     missingTotal: packages.reduce((sum, p) => sum + p.missing.length, 0),
     unusedTotal: packages.reduce((sum, p) => sum + p.unused.length, 0),
   }
