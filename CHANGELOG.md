@@ -8,6 +8,41 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ## Unreleased
 
+### Added
+
+- **A link shim now forwards the package's exported types.** Luau carries a required
+  module's *value* through a link and none of its type aliases, so
+  `require(Packages.React)` gave a `React` whose `createElement` type-checked and whose
+  `React.Node` was `Unknown type 'React.Node'` — at every call site, which makes a
+  `--!strict` signature against any typed package impossible to write. 300 of the 584
+  packages in a warm cache export types this way, 1943 aliases between them, and Wally
+  has the same hole.
+
+  A shim for such a package binds the module and re-exports what it declares, generic
+  parameters and their defaults included:
+
+  ```lua
+  local Module = require(script.Parent._Index["jsdotlua_react@17.2.1"]["react"])
+
+  export type Node = Module.Node
+  export type PureComponent<Props, State = nil> = Module.PureComponent<Props, State>
+
+  return Module
+  ```
+
+  Only the entry module is read, and anything not understood is left out rather than
+  guessed at: a missed type costs the annotation someone was going to write by hand,
+  while a wrongly forwarded one puts an error in a generated file they did not write.
+  A declaration whose default names a type the package keeps private is dropped whole,
+  and the drop repeats to a fixed point because dropping one can strand another. A
+  package that exports no types keeps the one-line shim it always had.
+
+  Measured on the 52-package React project that reported the problem: 211 of 224 shims
+  forward types, `luau-lsp analyze` reports nothing across the whole install tree, and
+  the hand-written façade the project had needed — declaring `Node` and `Context<T>` as
+  `any` because the real ones could not be reached — type-checks against the real types
+  instead. Reading one entry file per package costs about 50ms on that install.
+
 ### Fixed
 
 - **The require harness had no `:WaitForChild`** (RN-11), which is how most of the

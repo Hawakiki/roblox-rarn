@@ -268,6 +268,27 @@ This shape is forced, not chosen. Package sources contain hardcoded
 `require(script.Parent.Parent.Alias)` calls, so a dependency shim has to sit as a
 *sibling* of the package's own source folder or the call resolves to `nil`.
 
+**A shim forwards the package's types, so `--!strict` works.** Luau carries a required
+module's *value* through a link and none of its type aliases, which is why
+`React.createElement` type-checks through a Wally link while `React.Node` is
+`Unknown type 'React.Node'` at every call site. Rarn reads what the entry module
+exports and re-exports it:
+
+```lua
+-- Packages/React.luau
+local Module = require(script.Parent._Index["jsdotlua_react@17.2.1"]["react"])
+
+export type Node = Module.Node
+export type PureComponent<Props, State = nil> = Module.PureComponent<Props, State>
+
+return Module
+```
+
+300 of the 584 most-installed packages export types this way. Anything Rarn cannot
+read confidently is left out rather than guessed at — a missing alias costs you the
+annotation you were going to write anyway, a wrong one puts an error in a generated
+file you did not write. A package that exports no types keeps the one-line shim.
+
 **Duplicates are a correctness bug here, not wasted disk.** Roblox's `require` takes an
 Instance and caches per ModuleScript instance, so two copies of a package are two
 modules with two separate sets of state — every singleton inside quietly becomes two.
@@ -330,6 +351,7 @@ The method, the other set sizes, and how the set was chosen are in
 | files written | **7,045** | 12,956 |
 | bytes written | **43.3 MB** | 107.9 MB |
 | module roots that resolve without Rojo | **548 / 556 (98.6%)** | 148 / 575 (25.7%) |
+| a package's types reachable through the link | **yes** | no — `Unknown type` at every call site |
 
 Three things that table is not hiding:
 

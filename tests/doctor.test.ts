@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { scanSource, stripCommentsAndStrings } from '../src/doctor/scan.ts'
+import { scanSource } from '../src/doctor/scan.ts'
+import { stripCommentsAndStrings } from '../src/util/luau.ts'
 
 /** Aliases found at the given depth, sorted. */
 const found = (source: string, depth: number) =>
