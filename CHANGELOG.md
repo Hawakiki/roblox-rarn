@@ -28,6 +28,18 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ### Fixed
 
+- **Resolution could install a version that does not satisfy a requirement, and
+  report success** (RN-5). When greedy grouping produced two versions sharing a
+  major, they were merged and the higher one kept — which is semver's contract for a
+  *caret* requirement and for nothing else. `~1.2.0` and `^1.5.0` share a major and
+  have an empty intersection, so the merge installed `1.9.0`, recorded `~1.2.0`
+  beside it in the lockfile as satisfied, and printed `installed`. The surviving
+  version is now re-checked against every constraint it absorbs — including the ones
+  the group already held, since raising the survivor can break those too — and
+  anything it cannot satisfy is reported as a conflict (`RN0200`) naming the
+  requesters and their ranges. Compatible ranges that genuinely do intersect, such as
+  `^1.2.0` and `^1.5.0`, still collapse to one version.
+
 - **`rarn install` could delete a directory it did not create** (RN-1). Installing
   replaces the realm directories wholesale, and the only thing separating that from a
   user's source tree was the directory *name* — which on Windows and macOS does not

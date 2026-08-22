@@ -8,11 +8,9 @@
 
 ---
 
-## 🟠 RN-5 · 해석이 호환 버전으로 갈라진다 (`mergeCompatible` 위젠)
+## 미해결
 
-**상태:** 미수정. R2 종합이 실제 `selectVersions` 호출로 재현했다고 보고. 직접 재현하지 않았다.
-
-RN-3 의 근본 원인으로 보이는 것. 상세는 `docs/research/r2-workspaces.md` §3.5.
+없다. RN-1 ~ RN-5 가 전부 닫혔고, 다섯 다 재현부터 하고 고쳤다.
 
 ---
 
@@ -24,11 +22,14 @@ RN-3 의 근본 원인으로 보이는 것. 상세는 `docs/research/r2-workspac
 - **RN-2** — 하니스가 올바른 교차 realm shim 을 실패로 보던 것. `--mount` 로 형제 realm 을
   등록하면 실제로 검증되고, 마운트가 없으면 실패가 아니라 "not verified" 로 보고한다.
   하니스 테스트가 두 경우를 모두 돌리므로 CI 가 본다. 상세는 CHANGELOG.
-- **RN-4** — `place` 파생이 루트 `default.project.json` 하나만 읽던 것과, 라이브러리형
-  프로젝트 파일에서 unmounted-realm 경고가 침묵하던 것. 이제 `*.project.json` 을 3단계까지
-  읽고 `$path` 를 파일 기준으로 풀며, 파일을 읽은 것과 거기서 무언가를 찾은 것을 구분한다.
-  상세는 CHANGELOG.
 - **RN-3** — 한 DataModel 안의 호환 중복을 아무도 보지 않던 것. `dedupe` 의 논리 결함이
   아니라 Rarn 에 place 라는 범위가 없던 것이었다. `src/doctor/places.ts` 가 프로젝트 파일을
   읽어 같은 DataModel 에 들어가는 트리들을 비교하고, `dedupe` 가 보고하고 `install` 이
   호환 중복을 경고한다 (`RN0213`). 상세는 CHANGELOG.
+- **RN-4** — `place` 파생이 루트 `default.project.json` 하나만 읽던 것과, 라이브러리형
+  프로젝트 파일에서 unmounted-realm 경고가 침묵하던 것. 이제 `*.project.json` 을 3단계까지
+  읽고 `$path` 를 파일 기준으로 풀며, 파일을 읽은 것과 거기서 무언가를 찾은 것을 구분한다.
+  상세는 CHANGELOG.
+- **RN-5** — 해석이 호환 버전으로 갈라져 만족하지 않는 버전을 설치하던 것.
+  같은 major 그룹을 합칠 때 살아남는 버전이 흡수한 제약을 전부 다시 검사하고,
+  만족하지 못하는 것은 `RN0200` 충돌로 보고한다. 상세는 CHANGELOG.

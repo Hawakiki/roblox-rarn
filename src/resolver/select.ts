@@ -55,8 +55,14 @@ export function selectVersions(
   }
   if (satisfiable.length === 0) return { groups: [], unsatisfiable }
 
-  const groups = groupConstraints(candidates, satisfiable)
-  return { groups, unsatisfiable }
+  // A constraint that no version satisfies and one that no *compatible* version
+  // satisfies are the same answer to the caller: no published version meets every
+  // requirement. They differ only in how far the resolver got before knowing.
+  const selection = groupConstraints(candidates, satisfiable)
+  return {
+    groups: selection.groups,
+    unsatisfiable: [...unsatisfiable, ...selection.conflicted],
+  }
 }
 
 const OPTS = { includePrerelease: true } as const
@@ -95,7 +101,7 @@ function rangeMentionsPrerelease(range: string): boolean {
 function groupConstraints(
   candidates: readonly string[],
   constraints: readonly Constraint[],
-): VersionGroup[] {
+): { groups: VersionGroup[]; conflicted: Constraint[] } {
   const remaining = [...constraints]
   const groups: VersionGroup[] = []
 
@@ -126,11 +132,26 @@ function groupConstraints(
  *
  * Greedy grouping can land on `1.2.0` and `1.9.0` as separate groups when no single
  * version covered everything in one pass. Shipping both would be exactly the
- * duplicate that breaks singletons, and since they share a major the higher one is
- * a valid substitute for the lower by semver's own contract.
+ * duplicate that breaks singletons, so one of them has to go.
+ *
+ * **The survivor must still satisfy everything it absorbs.** "They share a major, so
+ * the higher one substitutes for the lower" is semver's contract for a *caret*
+ * requirement and for nothing else. `~1.2.0` and `^1.5.0` share a major and have an
+ * empty intersection: merging them silently produced `1.9.0` carrying `~1.2.0` as a
+ * satisfied constraint, installed a version that does not satisfy it, and wrote the
+ * violated range into the lockfile beside it. Constraint 5 says to report a conflict
+ * exactly when the intersection is genuinely empty — and it was.
+ *
+ * Constraints the survivor cannot satisfy come back as conflicts. There is no third
+ * option: keeping both versions is the compatible duplicate constraint 1 forbids, and
+ * no other version can satisfy both or the grouping pass would have found it.
  */
-function mergeCompatible(groups: readonly VersionGroup[]): VersionGroup[] {
+function mergeCompatible(groups: readonly VersionGroup[]): {
+  groups: VersionGroup[]
+  conflicted: Constraint[]
+} {
   const merged: { version: string; constraints: Constraint[] }[] = []
+  const conflicted: Constraint[] = []
 
   for (const group of groups) {
     const existing = merged.find((m) => areCompatible(m.version, group.version))
@@ -138,11 +159,21 @@ function mergeCompatible(groups: readonly VersionGroup[]): VersionGroup[] {
       merged.push({ version: group.version, constraints: [...group.constraints] })
       continue
     }
-    if (semver.gt(group.version, existing.version)) existing.version = group.version
-    existing.constraints.push(...group.constraints)
+
+    const survivor = semver.gt(group.version, existing.version) ? group.version : existing.version
+
+    // Every constraint is re-checked, not just the incoming ones: raising the
+    // survivor can break a constraint the existing group already held.
+    const all = [...existing.constraints, ...group.constraints]
+    existing.version = survivor
+    existing.constraints = all.filter((c) => semver.satisfies(survivor, c.range, OPTS))
+    conflicted.push(...all.filter((c) => !semver.satisfies(survivor, c.range, OPTS)))
   }
 
-  return merged
-    .sort((a, b) => semver.rcompare(a.version, b.version))
-    .map((m) => ({ version: m.version, constraints: m.constraints }))
+  return {
+    groups: merged
+      .sort((a, b) => semver.rcompare(a.version, b.version))
+      .map((m) => ({ version: m.version, constraints: m.constraints })),
+    conflicted,
+  }
 }

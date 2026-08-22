@@ -464,3 +464,87 @@ describe('reproducibility', () => {
     expect(result.packages.get('@a/two@1.0.0')?.requestedBy[0]?.from).toBe('@a/one@1.0.0')
   })
 })
+
+/**
+ * Two requesters on one major whose ranges do not intersect.
+ *
+ * Grouping puts them in separate groups, and merging them was unconditional: they
+ * share a major, so the higher version was taken as a substitute for the lower. That
+ * is semver's contract for a *caret* requirement and for nothing else — and until it
+ * was checked, `~1.2.0` and `^1.5.0` silently produced `1.9.0` carrying `~1.2.0` as a
+ * satisfied constraint. Constraint 5 says to report a conflict exactly when the
+ * intersection is genuinely empty, and `semver.intersects` says it is.
+ */
+describe('a compatible-looking range that is not', () => {
+  const registry: Spec = {
+    'a/app': { '1.0.0': { Lib: 'a/lib@~1.2.0' } },
+    'a/other': { '1.0.0': { Lib: 'a/lib@^1.5.0' } },
+    'a/lib': { '1.9.0': {}, '1.5.0': {}, '1.2.0': {} },
+  }
+
+  test('is a conflict, not a silent upgrade', async () => {
+    const error = (await run(registry, {
+      dependencies: { '@a/app': '^1.0.0', '@a/other': '^1.0.0' },
+    }).catch((e: unknown) => e)) as RarnError
+
+    expect(error.code).toBe(Code.UnresolvableRange)
+    // Both requesters are named, so the reader can see which two disagree.
+    expect(error.detail).toContain('~1.2.0')
+  })
+
+  test('the same pair in the other order fails the same way', async () => {
+    const error = (await run(registry, {
+      dependencies: { '@a/other': '^1.0.0', '@a/app': '^1.0.0' },
+    }).catch((e: unknown) => e)) as RarnError
+    expect(error.code).toBe(Code.UnresolvableRange)
+  })
+
+  // The control. Carets *are* substitutable upward, and merging them is the whole
+  // reason resolution is order-independent — breaking that would be a worse bug than
+  // the one being fixed.
+  test('two carets on one major still merge to one version', async () => {
+    const { result } = await run(
+      {
+        'a/app': { '1.0.0': { Lib: 'a/lib@^1.2.0' } },
+        'a/other': { '1.0.0': { Lib: 'a/lib@^1.5.0' } },
+        'a/lib': { '1.9.0': {}, '1.5.0': {}, '1.2.0': {} },
+      },
+      { dependencies: { '@a/app': '^1.0.0', '@a/other': '^1.0.0' } },
+    )
+
+    expect([...result.packages.keys()].filter((k) => k.startsWith('@a/lib'))).toEqual([
+      '@a/lib@1.9.0',
+    ])
+    expect(result.duplicates.size).toBe(0)
+  })
+
+  // Tildes that do overlap must still collapse. The fix must not turn every `~` into
+  // a conflict.
+  test('two overlapping tildes merge', async () => {
+    const { result } = await run(
+      {
+        'a/app': { '1.0.0': { Lib: 'a/lib@~1.2.0' } },
+        'a/other': { '1.0.0': { Lib: 'a/lib@~1.2.3' } },
+        'a/lib': { '1.2.5': {}, '1.2.3': {}, '1.2.0': {} },
+      },
+      { dependencies: { '@a/app': '^1.0.0', '@a/other': '^1.0.0' } },
+    )
+    expect([...result.packages.keys()].filter((k) => k.startsWith('@a/lib'))).toEqual([
+      '@a/lib@1.2.5',
+    ])
+  })
+
+  // Different majors are a legitimate duplicate, not a conflict — the one case where
+  // two versions of a package may coexist.
+  test('different majors still coexist', async () => {
+    const { result } = await run(
+      {
+        'a/app': { '1.0.0': { Lib: 'a/lib@^1.0.0' } },
+        'a/other': { '1.0.0': { Lib: 'a/lib@^2.0.0' } },
+        'a/lib': { '2.1.0': {}, '1.9.0': {} },
+      },
+      { dependencies: { '@a/app': '^1.0.0', '@a/other': '^1.0.0' } },
+    )
+    expect(result.duplicates.get('@a/lib')).toEqual(['2.1.0', '1.9.0'])
+  })
+})
