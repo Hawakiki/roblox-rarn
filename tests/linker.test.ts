@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertSafePackageDir } from '../src/linker/layout.ts'
 import { link } from '../src/linker/link.ts'
+import { assertCrossable, crossRealmShim } from '../src/linker/shim.ts'
 import { normalizeManifest } from '../src/manifest/read.ts'
 import type { Manifest } from '../src/manifest/types.ts'
 import type { Placement, Resolution, ResolvedPackage } from '../src/resolver/types.ts'
@@ -243,6 +244,45 @@ describe('shim contents', () => {
     )
     expect(await pathExists(shared('MyPromise.luau'))).toBe(true)
     expect(await pathExists(shared('Promise.luau'))).toBe(false)
+  })
+})
+
+describe('cross-realm shim paths', () => {
+  /**
+   * `place` is written and derived as dot-separated names, but an *instance* name has
+   * none of Luau's restrictions — Rojo is happy with `"My Packages"`, and a project
+   * file saying so is where a derived path comes from. Pasting it in verbatim produced
+   * `require(game.ReplicatedStorage.My Packages._Index[...])`, which is not Luau: the
+   * install succeeded, the tree was correct, and the file failed to parse in Studio.
+   */
+  test('a segment a dot cannot reach is bracketed', () => {
+    const source = crossRealmShim('game.ReplicatedStorage.My Packages', 'a_one@1.0.0', 'one')
+    expect(source).toContain('game.ReplicatedStorage["My Packages"]._Index["a_one@1.0.0"]["one"]')
+    expect(source).not.toContain('.My Packages')
+  })
+
+  // Only what needs it, or the common path becomes a row of quotes for no reason.
+  test('an ordinary path keeps its dots', () => {
+    const source = crossRealmShim('game.ReplicatedStorage.Packages', 'a_one@1.0.0', 'one')
+    expect(source).toContain('game.ReplicatedStorage.Packages._Index')
+  })
+
+  test('a leading digit is bracketed too', () => {
+    expect(crossRealmShim('game.ReplicatedStorage.2Packages', 'a@1.0.0', 'a')).toContain(
+      'game.ReplicatedStorage["2Packages"]',
+    )
+  })
+
+  /**
+   * Placement resolves to the widest requester, so nothing outside dev can point at a
+   * dev-placed package. That invariant belongs to the resolver and is enforced two
+   * layers from the shim, so it is checked here rather than assumed — before this,
+   * a `dev` target fell through to `serverPackages` and named the wrong service.
+   */
+  test('a dev target is refused rather than sent to the server path', () => {
+    expect(() => assertCrossable('dev', 'rarn.json (devDependencies)')).toThrow(RarnError)
+    expect(assertCrossable('shared', 'x')).toBe('shared')
+    expect(assertCrossable('server', 'x')).toBe('server')
   })
 })
 

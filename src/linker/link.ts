@@ -16,7 +16,7 @@ import {
   entryDir,
 } from './layout.ts'
 import { assertRealmsAreOurs } from './ownership.ts'
-import { crossRealmShim, requirePlacePath, rootShim, siblingShim } from './shim.ts'
+import { assertCrossable, crossRealmShim, requirePlacePath, rootShim, siblingShim } from './shim.ts'
 import { STAGING_DIR, clearLeftovers, swapIn } from './swap.ts'
 
 export interface LinkOptions {
@@ -229,7 +229,11 @@ async function writeRootShims(
         pkg.placement === placement
           ? rootShim(indexDirNameOf(pkg), moduleNameOf(pkg))
           : crossRealmShim(
-              requirePlacePath(manifest.place, pkg.placement, `rarn.json (${section})`),
+              requirePlacePath(
+                manifest.place,
+                assertCrossable(pkg.placement, `rarn.json (${section})`),
+                `rarn.json (${section})`,
+              ),
               indexDirNameOf(pkg),
               moduleNameOf(pkg),
             )
@@ -252,7 +256,7 @@ function shimFor(
     return siblingShim(indexDirNameOf(dep), moduleNameOf(dep))
   }
   return crossRealmShim(
-    requirePlacePath(manifest.place, dep.placement, requester),
+    requirePlacePath(manifest.place, assertCrossable(dep.placement, requester), requester),
     indexDirNameOf(dep),
     moduleNameOf(dep),
   )
