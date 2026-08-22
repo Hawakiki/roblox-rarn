@@ -42,6 +42,27 @@ rather than silently misread, and a `0.x` release may bump it.
   Without a mount the check is reported as *not verified* rather than failed, and the
   harness test now exercises both paths, which CI never did.
 
+- **`place` was derived from one fixed filename, and found nothing in the projects
+  that needed it** (RN-4). Only `<projectDir>/default.project.json` was read, but Rojo's
+  convention is any `*.project.json`, and of the 30 multi-place repositories surveyed for
+  R2, 25 have no `default.project.json` at the root — they name the file per place or nest
+  one per place under `places/`. Those are exactly the projects with a cross-realm link to
+  derive, and they got `RN0031` asking them to write `place` by hand. Every
+  `*.project.json` down to three levels is now read (skipping dot-directories,
+  `node_modules`, the realm directories and `_Index`), and `$path` is resolved against the
+  file's own directory, so a nested place file reaching `"../../Packages"` matches. Where
+  two project files agree on a realm the path is derived; where they disagree nothing is
+  derived and both paths are printed, because no single absolute path is right for two
+  DataModels.
+
+- **The unmounted-realm warning was silent for a library's project file** (RN-4).
+  `{ "tree": { "$path": "src" } }` mounts nothing, and that was treated as *nothing was
+  checked* — so the warning CLAUDE.md promises ("a realm directory the project file does
+  not mount is a warning, not an error") never fired in the shape every publishable
+  package uses. Reading a project file and finding nothing in it are now separate facts.
+  With no project file at all it stays silent, since then there is no place for the
+  warning to be about.
+
 ## 0.1.0 — 2026-08-21
 
 First release. The install path is complete and verified; publishing works but has never been
