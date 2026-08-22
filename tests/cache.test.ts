@@ -135,6 +135,28 @@ describe('archive', () => {
     expect(await readFile(join(dir, 'sub', 'deep.luau'), 'utf8')).toBe('return 2')
   })
 
+  /**
+   * A file over 512 KiB, which is where this broke.
+   *
+   * fflate's async `unzip` hands entries above that to a worker, and under Bun the
+   * worker returns nothing — `undefined is not an object (evaluating 'dat.length')`.
+   * The same archives inflate correctly under Node, so the suite would have had to run
+   * on the runtime Rarn actually ships as to see it, which it does.
+   *
+   * The boundary is the **uncompressed** size, so the fixture is a highly compressible
+   * megabyte: a few hundred bytes of archive that expands past the threshold. A test
+   * that only made the archive big would not have caught it.
+   */
+  test('extracts a file larger than the async inflate threshold', async () => {
+    const big = 'a'.repeat(1024 * 1024)
+    const zip = makeZip({ 'init.luau': 'return 1', 'data/dump.json': big })
+    expect(zip.length).toBeLessThan(64 * 1024)
+
+    const result = await extractZip(zip, dir, 'pkg')
+    expect(result.files).toHaveLength(2)
+    expect((await readFile(join(dir, 'data', 'dump.json'), 'utf8')).length).toBe(big.length)
+  })
+
   test('refuses bytes that are not a ZIP, and says what it saw', async () => {
     const error = await expectRejection(() =>
       extractZip(new Uint8Array([0x1f, 0x8b, 0x08, 0x00]), dir, 'pkg'),
