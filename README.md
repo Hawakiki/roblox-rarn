@@ -11,6 +11,10 @@
   no Rojo required
 </p>
 
+<p align="center">
+  <b>English</b> · <a href="README.ko.md">한국어</a>
+</p>
+
 ---
 
 Rarn installs the same packages Wally does, from the same registry, and lays them out
@@ -32,16 +36,41 @@ rarn install
 
 ```
 installed 5 packages into RARN_MODULE
-  26 files, 6 links, 338 pruned
-  5 downloaded, 0 cached, resolved  1139ms
+  26 files, 8 links, 338 pruned
+  5 downloaded, 0 cached, resolved  2039ms
 ```
+
+`338 pruned` is the point. Those five packages ship 364 files between them; 26 of them are
+the modules, and the rest are docs, tests and CI config that Wally would copy into your
+place and leave for Rojo to sort out at sync time.
 
 > **Status: 0.1.1.** The install path is complete and verified — against a real Studio, a
 > real `wally install`, and a require harness that models Roblox's instance-cached
-> `require`. Publishing works but has only been run with `--dry-run`. The manifest and
-> lockfile formats are not stable until 1.0. See [CHANGELOG.md](CHANGELOG.md) for what is
-> in this release, [PLAN.md](PLAN.md) for the roadmap, and [CLAUDE.md](CLAUDE.md) for the
-> platform constraints the design is built around.
+> `require`. One package has been published to the live registry end to end and installed
+> back from both Rarn and Wally. **The manifest and lockfile formats are not stable until
+> 1.0**, which is what 1.0 will mean — a format freeze, not a feature list.
+>
+> [CHANGELOG.md](CHANGELOG.md) is what changed · [PLAN.md](PLAN.md) is where it is going ·
+> [CLAUDE.md](CLAUDE.md) is every platform constraint the design is built around, with the
+> measurements behind each one.
+
+## Contents
+
+| | |
+|---|---|
+| [Install](#install) | binary, Rokit, or from source |
+| [Why not just Wally?](#why-not-just-wally) | what is actually different, and why |
+| [Commands](#commands) | every command, grouped by what you are doing |
+| [The manifest](#the-manifest) | `rarn.json`, field by field |
+| [What the install looks like](#what-the-install-looks-like) | the tree, the shims, the realms |
+| [Speed](#speed) | and [the 506-package comparison](#against-wally-on-506-real-packages) against Wally |
+| [`rarn doctor`](#rarn-doctor) | what the installed source actually requires |
+| [Publishing](#publishing) | and what is excluded by default |
+| [Development](#development) | building, testing, the Roblox-side checks |
+
+New here? [Why not just Wally?](#why-not-just-wally) is the two-minute version, and
+[What the install looks like](#what-the-install-looks-like) is the one section worth reading
+before you trust the tool with a project.
 
 ## Install
 
@@ -104,10 +133,11 @@ bun build --compile --target=bun-linux-x64    src/cli.ts --outfile dist/rarn
 | Needs Rojo to install | yes | no |
 | Resolution | greedy, order-dependent | collects every constraint, then intersects |
 | Lockfile reuse | — | fully offline reinstall |
+| Types through the link | lost — `Unknown type` at every call site | forwarded, so `--!strict` works |
 | Duplicate visibility | none | `rarn why`, `rarn dedupe` |
 | Unused / missing deps | none | `rarn doctor` |
 
-Two of those are worth more than a table row.
+Three of those are worth more than a table row.
 
 **Resolution order matters.** Wally resolves greedily with no backtracking, so given
 `^1.2.0` and `^1.5.0` with `1.9.0` published, whichever range is queued first can
@@ -138,6 +168,15 @@ layer that decides what reaches the place:
 Rarn will not strip them itself. The module root is the author's declaration of what the
 package is, and a package manager that quietly disagrees with it is a worse problem than
 a stray spec file.
+
+**A link loses the package's types, and that is fixable.** Luau carries a required
+module's *value* through a link file and none of its type aliases, so through a Wally
+link `React.createElement` type-checks while `React.Node` is `Unknown type 'React.Node'`
+at every call site — which makes a `--!strict` signature against a typed package
+impossible to write. 300 of the 584 most-depended-upon packages export types this way. Rarn
+reads what the entry module declares and re-exports it, so the annotation you wanted to
+write is the annotation you write. [What the install looks like](#what-the-install-looks-like)
+has the generated file.
 
 ## Commands
 
@@ -261,7 +300,7 @@ RARN_MODULE_DEV/                    <- dev realm, same shape
 
 ```lua
 -- RARN_MODULE/Promise.luau
-return require(script.Parent._Index["evaera_promise@4.0.0"].promise)
+return require(script.Parent._Index["evaera_promise@4.0.0"]["promise"])
 ```
 
 This shape is forced, not chosen. Package sources contain hardcoded
@@ -284,7 +323,7 @@ export type PureComponent<Props, State = nil> = Module.PureComponent<Props, Stat
 return Module
 ```
 
-300 of the 584 most-installed packages export types this way. Anything Rarn cannot
+300 of the 584 most-depended-upon packages export types this way. Anything Rarn cannot
 read confidently is left out rather than guessed at — a missing alias costs you the
 annotation you were going to write anyway, a wrong one puts an error in a generated
 file you did not write. A package that exports no types keeps the one-line shim.
@@ -326,8 +365,8 @@ and linking is entirely local, so a fresh lockfile makes a repeat install fully 
 
 | | five-package graph |
 |---|---|
-| cold, nothing cached | ~1.9 s |
-| warm cache, fresh lockfile | ~55 ms |
+| cold, nothing cached | ~2.0 s |
+| warm cache, fresh lockfile | **~65 ms** |
 
 The cold number is mostly network and will not be yours; the warm one is the claim
 worth making, because it involves no requests at all.
@@ -380,11 +419,12 @@ Scans the installed Luau for requires that reach past the module root — the on
 resolve through a shim — and compares them against what was declared.
 
 ```
-@sleitnick/knit@1.7.0
+@scope/example@1.0.0
   requires NotDeclared — not a declared dependency
-    RARN_MODULE/_Index/sleitnick_knit@1.7.0/knit/init.lua:13  resolves to nil at runtime
-  scanned 16 files across 5 packages
-  7 requires are built at runtime and could not be checked
+    RARN_MODULE/_Index/scope_example@1.0.0/example/init.lua:13  resolves to nil at runtime
+
+  scanned 20 files across 5 packages
+  10 requires are built at runtime and could not be checked
 ```
 
 A missing dependency exits `1`; an unused declaration only warns, since a generous
@@ -392,7 +432,22 @@ manifest breaks nothing. Requires that cannot be resolved statically are counted
 reported rather than hidden — a check that conceals how much it could not see reads as
 more thorough than it is.
 
-It follows a require through a variable, because the most used framework in the
+It reads the four spellings Roblox accepts for one lookup, because packages use all of
+them and a scanner that knows only two is worse than none:
+
+```lua
+require(script.Parent.Parent.Promise)                -- indexing
+require(script.Parent.Parent["Promise"])             -- bracketed
+require(script.Parent.Parent:WaitForChild("promise")) -- the JS-port half of the registry
+require(script.Parent.Parent:FindFirstChild("promise"))
+```
+
+That third form is not an edge case. Every `jsdotlua/*` package — react-lua, jest-lua,
+luau-polyfill — writes it and nothing else, so on a 52-package React install 1655 of 1663
+requires were unreadable before this, and each one came back out as a dependency wrongly
+reported as never required. It is 10 now.
+
+It also follows a require through a variable, because the most used framework in the
 ecosystem needs it:
 
 ```lua
@@ -448,8 +503,18 @@ mounted with `--mount` for there to be anything to resolve against. Without one 
 reports as *not verified* rather than failed — until 2026-08-22 it reported the correct shim
 as broken instead.
 
+The model has been checked against a real Studio once, on a `rojo build` of
+`test/roblox/`: 17 checks, and Studio agreed on every one — including the two that
+matter most, that two copies of one source are two tables and that one instance required
+twice is one table. `tests/roblox/emulate-selftest.luau` asks the other question, which
+is whether the model behaves the way it claims to; two defects had been living in that
+gap.
+
 It does not replace `test/roblox/`. The harness proves the tree is consistent under a
-*model* of Roblox; if the model is wrong, it passes and Studio breaks.
+*model* of Roblox; if the model is wrong, it passes and Studio breaks. Package code is
+not executed unless you pass `--execute`, and even then the engine is not there —
+`Enum`, `Instance.new`, `task` and `RunService` are outside the model on purpose, because
+every stub added widens the area in which a *passing* harness can be silently wrong.
 
 ## License
 

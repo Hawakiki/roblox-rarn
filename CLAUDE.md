@@ -254,10 +254,10 @@ RARN_MODULE_DEV/                   <- dev realm, same shape
 
 ```lua
 -- RARN_MODULE/Promise.luau
-return require(script.Parent._Index["evaera_promise@4.0.0"].promise)
+return require(script.Parent._Index["evaera_promise@4.0.0"]["promise"])
 
 -- RARN_MODULE/_Index/sleitnick_knit@1.7.0/Promise.luau
-return require(script.Parent.Parent["evaera_promise@4.0.0"].promise)
+return require(script.Parent.Parent["evaera_promise@4.0.0"]["promise"])
 ```
 
 The folder names `RARN_MODULE` and `_Index` are ours to rename. **The shape is not.**
@@ -281,7 +281,7 @@ shared one, the two directories sit under different services, so the shim must n
 absolute DataModel path taken from the manifest's `place`:
 
 ```lua
-return require(game.ReplicatedStorage.Packages._Index["evaera_promise@4.0.0"].promise)
+return require(game.ReplicatedStorage.Packages._Index["evaera_promise@4.0.0"]["promise"])
 ```
 
 `place` is **derived from the project's Rojo files when the manifest does not declare it**, by
@@ -819,6 +819,12 @@ is one that eventually contradicts it.
 - Documentation language: what a user reads is **English** (README, CHANGELOG, release
   notes, CLI output); working documents are **Korean** (PLAN.md, docs/, commit messages).
   This file stays English.
+
+  `README.ko.md` is the one exception, and it is a **translation, not a second document**:
+  `README.md` is the source of truth and gets edited first, the Korean follows in the same
+  commit, and the Korean file says so at the top. A translation that drifts is worse than
+  none, because a reader has no way to tell which half is stale. Nothing else is
+  translated — CHANGELOG and release notes stay English only.
 - Commit messages in Korean, `type: subject` — matching the existing history.
 - **Git flow. Four branch kinds and no others**, enforced by `.husky/branch-guard.sh`
   so that forgetting is not one of the outcomes:
