@@ -135,6 +135,20 @@ binary on a Windows runner and cross-compiles the other two from ubuntu. If Bun 
 the giveaway will be the `smoke` job passing after moving `windows-x64` back to ubuntu, not
 this paragraph.
 
+**A library can behave differently under Bun than under Node, and the tests will not see
+it.** fflate's async `unzip` hands entries above 512 KiB to a worker, and under Bun that
+worker returns nothing — the callback reports `undefined is not an object (evaluating
+'dat.length')`. Measured: Bun fails at 600,000 bytes and passes at 500,000; Node passes at
+every size. The boundary is the *uncompressed* size, so a kilobyte of compressed data that
+expands past it fails too.
+
+Rarn ships as a Bun binary, so this was every user of every version, surfacing as
+`RN0310: the download may be corrupt. Try again` on archives that were not corrupt.
+Inflation is synchronous now. Two things follow for anything added later: **run the suite
+on the runtime that ships**, which the project already does, and remember that doing so is
+not enough by itself — the fixture also has to cross the boundary that matters, and no test
+here held a file that large until one was written on purpose.
+
 ### CI
 
 `.github/workflows/ci.yml`. Three jobs, and **each one's matrix axis is different** — the
@@ -448,6 +462,19 @@ The Wally client itself does **not** use the metadata endpoint — it git-clones
 repository and reads files. Rarn's use of plain HTTP is what removes that clone, and with it
 any dependency on git being installed.
 
+**Every fan-out at this API needs a ceiling, and the curve is a cliff rather than a slope.**
+Measured against the live registry, 150 packages, best of two runs:
+
+```
+ 8 -> 5.0s    16 -> 2.8s    32 -> 1.8s    64 -> 7.4s    unbounded (150) -> 21.9s
+```
+
+Unbounded is twelve times slower than the best, which matters because resolution walks the
+graph breadth-first: one round is every package at one depth, so a project with 506 direct
+dependencies opened 506 sockets at the same instant and spent 44.8s where 8.9s was
+available. Metadata runs 32 at a time and downloads 8 — different numbers because the
+bodies are different sizes, and both chosen by measuring rather than by taste.
+
 ### 5. Dedupe policy: one version per major, resolved order-independently
 
 Wally allows two versions of a package to coexist only when they are semver-*incompatible*
@@ -599,6 +626,16 @@ ones its author tested.
 timeout is a second publish), and the default exclude list covers `.env`, `*.key`
 and `*.pem`. The two ways of being wrong are not symmetric — one file too few breaks
 an install and is fixed in minutes, one file too many cannot be undone at all.
+
+**An installed dependency tree is excluded by shape, not by name.** Rarn derives its own
+realm directories from `packageDir`, but it cannot derive what another tool called its:
+Wally installs into `Packages/`, `ServerPackages/` and `DevPackages/`, and a migrated
+project still has them. The first real package published came to 388 files before this,
+339 of them a `DevPackages/` nobody meant to ship. So any directory holding an `_Index/`
+is excluded along with the shims beside it. Matching the names would have been the
+obvious fix and the wrong one — a project whose *source* lives in `Packages/` would then
+publish nothing, and `include` cannot rescue a whole directory because only an
+exactly-named path overrides a default exclusion.
 
 **The first publish claims the scope.** A typo in the scope name takes that scope.
 

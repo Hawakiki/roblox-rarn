@@ -264,8 +264,11 @@ and linking is entirely local, so a fresh lockfile makes a repeat install fully 
 
 | | five-package graph |
 |---|---|
-| cold, nothing cached | ~1100 ms |
-| warm cache, fresh lockfile | ~45 ms |
+| cold, nothing cached | ~1.9 s |
+| warm cache, fresh lockfile | ~55 ms |
+
+The cold number is mostly network and will not be yours; the warm one is the claim
+worth making, because it involves no requests at all.
 
 The cache stores extracted trees, not just archives, so a warm install does no network
 I/O and no unzip. It copies rather than hardlinks — an edit in one project must not
@@ -347,10 +350,12 @@ The registry reads `wally.toml` out of the uploaded archive to learn the package
 and version, so Rarn generates one from `rarn.json` and puts it in — a checked-in copy
 never shadows it.
 
-`.env`, `*.key`, `*.pem` and the realm directories are excluded by default. A published
-version is permanent and public, with no unpublish, so shipping one file too few breaks
-an install and gets fixed in minutes while shipping one too many cannot be undone at
-all. Naming a file exactly in `include` overrides that; a glob does not.
+`.env`, `*.key`, `*.pem` and the realm directories are excluded by default, and so is
+any directory holding an `_Index/` — that is another package manager's install tree,
+recognised by shape because Rarn cannot know what someone else's directory was called.
+A published version is permanent and public, with no unpublish, so shipping one file too
+few breaks an install and gets fixed in minutes while shipping one too many cannot be
+undone at all. Naming a file exactly in `include` overrides that; a glob does not.
 
 ## Development
 
