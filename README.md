@@ -36,7 +36,7 @@ installed 5 packages into RARN_MODULE
   5 downloaded, 0 cached, resolved  1139ms
 ```
 
-> **Status: 0.1.0.** The install path is complete and verified — against a real Studio, a
+> **Status: 0.1.1.** The install path is complete and verified — against a real Studio, a
 > real `wally install`, and a require harness that models Roblox's instance-cached
 > `require`. Publishing works but has only been run with `--dry-run`. The manifest and
 > lockfile formats are not stable until 1.0. See [CHANGELOG.md](CHANGELOG.md) for what is
@@ -51,7 +51,7 @@ Rojo, no git.
 ```toml
 # rokit.toml
 [tools]
-rarn = "Hawakiki/roblox-rarn@0.1.0"
+rarn = "Hawakiki/roblox-rarn@0.1.1"
 ```
 
 ```bash
@@ -141,9 +141,11 @@ Yarn's names, because Rarn is Yarn's model applied to Roblox.
 | `rarn outdated` | installed vs newest-in-range vs newest. `--check` for CI |
 | `rarn doctor` | requires in the installed source vs the declared dependencies |
 
-`place` is read out of `default.project.json` when `rarn.json` does not declare it, and
-Rarn says so when the two disagree — or when a package directory has packages in it that
-the Rojo project does not carry. Roblox reports a wrong path as `Requested module
+`place` is read out of the project's Rojo files when `rarn.json` does not declare it —
+any `*.project.json`, not one fixed name, because most multi-place repositories name the
+file per place or nest one per place. Rarn says so when the two sources disagree, when two
+project files put one realm in different places, or when a package directory has packages
+in it that no Rojo project carries. Roblox reports a wrong path as `Requested module
 experienced an error while loading`, with no path in it, so the check has to happen here.
 
 ### Registry
@@ -330,7 +332,7 @@ bun run src/cli.ts <..>  # run the CLI without building
 Roblox-side verification is separate, and comes from `rokit.toml`:
 
 ```bash
-lune run tests/roblox/verify.luau -- <install-dir> [<realm>] [--execute]
+lune run tests/roblox/verify.luau -- <install-dir> [<realm>] [--mount=<path>=<dir>]... [--execute]
 ```
 
 This reimplements Roblox's `require` — instance-based lookup, per-instance caching —
@@ -339,6 +341,11 @@ does every shim reach a real ModuleScript, and does one package reached by two p
 come back as **one instance**. Two copies look identical on disk and only diverge at
 runtime. `bun test` runs it on a synthetic tree with three deliberately broken trees
 alongside, because a harness nothing can fail is worth nothing.
+
+A shim that crosses realms names an absolute DataModel path, so the sibling realm has to be
+mounted with `--mount` for there to be anything to resolve against. Without one the check
+reports as *not verified* rather than failed — until 2026-08-22 it reported the correct shim
+as broken instead.
 
 It does not replace `test/roblox/`. The harness proves the tree is consistent under a
 *model* of Roblox; if the model is wrong, it passes and Studio breaks.
