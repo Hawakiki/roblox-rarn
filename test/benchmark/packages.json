@@ -1,0 +1,2532 @@
+[
+  {
+    "name": "sleitnick/signal",
+    "version": "2.0.3",
+    "alias": "Signal"
+  },
+  {
+    "name": "evaera/promise",
+    "version": "4.0.0",
+    "alias": "Promise"
+  },
+  {
+    "name": "sleitnick/trove",
+    "version": "1.8.0",
+    "alias": "Trove"
+  },
+  {
+    "name": "elttob/fusion",
+    "version": "0.3.0",
+    "alias": "Fusion"
+  },
+  {
+    "name": "howmanysmall/janitor",
+    "version": "1.18.3",
+    "alias": "Janitor"
+  },
+  {
+    "name": "nightcycle/maid",
+    "version": "2.2.2",
+    "alias": "Maid"
+  },
+  {
+    "name": "osyrisrblx/t",
+    "version": "3.1.1",
+    "alias": "T"
+  },
+  {
+    "name": "nightcycle/cold-fusion",
+    "version": "9.1.1",
+    "alias": "ColdFusion"
+  },
+  {
+    "name": "roblox/testez",
+    "version": "0.4.1",
+    "alias": "Testez"
+  },
+  {
+    "name": "nightcycle/signal",
+    "version": "1.0.2",
+    "alias": "NightcycleSignal"
+  },
+  {
+    "name": "csqrl/sift",
+    "version": "0.0.11",
+    "alias": "Sift"
+  },
+  {
+    "name": "jsdotlua/react",
+    "version": "17.2.1",
+    "alias": "React"
+  },
+  {
+    "name": "sleitnick/table-util",
+    "version": "1.2.1",
+    "alias": "TableUtil"
+  },
+  {
+    "name": "data-oriented-house/lemonsignal",
+    "version": "2.0.0",
+    "alias": "Lemonsignal"
+  },
+  {
+    "name": "finobinos/signal",
+    "version": "3.2.1",
+    "alias": "FinobinosSignal"
+  },
+  {
+    "name": "sleitnick/comm",
+    "version": "1.0.1",
+    "alias": "Comm"
+  },
+  {
+    "name": "sleitnick/knit",
+    "version": "1.7.0",
+    "alias": "Knit"
+  },
+  {
+    "name": "jsdotlua/luau-polyfill",
+    "version": "1.2.7",
+    "alias": "LuauPolyfill"
+  },
+  {
+    "name": "stravant/goodsignal",
+    "version": "0.3.1",
+    "alias": "Goodsignal"
+  },
+  {
+    "name": "nightcycle/math",
+    "version": "3.6.0",
+    "alias": "Math"
+  },
+  {
+    "name": "jsdotlua/react-roblox",
+    "version": "17.2.1",
+    "alias": "ReactRoblox"
+  },
+  {
+    "name": "virtualbutfake/tailwind",
+    "version": "0.1.1",
+    "alias": "Tailwind"
+  },
+  {
+    "name": "lucasmzreal/fastsignal",
+    "version": "10.4.0",
+    "alias": "Fastsignal"
+  },
+  {
+    "name": "roblox/roact",
+    "version": "1.4.4",
+    "alias": "Roact"
+  },
+  {
+    "name": "howmanysmall/typed-promise",
+    "version": "4.0.6",
+    "alias": "TypedPromise"
+  },
+  {
+    "name": "sleitnick/symbol",
+    "version": "2.0.1",
+    "alias": "Symbol"
+  },
+  {
+    "name": "nightcycle/option",
+    "version": "1.0.3",
+    "alias": "Option"
+  },
+  {
+    "name": "nightcycle/draw",
+    "version": "1.0.6",
+    "alias": "Draw"
+  },
+  {
+    "name": "finobinos/maid",
+    "version": "3.2.2",
+    "alias": "FinobinosMaid"
+  },
+  {
+    "name": "virtualbutfake/lucide-roblox",
+    "version": "1.1.3",
+    "alias": "LucideRoblox"
+  },
+  {
+    "name": "nightcycle/service-proxy",
+    "version": "1.0.11",
+    "alias": "ServiceProxy"
+  },
+  {
+    "name": "sleitnick/timer",
+    "version": "2.0.0",
+    "alias": "Timer"
+  },
+  {
+    "name": "boatbomber/hashlib",
+    "version": "1.0.0",
+    "alias": "Hashlib"
+  },
+  {
+    "name": "joelbrd/logger",
+    "version": "1.0.8",
+    "alias": "Logger"
+  },
+  {
+    "name": "finobinos/tableutil",
+    "version": "3.2.2",
+    "alias": "Tableutil"
+  },
+  {
+    "name": "sleitnick/component",
+    "version": "2.4.8",
+    "alias": "Component"
+  },
+  {
+    "name": "red-blox/future",
+    "version": "1.0.1",
+    "alias": "Future"
+  },
+  {
+    "name": "bubshayz/enumlist",
+    "version": "1.2.4",
+    "alias": "Enumlist"
+  },
+  {
+    "name": "leifstout/networker",
+    "version": "0.3.1",
+    "alias": "Networker"
+  },
+  {
+    "name": "nightcycle/fetchu",
+    "version": "1.0.1",
+    "alias": "Fetchu"
+  },
+  {
+    "name": "ukendio/jecs",
+    "version": "0.11.0",
+    "alias": "Jecs"
+  },
+  {
+    "name": "bubshayz/property",
+    "version": "3.1.0",
+    "alias": "Property"
+  },
+  {
+    "name": "nightcycle/result",
+    "version": "1.0.2",
+    "alias": "Result"
+  },
+  {
+    "name": "centau/vide",
+    "version": "0.4.1",
+    "alias": "Vide"
+  },
+  {
+    "name": "grilme99/playfab-internal",
+    "version": "1.0.4",
+    "alias": "PlayfabInternal"
+  },
+  {
+    "name": "nightcycle/error",
+    "version": "0.7.0",
+    "alias": "Error"
+  },
+  {
+    "name": "corecii/greentea",
+    "version": "0.4.11",
+    "alias": "Greentea"
+  },
+  {
+    "name": "lukadev-0/typed-promise",
+    "version": "4.0.2",
+    "alias": "Lukadev0TypedPromise"
+  },
+  {
+    "name": "nightcycle/string",
+    "version": "0.1.0",
+    "alias": "String"
+  },
+  {
+    "name": "finobinos/remote",
+    "version": "3.3.6",
+    "alias": "Remote"
+  },
+  {
+    "name": "littensy/charm",
+    "version": "0.11.0",
+    "alias": "Charm"
+  },
+  {
+    "name": "prophetouw/simplesignal",
+    "version": "1.1.9",
+    "alias": "Simplesignal"
+  },
+  {
+    "name": "bubbabiga/enumlist",
+    "version": "2.0.5",
+    "alias": "BubbabigaEnumlist"
+  },
+  {
+    "name": "dig1t/util",
+    "version": "1.0.20",
+    "alias": "Util"
+  },
+  {
+    "name": "elitriare/bytenet-max",
+    "version": "1.0.0",
+    "alias": "BytenetMax"
+  },
+  {
+    "name": "nightcycle/luau-math",
+    "version": "1.5.2",
+    "alias": "LuauMath"
+  },
+  {
+    "name": "vocksel/import",
+    "version": "2.1.0",
+    "alias": "Import"
+  },
+  {
+    "name": "roblox/rodux",
+    "version": "3.0.0",
+    "alias": "Rodux"
+  },
+  {
+    "name": "core-packages/react",
+    "version": "0.0.1",
+    "alias": "CorepackagesReact"
+  },
+  {
+    "name": "nightcycle/curve-util",
+    "version": "1.0.0",
+    "alias": "CurveUtil"
+  },
+  {
+    "name": "nightcycle/spring",
+    "version": "1.0.0",
+    "alias": "Spring"
+  },
+  {
+    "name": "sleitnick/loader",
+    "version": "2.0.0",
+    "alias": "Loader"
+  },
+  {
+    "name": "csqrl/colour-utils",
+    "version": "1.4.1",
+    "alias": "ColourUtils"
+  },
+  {
+    "name": "red-blox/signal",
+    "version": "2.0.2",
+    "alias": "RedbloxSignal"
+  },
+  {
+    "name": "nightcycle/geometry-util",
+    "version": "2.0.1",
+    "alias": "GeometryUtil"
+  },
+  {
+    "name": "data-oriented-house/squash",
+    "version": "5.0.0",
+    "alias": "Squash"
+  },
+  {
+    "name": "red-blox/spawn",
+    "version": "1.1.0",
+    "alias": "Spawn"
+  },
+  {
+    "name": "remnantsofsiren/bridgenet2",
+    "version": "1.0.1",
+    "alias": "Bridgenet2"
+  },
+  {
+    "name": "jsdotlua/shared",
+    "version": "17.2.1",
+    "alias": "Shared"
+  },
+  {
+    "name": "littensy/reflex",
+    "version": "4.3.1",
+    "alias": "Reflex"
+  },
+  {
+    "name": "sleitnick/concur",
+    "version": "0.1.2",
+    "alias": "Concur"
+  },
+  {
+    "name": "ffrostflame/bytenet",
+    "version": "0.4.6",
+    "alias": "Bytenet"
+  },
+  {
+    "name": "anthony0br/documentservice",
+    "version": "1.2.2",
+    "alias": "Documentservice"
+  },
+  {
+    "name": "averyark/keeper",
+    "version": "1.9.2",
+    "alias": "Keeper"
+  },
+  {
+    "name": "kiy4ku/spr",
+    "version": "2.1.0",
+    "alias": "Spr"
+  },
+  {
+    "name": "pysephwasntavailable/remotepacketsizecounter",
+    "version": "2.4.1",
+    "alias": "Remotepacketsizecounter"
+  },
+  {
+    "name": "nightcycle/lune-util",
+    "version": "0.9.2",
+    "alias": "LuneUtil"
+  },
+  {
+    "name": "nightcycle/vec",
+    "version": "0.6.2",
+    "alias": "Vec"
+  },
+  {
+    "name": "nightcycle/midas",
+    "version": "6.1.8",
+    "alias": "Midas"
+  },
+  {
+    "name": "farukcoskn/trove",
+    "version": "1.0.1",
+    "alias": "FarukcosknTrove"
+  },
+  {
+    "name": "nightcycle/future",
+    "version": "1.0.2",
+    "alias": "NightcycleFuture"
+  },
+  {
+    "name": "coiorevent8/maid",
+    "version": "3.4.0",
+    "alias": "Coiorevent8Maid"
+  },
+  {
+    "name": "ffrostflame/bridgenet2",
+    "version": "1.0.0",
+    "alias": "FfrostflameBridgenet2"
+  },
+  {
+    "name": "maximumadhd/run-context",
+    "version": "1.0.1",
+    "alias": "RunContext"
+  },
+  {
+    "name": "red-blox/guard",
+    "version": "1.0.1",
+    "alias": "Guard"
+  },
+  {
+    "name": "red-blox/ratelimit",
+    "version": "1.0.1",
+    "alias": "Ratelimit"
+  },
+  {
+    "name": "sleitnick/option",
+    "version": "1.0.5",
+    "alias": "SleitnickOption"
+  },
+  {
+    "name": "nightcycle/queue",
+    "version": "2.3.3",
+    "alias": "Queue"
+  },
+  {
+    "name": "tpc9000/typeguard",
+    "version": "5.0.0",
+    "alias": "Typeguard"
+  },
+  {
+    "name": "raild3x/baseobject",
+    "version": "0.2.2",
+    "alias": "Baseobject"
+  },
+  {
+    "name": "1foreverhd/topbarplus",
+    "version": "3.4.0",
+    "alias": "Topbarplus"
+  },
+  {
+    "name": "jsdotlua/jest-types",
+    "version": "3.10.0",
+    "alias": "JestTypes"
+  },
+  {
+    "name": "aldrsd/math",
+    "version": "0.2.1",
+    "alias": "AldrsdMath"
+  },
+  {
+    "name": "egor00f/stdlib",
+    "version": "0.1.26",
+    "alias": "Stdlib"
+  },
+  {
+    "name": "spine-rbx/object",
+    "version": "1.0.1",
+    "alias": "Object"
+  },
+  {
+    "name": "mountaindouw/simplesignal",
+    "version": "1.2.3",
+    "alias": "MountaindouwSimplesignal"
+  },
+  {
+    "name": "nightcycle/hash-map",
+    "version": "0.7.0",
+    "alias": "HashMap"
+  },
+  {
+    "name": "dig1t/maid",
+    "version": "1.1.3",
+    "alias": "Dig1tMaid"
+  },
+  {
+    "name": "maximumadhd/promise-typed",
+    "version": "1.0.0",
+    "alias": "PromiseTyped"
+  },
+  {
+    "name": "raild3x/netwire",
+    "version": "0.3.4",
+    "alias": "Netwire"
+  },
+  {
+    "name": "alicesaidhi/conch-types",
+    "version": "0.2.1",
+    "alias": "ConchTypes"
+  },
+  {
+    "name": "sirmallard/iris",
+    "version": "2.5.1",
+    "alias": "Iris"
+  },
+  {
+    "name": "neonifieddev/signal",
+    "version": "0.0.3",
+    "alias": "NeonifieddevSignal"
+  },
+  {
+    "name": "sleitnick/wait-for",
+    "version": "1.0.0",
+    "alias": "WaitFor"
+  },
+  {
+    "name": "hobbs04067/playereventsequencer",
+    "version": "0.1.5",
+    "alias": "Playereventsequencer"
+  },
+  {
+    "name": "brittonfischer/profileservice",
+    "version": "2.1.5",
+    "alias": "Profileservice"
+  },
+  {
+    "name": "tpc9000/tableutil",
+    "version": "0.8.1",
+    "alias": "Tpc9000Tableutil"
+  },
+  {
+    "name": "jsdotlua/jest-globals",
+    "version": "3.10.0",
+    "alias": "JestGlobals"
+  },
+  {
+    "name": "dig1t/signal",
+    "version": "1.0.4",
+    "alias": "Dig1tSignal"
+  },
+  {
+    "name": "haedrix/react-globals",
+    "version": "17.3.10",
+    "alias": "ReactGlobals"
+  },
+  {
+    "name": "jaeymo/general-util",
+    "version": "0.4.0",
+    "alias": "GeneralUtil"
+  },
+  {
+    "name": "jsdotlua/jest",
+    "version": "3.10.0",
+    "alias": "Jest"
+  },
+  {
+    "name": "maximumadhd/network",
+    "version": "1.2.1",
+    "alias": "Network"
+  },
+  {
+    "name": "sirbepy/core",
+    "version": "0.4.0",
+    "alias": "Core"
+  },
+  {
+    "name": "sleitnick/enum-list",
+    "version": "2.1.0",
+    "alias": "EnumList"
+  },
+  {
+    "name": "boatbomber/highlighter",
+    "version": "0.11.1",
+    "alias": "Highlighter"
+  },
+  {
+    "name": "buildthomas/mockdatastoreservice",
+    "version": "1.0.3",
+    "alias": "Mockdatastoreservice"
+  },
+  {
+    "name": "destruction-studios/uniquekey",
+    "version": "1.0.4",
+    "alias": "Uniquekey"
+  },
+  {
+    "name": "nightcycle/material-icons-default-dp18-1x",
+    "version": "1.0.3",
+    "alias": "MaterialIconsDefaultDp181x"
+  },
+  {
+    "name": "nightcycle/material-icons-outlined-dp18-1x",
+    "version": "1.0.3",
+    "alias": "MaterialIconsOutlinedDp181x"
+  },
+  {
+    "name": "pysephwasntavailable/roact-constant-fork",
+    "version": "1.5.0",
+    "alias": "RoactConstantFork"
+  },
+  {
+    "name": "bubbabiga/signal",
+    "version": "6.0.1",
+    "alias": "BubbabigaSignal"
+  },
+  {
+    "name": "bubshurb/property",
+    "version": "3.0.1",
+    "alias": "BubshurbProperty"
+  },
+  {
+    "name": "hobbs04067/bindable",
+    "version": "0.1.4",
+    "alias": "Bindable"
+  },
+  {
+    "name": "hobbs04067/bytenet",
+    "version": "0.5.6",
+    "alias": "Hobbs04067Bytenet"
+  },
+  {
+    "name": "joshuaclarkelua/promise",
+    "version": "6.0.0",
+    "alias": "JoshuaclarkeluaPromise"
+  },
+  {
+    "name": "joelbrd/region",
+    "version": "1.0.2",
+    "alias": "Region"
+  },
+  {
+    "name": "nazumah/async",
+    "version": "1.0.4",
+    "alias": "Async"
+  },
+  {
+    "name": "roblox/luau-polyfill",
+    "version": "1.2.5",
+    "alias": "RobloxLuauPolyfill"
+  },
+  {
+    "name": "evaera/cmdr",
+    "version": "1.12.0",
+    "alias": "Cmdr"
+  },
+  {
+    "name": "ffrostflame/tablekit",
+    "version": "0.2.4",
+    "alias": "Tablekit"
+  },
+  {
+    "name": "dig1t/dlib",
+    "version": "1.2.18",
+    "alias": "Dlib"
+  },
+  {
+    "name": "jaeymo/suphi-packet",
+    "version": "0.1.0",
+    "alias": "SuphiPacket"
+  },
+  {
+    "name": "nightcycle/hashlib",
+    "version": "1.0.4",
+    "alias": "NightcycleHashlib"
+  },
+  {
+    "name": "pepeeltoro41/ui-labs",
+    "version": "2.4.2",
+    "alias": "UiLabs"
+  },
+  {
+    "name": "pongpongz/jest-types",
+    "version": "3.14.1",
+    "alias": "PongpongzJestTypes"
+  },
+  {
+    "name": "r-unic/array",
+    "version": "0.3.9",
+    "alias": "Array"
+  },
+  {
+    "name": "sleitnick/net",
+    "version": "0.2.0",
+    "alias": "Net"
+  },
+  {
+    "name": "cipharius/msgpack-luau",
+    "version": "0.3.0",
+    "alias": "MsgpackLuau"
+  },
+  {
+    "name": "rasmusmerzin/compose",
+    "version": "1.0.0",
+    "alias": "Compose"
+  },
+  {
+    "name": "4812571/http-promise",
+    "version": "0.1.4",
+    "alias": "HttpPromise"
+  },
+  {
+    "name": "dekkonot/base91",
+    "version": "1.1.0",
+    "alias": "Base91"
+  },
+  {
+    "name": "kampfkarren/roact-hooks",
+    "version": "0.5.1",
+    "alias": "RoactHooks"
+  },
+  {
+    "name": "leifstout/dataservice",
+    "version": "1.0.0",
+    "alias": "Dataservice"
+  },
+  {
+    "name": "littensy/ripple",
+    "version": "0.10.2",
+    "alias": "Ripple"
+  },
+  {
+    "name": "stackyzdev/signal",
+    "version": "1.0.0",
+    "alias": "StackyzdevSignal"
+  },
+  {
+    "name": "vorlias/net",
+    "version": "3.0.7",
+    "alias": "VorliasNet"
+  },
+  {
+    "name": "alicesaidhi/conch-ast",
+    "version": "0.2.1",
+    "alias": "ConchAst"
+  },
+  {
+    "name": "ernisto/signal",
+    "version": "0.2.0",
+    "alias": "ErnistoSignal"
+  },
+  {
+    "name": "ffrostflame/wally-instance-manager",
+    "version": "0.1.0",
+    "alias": "WallyInstanceManager"
+  },
+  {
+    "name": "nightcycle/viewport-handler",
+    "version": "1.0.6",
+    "alias": "ViewportHandler"
+  },
+  {
+    "name": "raild3x/tablemanager",
+    "version": "1.1.1",
+    "alias": "Tablemanager"
+  },
+  {
+    "name": "nightcycle/mock-messaging-service",
+    "version": "1.0.1",
+    "alias": "MockMessagingService"
+  },
+  {
+    "name": "bubbabiga/network",
+    "version": "7.1.7",
+    "alias": "BubbabigaNetwork"
+  },
+  {
+    "name": "jsdotlua/promise",
+    "version": "3.5.2",
+    "alias": "JsdotluaPromise"
+  },
+  {
+    "name": "dig1t/promise",
+    "version": "1.1.3",
+    "alias": "Dig1tPromise"
+  },
+  {
+    "name": "jsdotlua/chalk-lua",
+    "version": "5.2.0",
+    "alias": "ChalkLua"
+  },
+  {
+    "name": "reselim/flipper",
+    "version": "2.0.0",
+    "alias": "Flipper"
+  },
+  {
+    "name": "caveful-games/rbxzstd",
+    "version": "0.1.6",
+    "alias": "Rbxzstd"
+  },
+  {
+    "name": "danieluntask/task",
+    "version": "0.1.1",
+    "alias": "Task"
+  },
+  {
+    "name": "haedrix/shared",
+    "version": "17.3.10",
+    "alias": "HaedrixShared"
+  },
+  {
+    "name": "jsdotlua/roact-compat",
+    "version": "17.2.1",
+    "alias": "RoactCompat"
+  },
+  {
+    "name": "red-blox/promise",
+    "version": "1.1.1",
+    "alias": "RedbloxPromise"
+  },
+  {
+    "name": "sleitnick/input",
+    "version": "3.0.0",
+    "alias": "Input"
+  },
+  {
+    "name": "breadboardengineer1234/quicknet",
+    "version": "0.3.0",
+    "alias": "Quicknet"
+  },
+  {
+    "name": "flipbook-labs/module-loader",
+    "version": "0.12.0",
+    "alias": "ModuleLoader"
+  },
+  {
+    "name": "jsdotlua/chalk",
+    "version": "0.2.1",
+    "alias": "Chalk"
+  },
+  {
+    "name": "sleitnick/shake",
+    "version": "1.1.0",
+    "alias": "Shake"
+  },
+  {
+    "name": "alicesaidhi/jabby",
+    "version": "0.6.1",
+    "alias": "Jabby"
+  },
+  {
+    "name": "bubshurb/connection",
+    "version": "2.0.0",
+    "alias": "Connection"
+  },
+  {
+    "name": "jsdotlua/jest-get-type",
+    "version": "3.10.0",
+    "alias": "JestGetType"
+  },
+  {
+    "name": "jsdotlua/luau-regexp",
+    "version": "0.2.1",
+    "alias": "LuauRegexp"
+  },
+  {
+    "name": "lockefair/event",
+    "version": "0.3.3",
+    "alias": "Event"
+  },
+  {
+    "name": "freddylist/llama",
+    "version": "1.1.1",
+    "alias": "Llama"
+  },
+  {
+    "name": "howmanysmall/enumerator",
+    "version": "2.2.3",
+    "alias": "Enumerator"
+  },
+  {
+    "name": "penguindevs/boattween",
+    "version": "1.0.1",
+    "alias": "Boattween"
+  },
+  {
+    "name": "spine-rbx/promise",
+    "version": "1.0.1",
+    "alias": "SpinerbxPromise"
+  },
+  {
+    "name": "isoopod/pack",
+    "version": "0.10.1",
+    "alias": "Pack"
+  },
+  {
+    "name": "jaeymo/viewer",
+    "version": "1.0.0",
+    "alias": "Viewer"
+  },
+  {
+    "name": "jsdotlua/react-reconciler",
+    "version": "17.2.1",
+    "alias": "ReactReconciler"
+  },
+  {
+    "name": "prophetouw/translatewrapper",
+    "version": "1.0.6",
+    "alias": "Translatewrapper"
+  },
+  {
+    "name": "red-blox/fetch",
+    "version": "2.0.0",
+    "alias": "Fetch"
+  },
+  {
+    "name": "thenexusavenger/nexus-instance",
+    "version": "4.1.2",
+    "alias": "NexusInstance"
+  },
+  {
+    "name": "volkdevs/signal",
+    "version": "0.2.1",
+    "alias": "VolkdevsSignal"
+  },
+  {
+    "name": "1foreverhd/janitor",
+    "version": "1.18.15",
+    "alias": "1foreverhdJanitor"
+  },
+  {
+    "name": "alicesaidhi/pebble",
+    "version": "0.2.0",
+    "alias": "Pebble"
+  },
+  {
+    "name": "codedjimmy/bettersignal",
+    "version": "0.1.1",
+    "alias": "Bettersignal"
+  },
+  {
+    "name": "cometahn142/snap",
+    "version": "0.5.3",
+    "alias": "Snap"
+  },
+  {
+    "name": "darkestdev/darkocomm",
+    "version": "1.0.6",
+    "alias": "Darkocomm"
+  },
+  {
+    "name": "jsdotlua/pretty-format",
+    "version": "3.10.0",
+    "alias": "PrettyFormat"
+  },
+  {
+    "name": "jsdotlua/regex",
+    "version": "1.0.2",
+    "alias": "Regex"
+  },
+  {
+    "name": "meta-maxim/luau-types",
+    "version": "1.1.0",
+    "alias": "LuauTypes"
+  },
+  {
+    "name": "nightcycle/serde-json",
+    "version": "0.7.1",
+    "alias": "SerdeJson"
+  },
+  {
+    "name": "jsdotlua/scheduler",
+    "version": "17.2.1",
+    "alias": "Scheduler"
+  },
+  {
+    "name": "neonifieddev/smartinstance",
+    "version": "1.0.5",
+    "alias": "Smartinstance"
+  },
+  {
+    "name": "neonifieddev/sync",
+    "version": "0.2.5",
+    "alias": "Sync"
+  },
+  {
+    "name": "remnantsofsiren/cardinallifecycles",
+    "version": "0.0.1",
+    "alias": "Cardinallifecycles"
+  },
+  {
+    "name": "roblox/jest-types",
+    "version": "3.20.0",
+    "alias": "RobloxJestTypes"
+  },
+  {
+    "name": "acecateer/fusion",
+    "version": "0.3.1",
+    "alias": "AcecateerFusion"
+  },
+  {
+    "name": "duckarmor/freeze",
+    "version": "0.1.4",
+    "alias": "Freeze"
+  },
+  {
+    "name": "horsenuggets/chalk-luau",
+    "version": "1.0.2",
+    "alias": "ChalkLuau"
+  },
+  {
+    "name": "jsdotlua/jest-util",
+    "version": "3.10.0",
+    "alias": "JestUtil"
+  },
+  {
+    "name": "jsdotlua/roblox-shared",
+    "version": "3.4.1",
+    "alias": "RobloxShared"
+  },
+  {
+    "name": "nazumah/signal",
+    "version": "1.0.4",
+    "alias": "NazumahSignal"
+  },
+  {
+    "name": "pongpongz/jest-roblox-shared",
+    "version": "3.14.1",
+    "alias": "JestRobloxShared"
+  },
+  {
+    "name": "revvy02/miu",
+    "version": "0.4.0",
+    "alias": "Miu"
+  },
+  {
+    "name": "robloxiandemo/cleanser",
+    "version": "0.1.8",
+    "alias": "Cleanser"
+  },
+  {
+    "name": "yetanotherclown/planck",
+    "version": "0.2.0",
+    "alias": "Planck"
+  },
+  {
+    "name": "zythdotdev/event",
+    "version": "2.0.2",
+    "alias": "ZythdotdevEvent"
+  },
+  {
+    "name": "bubbabiga/property",
+    "version": "7.0.6",
+    "alias": "BubbabigaProperty"
+  },
+  {
+    "name": "centau/ecr",
+    "version": "0.9.0",
+    "alias": "Ecr"
+  },
+  {
+    "name": "chipioindustries/signal",
+    "version": "1.2.0",
+    "alias": "ChipioindustriesSignal"
+  },
+  {
+    "name": "cometahn1042f/signal",
+    "version": "0.1.3",
+    "alias": "Cometahn1042fSignal"
+  },
+  {
+    "name": "cometahn142/janitor",
+    "version": "0.2.0",
+    "alias": "Cometahn142Janitor"
+  },
+  {
+    "name": "fizzyhex/fusion-beta",
+    "version": "0.3.0",
+    "alias": "FusionBeta"
+  },
+  {
+    "name": "haedrix/safe-flags",
+    "version": "17.3.7",
+    "alias": "SafeFlags"
+  },
+  {
+    "name": "jsdotlua/jest-mock",
+    "version": "3.10.0",
+    "alias": "JestMock"
+  },
+  {
+    "name": "jsdotlua/react-is",
+    "version": "17.2.1",
+    "alias": "ReactIs"
+  },
+  {
+    "name": "l3g5nd/networker",
+    "version": "4.1.8",
+    "alias": "L3g5ndNetworker"
+  },
+  {
+    "name": "nightcycle/reqwest",
+    "version": "0.10.3",
+    "alias": "Reqwest"
+  },
+  {
+    "name": "nightcycle/vec-deque",
+    "version": "0.6.2",
+    "alias": "VecDeque"
+  },
+  {
+    "name": "surnautica/profileservice",
+    "version": "1.0.0",
+    "alias": "SurnauticaProfileservice"
+  },
+  {
+    "name": "thehoosky/replica",
+    "version": "1.0.2",
+    "alias": "Replica"
+  },
+  {
+    "name": "ayrezrblx/replica",
+    "version": "0.1.9",
+    "alias": "AyrezrblxReplica"
+  },
+  {
+    "name": "codedjimmy/tnet",
+    "version": "0.1.8",
+    "alias": "Tnet"
+  },
+  {
+    "name": "cometahn1042f/promise",
+    "version": "0.1.3",
+    "alias": "Cometahn1042fPromise"
+  },
+  {
+    "name": "hakochanjp/rain-particle",
+    "version": "0.3.0",
+    "alias": "RainParticle"
+  },
+  {
+    "name": "howmanysmall/better-signal",
+    "version": "2.1.0",
+    "alias": "BetterSignal"
+  },
+  {
+    "name": "jessekroeske/numberstore-shared",
+    "version": "0.5.9",
+    "alias": "NumberstoreShared"
+  },
+  {
+    "name": "jsdotlua/collections",
+    "version": "1.2.7",
+    "alias": "Collections"
+  },
+  {
+    "name": "maximumadhd/userid",
+    "version": "1.0.2",
+    "alias": "Userid"
+  },
+  {
+    "name": "nazumah/netflow",
+    "version": "1.7.5",
+    "alias": "Netflow"
+  },
+  {
+    "name": "rbxmath/tools",
+    "version": "0.2.0",
+    "alias": "Tools"
+  },
+  {
+    "name": "revvy02/cleaner",
+    "version": "1.0.0",
+    "alias": "Cleaner"
+  },
+  {
+    "name": "roblox/safe-flags",
+    "version": "0.1.2",
+    "alias": "RobloxSafeFlags"
+  },
+  {
+    "name": "th4tunkn0wndude/react-globals",
+    "version": "17.3.10",
+    "alias": "Th4tunkn0wndudeReactGlobals"
+  },
+  {
+    "name": "cometahn142/promise",
+    "version": "0.1.2",
+    "alias": "Cometahn142Promise"
+  },
+  {
+    "name": "cometahn142/signal",
+    "version": "1.1.0",
+    "alias": "Cometahn142Signal"
+  },
+  {
+    "name": "danieluntask/signal",
+    "version": "0.1.8",
+    "alias": "DanieluntaskSignal"
+  },
+  {
+    "name": "dig1t/cache",
+    "version": "1.0.10",
+    "alias": "Cache"
+  },
+  {
+    "name": "farukcoskn/color",
+    "version": "1.0.0",
+    "alias": "Color"
+  },
+  {
+    "name": "hobbs04067/noid-manager",
+    "version": "0.5.17",
+    "alias": "NoidManager"
+  },
+  {
+    "name": "ivasmigins/replica",
+    "version": "0.1.0",
+    "alias": "IvasmiginsReplica"
+  },
+  {
+    "name": "kelvenone/callback",
+    "version": "0.2.0",
+    "alias": "Callback"
+  },
+  {
+    "name": "nightcycle/vector",
+    "version": "1.0.2",
+    "alias": "Vector"
+  },
+  {
+    "name": "revvy02/truesignal",
+    "version": "1.0.2",
+    "alias": "Truesignal"
+  },
+  {
+    "name": "siriuslatte/bindables",
+    "version": "1.0.1",
+    "alias": "Bindables"
+  },
+  {
+    "name": "spine-rbx/util",
+    "version": "1.1.0",
+    "alias": "SpinerbxUtil"
+  },
+  {
+    "name": "stackyzdev/uniquetag",
+    "version": "1.4.2",
+    "alias": "Uniquetag"
+  },
+  {
+    "name": "stevendahfish/typed-promise",
+    "version": "4.0.2",
+    "alias": "StevendahfishTypedPromise"
+  },
+  {
+    "name": "ahmoin/signal",
+    "version": "1.0.1",
+    "alias": "AhmoinSignal"
+  },
+  {
+    "name": "aloroid/t",
+    "version": "3.1.1",
+    "alias": "AloroidT"
+  },
+  {
+    "name": "andremhpra/partcache",
+    "version": "1.0.0",
+    "alias": "Partcache"
+  },
+  {
+    "name": "bubshayz/serializerutil",
+    "version": "1.5.0",
+    "alias": "Serializerutil"
+  },
+  {
+    "name": "bubshurb/serializerutil",
+    "version": "2.0.0",
+    "alias": "BubshurbSerializerutil"
+  },
+  {
+    "name": "daad/debugutil",
+    "version": "0.1.0",
+    "alias": "Debugutil"
+  },
+  {
+    "name": "egor00f/cooldownlib",
+    "version": "0.1.4",
+    "alias": "Cooldownlib"
+  },
+  {
+    "name": "egor00f/giflib",
+    "version": "0.4.5",
+    "alias": "Giflib"
+  },
+  {
+    "name": "egor00f/inputlib",
+    "version": "0.2.3",
+    "alias": "Inputlib"
+  },
+  {
+    "name": "farukcoskn/network",
+    "version": "1.0.5",
+    "alias": "FarukcosknNetwork"
+  },
+  {
+    "name": "grunionnn/networker",
+    "version": "0.3.1",
+    "alias": "GrunionnnNetworker"
+  },
+  {
+    "name": "kennyjeopardy/bitbuf",
+    "version": "0.1.0",
+    "alias": "Bitbuf"
+  },
+  {
+    "name": "lfg-studio/node-graph",
+    "version": "1.0.2",
+    "alias": "NodeGraph"
+  },
+  {
+    "name": "pongpongz/jest-get-type",
+    "version": "3.14.1",
+    "alias": "PongpongzJestGetType"
+  },
+  {
+    "name": "sleitnick/ser",
+    "version": "1.0.5",
+    "alias": "Ser"
+  },
+  {
+    "name": "ukendio/tools",
+    "version": "0.1.0",
+    "alias": "UkendioTools"
+  },
+  {
+    "name": "yetanotherclown/planck-runservice",
+    "version": "0.2.0",
+    "alias": "PlanckRunservice"
+  },
+  {
+    "name": "afrxo/components",
+    "version": "1.0.0",
+    "alias": "Components"
+  },
+  {
+    "name": "afrxo/math",
+    "version": "1.0.0",
+    "alias": "AfrxoMath"
+  },
+  {
+    "name": "afrxo/netvalue",
+    "version": "1.0.0",
+    "alias": "Netvalue"
+  },
+  {
+    "name": "afrxo/state",
+    "version": "1.1.0",
+    "alias": "State"
+  },
+  {
+    "name": "afrxo/thread",
+    "version": "1.0.0",
+    "alias": "Thread"
+  },
+  {
+    "name": "dayfarer/spring",
+    "version": "0.1.1",
+    "alias": "DayfarerSpring"
+  },
+  {
+    "name": "firepalmmy/signalplus",
+    "version": "3.7.2",
+    "alias": "Signalplus"
+  },
+  {
+    "name": "gianu12g/adaptreactrobloxpackage",
+    "version": "0.2.2",
+    "alias": "Adaptreactrobloxpackage"
+  },
+  {
+    "name": "invehd/logger",
+    "version": "2.0.6",
+    "alias": "InvehdLogger"
+  },
+  {
+    "name": "jsdotlua/jest-message-util",
+    "version": "3.10.0",
+    "alias": "JestMessageUtil"
+  },
+  {
+    "name": "nightcycle/material-icons",
+    "version": "1.0.3",
+    "alias": "MaterialIcons"
+  },
+  {
+    "name": "egor00f/switch",
+    "version": "0.1.1",
+    "alias": "Switch"
+  },
+  {
+    "name": "farukcoskn/spy",
+    "version": "1.0.0",
+    "alias": "Spy"
+  },
+  {
+    "name": "ffrostfall/crunchyroll",
+    "version": "0.2.0",
+    "alias": "Crunchyroll"
+  },
+  {
+    "name": "haedrix/react",
+    "version": "17.3.10",
+    "alias": "HaedrixReact"
+  },
+  {
+    "name": "kineticwallet/janitor",
+    "version": "1.17.0",
+    "alias": "KineticwalletJanitor"
+  },
+  {
+    "name": "kineticwallet/promise",
+    "version": "4.0.0",
+    "alias": "KineticwalletPromise"
+  },
+  {
+    "name": "maximumadhd/delta-table",
+    "version": "1.1.0",
+    "alias": "DeltaTable"
+  },
+  {
+    "name": "meta-maxim/class-names",
+    "version": "1.0.1",
+    "alias": "ClassNames"
+  },
+  {
+    "name": "meta-maxim/data-type-names",
+    "version": "1.0.0",
+    "alias": "DataTypeNames"
+  },
+  {
+    "name": "meta-maxim/instance-names",
+    "version": "1.0.1",
+    "alias": "InstanceNames"
+  },
+  {
+    "name": "meta-maxim/luau-type-parser",
+    "version": "1.1.5",
+    "alias": "LuauTypeParser"
+  },
+  {
+    "name": "pongpongz/jest-util",
+    "version": "3.14.1",
+    "alias": "PongpongzJestUtil"
+  },
+  {
+    "name": "pongpongz/pretty-format",
+    "version": "3.14.1",
+    "alias": "PongpongzPrettyFormat"
+  },
+  {
+    "name": "roblox/react-globals",
+    "version": "17.3.11",
+    "alias": "RobloxReactGlobals"
+  },
+  {
+    "name": "stackyzdev/assert",
+    "version": "1.0.0",
+    "alias": "Assert"
+  },
+  {
+    "name": "tazmondo/future",
+    "version": "2.0.2",
+    "alias": "TazmondoFuture"
+  },
+  {
+    "name": "th4tunkn0wndude/shared",
+    "version": "17.3.10",
+    "alias": "Th4tunkn0wndudeShared"
+  },
+  {
+    "name": "4x8matrix/console",
+    "version": "3.1.0",
+    "alias": "Console"
+  },
+  {
+    "name": "farukcoskn/datastore",
+    "version": "1.0.2",
+    "alias": "Datastore"
+  },
+  {
+    "name": "farukcoskn/debounce",
+    "version": "1.0.4",
+    "alias": "Debounce"
+  },
+  {
+    "name": "farukcoskn/signal",
+    "version": "1.0.5",
+    "alias": "FarukcosknSignal"
+  },
+  {
+    "name": "farukcoskn/smarttable",
+    "version": "1.0.3",
+    "alias": "Smarttable"
+  },
+  {
+    "name": "jessekroeske/multicurrency-shared",
+    "version": "0.5.7",
+    "alias": "MulticurrencyShared"
+  },
+  {
+    "name": "kelvenone/t",
+    "version": "2.3.2",
+    "alias": "KelvenoneT"
+  },
+  {
+    "name": "littensy/react-ripple",
+    "version": "3.0.1",
+    "alias": "ReactRipple"
+  },
+  {
+    "name": "mariochao/ui-util",
+    "version": "0.0.1",
+    "alias": "UiUtil"
+  },
+  {
+    "name": "miagobble/typer",
+    "version": "0.1.1",
+    "alias": "Typer"
+  },
+  {
+    "name": "nowoshire/namedsignal",
+    "version": "2.3.2",
+    "alias": "Namedsignal"
+  },
+  {
+    "name": "revvy02/miu-px",
+    "version": "0.2.0",
+    "alias": "MiuPx"
+  },
+  {
+    "name": "roblox/chalk-lua",
+    "version": "0.3.0",
+    "alias": "RobloxChalkLua"
+  },
+  {
+    "name": "sircfenner/studiocomponents",
+    "version": "1.2.0",
+    "alias": "Studiocomponents"
+  },
+  {
+    "name": "spine-rbx/signal",
+    "version": "1.0.1",
+    "alias": "SpinerbxSignal"
+  },
+  {
+    "name": "thenexusavenger/nexus-data-store",
+    "version": "1.6.2",
+    "alias": "NexusDataStore"
+  },
+  {
+    "name": "4812571/observe",
+    "version": "0.2.6",
+    "alias": "Observe"
+  },
+  {
+    "name": "4812571/weighted-choice",
+    "version": "2.1.0",
+    "alias": "WeightedChoice"
+  },
+  {
+    "name": "detourious/loleris-replica",
+    "version": "1.0.3",
+    "alias": "LolerisReplica"
+  },
+  {
+    "name": "farukcoskn/component",
+    "version": "1.0.8",
+    "alias": "FarukcosknComponent"
+  },
+  {
+    "name": "farukcoskn/memory",
+    "version": "1.0.3",
+    "alias": "Memory"
+  },
+  {
+    "name": "farukcoskn/sween",
+    "version": "1.0.3",
+    "alias": "Sween"
+  },
+  {
+    "name": "imavafe/zoneplus-reupload",
+    "version": "3.2.0",
+    "alias": "ZoneplusReupload"
+  },
+  {
+    "name": "nightcycle/fire",
+    "version": "0.1.0",
+    "alias": "Fire"
+  },
+  {
+    "name": "nightcycle/voxel",
+    "version": "0.1.0",
+    "alias": "Voxel"
+  },
+  {
+    "name": "pizzaboxer/bloxstrap-rpc-sdk",
+    "version": "1.0.1",
+    "alias": "BloxstrapRpcSdk"
+  },
+  {
+    "name": "pongpongz/jest-message-util",
+    "version": "3.14.1",
+    "alias": "PongpongzJestMessageUtil"
+  },
+  {
+    "name": "pongpongz/jest-mock",
+    "version": "3.14.1",
+    "alias": "PongpongzJestMock"
+  },
+  {
+    "name": "revvy02/slick",
+    "version": "2.0.0",
+    "alias": "Slick"
+  },
+  {
+    "name": "roblox/promise",
+    "version": "3.5.2",
+    "alias": "RobloxPromise"
+  },
+  {
+    "name": "roblox/react",
+    "version": "17.3.11",
+    "alias": "RobloxReact"
+  },
+  {
+    "name": "roblox/react-shared",
+    "version": "17.3.11",
+    "alias": "ReactShared"
+  },
+  {
+    "name": "si-senortn/symbol",
+    "version": "0.1.0",
+    "alias": "SisenortnSymbol"
+  },
+  {
+    "name": "thenexusavenger/nexus-button",
+    "version": "2.5.2",
+    "alias": "NexusButton"
+  },
+  {
+    "name": "aloroid/plasma",
+    "version": "0.4.9",
+    "alias": "Plasma"
+  },
+  {
+    "name": "anytrio/spatial-query",
+    "version": "1.1.0",
+    "alias": "SpatialQuery"
+  },
+  {
+    "name": "bubshurb/playereventsutil",
+    "version": "1.1.0",
+    "alias": "Playereventsutil"
+  },
+  {
+    "name": "cometahn1042f/janitor",
+    "version": "0.1.6",
+    "alias": "Cometahn1042fJanitor"
+  },
+  {
+    "name": "imezx/fastnet2",
+    "version": "0.9.7",
+    "alias": "Fastnet2"
+  },
+  {
+    "name": "megamonsta2/partcache",
+    "version": "1.1.3",
+    "alias": "Megamonsta2Partcache"
+  },
+  {
+    "name": "morgann1/builder-icons",
+    "version": "1.0.0",
+    "alias": "BuilderIcons"
+  },
+  {
+    "name": "nightcycle/material-icons-default-dp24-1x",
+    "version": "1.0.3",
+    "alias": "MaterialIconsDefaultDp241x"
+  },
+  {
+    "name": "nightcycle/material-icons-outlined-dp24-1x",
+    "version": "1.0.3",
+    "alias": "MaterialIconsOutlinedDp241x"
+  },
+  {
+    "name": "ro-bura/xclass",
+    "version": "1.0.3",
+    "alias": "Xclass"
+  },
+  {
+    "name": "sleitnick/tree",
+    "version": "1.1.0",
+    "alias": "Tree"
+  },
+  {
+    "name": "spine-rbx/net",
+    "version": "1.0.2",
+    "alias": "SpinerbxNet"
+  },
+  {
+    "name": "sudoserver819/bytenet",
+    "version": "0.1.3",
+    "alias": "Sudoserver819Bytenet"
+  },
+  {
+    "name": "sylrdev/remotes",
+    "version": "2.1.0",
+    "alias": "Remotes"
+  },
+  {
+    "name": "thenexusavenger/nexus-virtual-list",
+    "version": "1.1.1",
+    "alias": "NexusVirtualList"
+  },
+  {
+    "name": "ukendio/scalars",
+    "version": "0.1.0",
+    "alias": "Scalars"
+  },
+  {
+    "name": "alicesaidhi/conch",
+    "version": "0.4.0",
+    "alias": "Conch"
+  },
+  {
+    "name": "alicesaidhi/conch-analysis",
+    "version": "0.2.1",
+    "alias": "ConchAnalysis"
+  },
+  {
+    "name": "alicesaidhi/conch-compiler",
+    "version": "0.2.2",
+    "alias": "ConchCompiler"
+  },
+  {
+    "name": "alicesaidhi/conch-vm",
+    "version": "0.2.1",
+    "alias": "ConchVm"
+  },
+  {
+    "name": "brittonfischer/replicaservice",
+    "version": "0.1.0",
+    "alias": "Replicaservice"
+  },
+  {
+    "name": "cometahn1042f/zenx",
+    "version": "0.2.2",
+    "alias": "Zenx"
+  },
+  {
+    "name": "daulric/oneframe",
+    "version": "1.0.8",
+    "alias": "Oneframe"
+  },
+  {
+    "name": "ffrostflame/guarded-sourcemap",
+    "version": "0.1.2",
+    "alias": "GuardedSourcemap"
+  },
+  {
+    "name": "firepalmmy/packetplus",
+    "version": "1.3.2",
+    "alias": "Packetplus"
+  },
+  {
+    "name": "green-screen/smarttable",
+    "version": "0.1.2",
+    "alias": "GreenscreenSmarttable"
+  },
+  {
+    "name": "haedrix/react-reconciler",
+    "version": "17.3.10",
+    "alias": "HaedrixReactReconciler"
+  },
+  {
+    "name": "iitpp-roblox/localaudio",
+    "version": "1.5.2",
+    "alias": "Localaudio"
+  },
+  {
+    "name": "joshuaclarkelua/signal",
+    "version": "2.0.5",
+    "alias": "JoshuaclarkeluaSignal"
+  },
+  {
+    "name": "jsdotlua/es7-types",
+    "version": "1.2.7",
+    "alias": "Es7Types"
+  },
+  {
+    "name": "jsdotlua/jest-snapshot",
+    "version": "3.10.0",
+    "alias": "JestSnapshot"
+  },
+  {
+    "name": "jsdotlua/jest-test-result",
+    "version": "3.10.0",
+    "alias": "JestTestResult"
+  },
+  {
+    "name": "jsdotlua/number",
+    "version": "1.2.7",
+    "alias": "Number"
+  },
+  {
+    "name": "mariochao/client-movement-detector",
+    "version": "1.1.1",
+    "alias": "ClientMovementDetector"
+  },
+  {
+    "name": "mariochao/segmented-route",
+    "version": "0.1.3",
+    "alias": "SegmentedRoute"
+  },
+  {
+    "name": "matter-ecs/matter",
+    "version": "0.8.5",
+    "alias": "Matter"
+  },
+  {
+    "name": "morgann1/safe-flags",
+    "version": "1.0.0",
+    "alias": "Morgann1SafeFlags"
+  },
+  {
+    "name": "morgann1/ty",
+    "version": "0.1.0",
+    "alias": "Ty"
+  },
+  {
+    "name": "pyseph/objectcache",
+    "version": "1.4.6",
+    "alias": "Objectcache"
+  },
+  {
+    "name": "roblox-super-heroes/directory-loader-utility",
+    "version": "0.1.5",
+    "alias": "DirectoryLoaderUtility"
+  },
+  {
+    "name": "sleitnick/buffer-util",
+    "version": "0.3.2",
+    "alias": "BufferUtil"
+  },
+  {
+    "name": "stackyzdev/goodsignal",
+    "version": "0.4.1",
+    "alias": "StackyzdevGoodsignal"
+  },
+  {
+    "name": "synttx/scythe",
+    "version": "1.2.1",
+    "alias": "Scythe"
+  },
+  {
+    "name": "thenexusavenger/nexus-feature-flags",
+    "version": "1.3.3",
+    "alias": "NexusFeatureFlags"
+  },
+  {
+    "name": "4x8matrix/runtime",
+    "version": "1.0.0",
+    "alias": "Runtime"
+  },
+  {
+    "name": "boatbomber/editableimageblur",
+    "version": "1.0.0",
+    "alias": "Editableimageblur"
+  },
+  {
+    "name": "boatbomber/pixelcolorapproximation",
+    "version": "0.3.0",
+    "alias": "Pixelcolorapproximation"
+  },
+  {
+    "name": "chriscerie/iter",
+    "version": "0.1.4",
+    "alias": "Iter"
+  },
+  {
+    "name": "developmentfurthered/signal",
+    "version": "0.0.2",
+    "alias": "DevelopmentfurtheredSignal"
+  },
+  {
+    "name": "dig1t/gameanalytics-sdk",
+    "version": "2.2.86",
+    "alias": "GameanalyticsSdk"
+  },
+  {
+    "name": "elentium/voidsentry",
+    "version": "0.0.8",
+    "alias": "Voidsentry"
+  },
+  {
+    "name": "evaera/matter",
+    "version": "0.7.0",
+    "alias": "EvaeraMatter"
+  },
+  {
+    "name": "fadeluc-123/objectcache",
+    "version": "3.4.0",
+    "alias": "Fadeluc123Objectcache"
+  },
+  {
+    "name": "ffrostfall/fluid",
+    "version": "0.6.5",
+    "alias": "Fluid"
+  },
+  {
+    "name": "joelbrd/charm",
+    "version": "1.0.10",
+    "alias": "JoelbrdCharm"
+  },
+  {
+    "name": "joshuaclarkelua/viewportmodel",
+    "version": "1.0.0",
+    "alias": "Viewportmodel"
+  },
+  {
+    "name": "jsdotlua/jest-environment",
+    "version": "3.10.0",
+    "alias": "JestEnvironment"
+  },
+  {
+    "name": "jsdotlua/jest-roblox-shared",
+    "version": "3.10.0",
+    "alias": "JsdotluaJestRobloxShared"
+  },
+  {
+    "name": "maximumadhd/api-dump",
+    "version": "1.0.1",
+    "alias": "ApiDump"
+  },
+  {
+    "name": "morgann1/event",
+    "version": "0.1.0",
+    "alias": "Morgann1Event"
+  },
+  {
+    "name": "morgann1/push-pull",
+    "version": "0.1.0",
+    "alias": "PushPull"
+  },
+  {
+    "name": "nazumahk/vow",
+    "version": "1.0.1",
+    "alias": "Vow"
+  },
+  {
+    "name": "nightcycle/noise-util",
+    "version": "1.0.5",
+    "alias": "NoiseUtil"
+  },
+  {
+    "name": "onv-il/btreesv5",
+    "version": "5.0.18",
+    "alias": "Btreesv5"
+  },
+  {
+    "name": "raild3x/tablereplicator",
+    "version": "1.0.1",
+    "alias": "Tablereplicator"
+  },
+  {
+    "name": "rbxmath/primes",
+    "version": "0.3.0",
+    "alias": "Primes"
+  },
+  {
+    "name": "roblox/symbol",
+    "version": "1.0.1",
+    "alias": "RobloxSymbol"
+  },
+  {
+    "name": "sirbepy/cached-profile-photos",
+    "version": "0.3.0",
+    "alias": "CachedProfilePhotos"
+  },
+  {
+    "name": "ukendio/matrices",
+    "version": "0.1.2",
+    "alias": "Matrices"
+  },
+  {
+    "name": "vyon/profilestore",
+    "version": "1.0.3",
+    "alias": "Profilestore"
+  },
+  {
+    "name": "4x8matrix/class-index",
+    "version": "3.0.0",
+    "alias": "ClassIndex"
+  },
+  {
+    "name": "alicesaidhi/skilift",
+    "version": "0.3.1",
+    "alias": "Skilift"
+  },
+  {
+    "name": "aloroid/markdown",
+    "version": "0.1.2",
+    "alias": "Markdown"
+  },
+  {
+    "name": "arxkdev/ezvisualz",
+    "version": "1.2.0",
+    "alias": "Ezvisualz"
+  },
+  {
+    "name": "bubshayz/throttleutil",
+    "version": "1.3.3",
+    "alias": "Throttleutil"
+  },
+  {
+    "name": "bubshurb/playersutil",
+    "version": "2.0.0",
+    "alias": "Playersutil"
+  },
+  {
+    "name": "cody-nelson/trove",
+    "version": "0.0.1",
+    "alias": "CodynelsonTrove"
+  },
+  {
+    "name": "corecii/api-dump-static",
+    "version": "1.0.6540477",
+    "alias": "ApiDumpStatic"
+  },
+  {
+    "name": "daulric/fission",
+    "version": "0.1.5",
+    "alias": "Fission"
+  },
+  {
+    "name": "daulric/rednet",
+    "version": "0.0.2",
+    "alias": "Rednet"
+  },
+  {
+    "name": "daulric/retract",
+    "version": "0.0.22",
+    "alias": "Retract"
+  },
+  {
+    "name": "daulric/rodb",
+    "version": "0.0.6",
+    "alias": "Rodb"
+  },
+  {
+    "name": "detourious/loleris-profilestore",
+    "version": "1.0.0",
+    "alias": "LolerisProfilestore"
+  },
+  {
+    "name": "green-screen/easytype",
+    "version": "2.0.7",
+    "alias": "Easytype"
+  },
+  {
+    "name": "green-screen/secureclasses",
+    "version": "2.3.0",
+    "alias": "Secureclasses"
+  },
+  {
+    "name": "imavafe/bootloader",
+    "version": "0.1.0",
+    "alias": "Bootloader"
+  },
+  {
+    "name": "imavafe/enum-ser-des",
+    "version": "0.1.1",
+    "alias": "EnumSerDes"
+  },
+  {
+    "name": "imavafe/stator",
+    "version": "0.1.2",
+    "alias": "Stator"
+  },
+  {
+    "name": "jessekroeske/multicurrency-client",
+    "version": "0.5.7",
+    "alias": "MulticurrencyClient"
+  },
+  {
+    "name": "jsdotlua/otter",
+    "version": "1.2.1",
+    "alias": "Otter"
+  },
+  {
+    "name": "kineticwallet/lemon-signal",
+    "version": "1.10.0",
+    "alias": "LemonSignal"
+  },
+  {
+    "name": "mariochao/container-mechanic",
+    "version": "0.2.0",
+    "alias": "ContainerMechanic"
+  },
+  {
+    "name": "megamonsta2/fastcast",
+    "version": "1.0.0",
+    "alias": "Fastcast"
+  },
+  {
+    "name": "miagobble/seam",
+    "version": "1.0.0",
+    "alias": "Seam"
+  },
+  {
+    "name": "morgann1/signal",
+    "version": "1.0.0",
+    "alias": "Morgann1Signal"
+  },
+  {
+    "name": "nidoxs/profileservice",
+    "version": "1.0.0",
+    "alias": "NidoxsProfileservice"
+  },
+  {
+    "name": "nobledraconian/dragon-engine",
+    "version": "2.1.0",
+    "alias": "DragonEngine"
+  },
+  {
+    "name": "r-unic/service-event-linker",
+    "version": "0.1.0",
+    "alias": "ServiceEventLinker"
+  },
+  {
+    "name": "revvy02/miu-ui-labs",
+    "version": "0.5.0",
+    "alias": "MiuUiLabs"
+  },
+  {
+    "name": "revvy02/mocknetwork",
+    "version": "1.4.3",
+    "alias": "Mocknetwork"
+  },
+  {
+    "name": "ruizukun-dev/promise",
+    "version": "4.0.3",
+    "alias": "RuizukundevPromise"
+  },
+  {
+    "name": "sleitnick/spring",
+    "version": "1.0.0",
+    "alias": "SleitnickSpring"
+  },
+  {
+    "name": "thenexusavenger/nexus-appendage",
+    "version": "1.2.0",
+    "alias": "NexusAppendage"
+  },
+  {
+    "name": "ukendio/primes",
+    "version": "0.1.0",
+    "alias": "UkendioPrimes"
+  },
+  {
+    "name": "uncontained0/red",
+    "version": "1.2.2",
+    "alias": "Red"
+  },
+  {
+    "name": "wrello/plums",
+    "version": "0.2.1",
+    "alias": "Plums"
+  },
+  {
+    "name": "zythdotdev/value",
+    "version": "2.2.0",
+    "alias": "Value"
+  },
+  {
+    "name": "acecateer/fusion3",
+    "version": "0.3.0",
+    "alias": "Fusion3"
+  },
+  {
+    "name": "asetasar/signalplus",
+    "version": "3.7.1",
+    "alias": "AsetasarSignalplus"
+  },
+  {
+    "name": "coffilhg/coffeeparser",
+    "version": "1.0.5",
+    "alias": "Coffeeparser"
+  },
+  {
+    "name": "csqrl/dump-parser",
+    "version": "0.1.2",
+    "alias": "DumpParser"
+  },
+  {
+    "name": "dekkonot/bitbuffer",
+    "version": "1.1.1",
+    "alias": "Bitbuffer"
+  },
+  {
+    "name": "farukcoskn/waitfor",
+    "version": "1.0.1",
+    "alias": "Waitfor"
+  },
+  {
+    "name": "gcaptn/tailwind-colors",
+    "version": "0.1.6",
+    "alias": "TailwindColors"
+  },
+  {
+    "name": "geniusogga/goodsignal",
+    "version": "0.1.0",
+    "alias": "GeniusoggaGoodsignal"
+  },
+  {
+    "name": "geniusogga/maid",
+    "version": "0.1.1",
+    "alias": "GeniusoggaMaid"
+  },
+  {
+    "name": "green-screen/logger",
+    "version": "0.2.0",
+    "alias": "GreenscreenLogger"
+  },
+  {
+    "name": "howmanysmall/thread-utilities",
+    "version": "1.2.0",
+    "alias": "ThreadUtilities"
+  },
+  {
+    "name": "jsdotlua/jest-console",
+    "version": "3.10.0",
+    "alias": "JestConsole"
+  },
+  {
+    "name": "jsdotlua/jest-fake-timers",
+    "version": "3.10.0",
+    "alias": "JestFakeTimers"
+  },
+  {
+    "name": "jsdotlua/jest-matcher-utils",
+    "version": "3.10.0",
+    "alias": "JestMatcherUtils"
+  },
+  {
+    "name": "jsdotlua/jest-runtime",
+    "version": "3.10.0",
+    "alias": "JestRuntime"
+  },
+  {
+    "name": "jsdotlua/react-otter",
+    "version": "1.2.1",
+    "alias": "ReactOtter"
+  },
+  {
+    "name": "kelvenone/promise",
+    "version": "1.0.0",
+    "alias": "KelvenonePromise"
+  },
+  {
+    "name": "kelvenone/stable",
+    "version": "0.2.0",
+    "alias": "Stable"
+  },
+  {
+    "name": "lolmansreturn/red-backend",
+    "version": "1.2.7",
+    "alias": "RedBackend"
+  },
+  {
+    "name": "lukadev-0/std",
+    "version": "1.0.2",
+    "alias": "Std"
+  },
+  {
+    "name": "megamonsta2/table",
+    "version": "1.0.3",
+    "alias": "Table"
+  },
+  {
+    "name": "miagobble/signal",
+    "version": "1.0.1",
+    "alias": "MiagobbleSignal"
+  },
+  {
+    "name": "morgann1/finally-task",
+    "version": "0.1.0",
+    "alias": "FinallyTask"
+  },
+  {
+    "name": "morgann1/foundation-cloud-assets",
+    "version": "1.0.0",
+    "alias": "FoundationCloudAssets"
+  },
+  {
+    "name": "morgann1/interposer",
+    "version": "0.1.1",
+    "alias": "Interposer"
+  },
+  {
+    "name": "morgann1/lumberyak",
+    "version": "1.0.0",
+    "alias": "Lumberyak"
+  },
+  {
+    "name": "morgann1/motion",
+    "version": "1.0.0",
+    "alias": "Motion"
+  },
+  {
+    "name": "morgann1/rbx-design-foundations",
+    "version": "2.0.163",
+    "alias": "RbxDesignFoundations"
+  },
+  {
+    "name": "morgann1/react-utils",
+    "version": "1.9.1",
+    "alias": "ReactUtils"
+  },
+  {
+    "name": "nazumahk/signal",
+    "version": "1.0.2",
+    "alias": "NazumahkSignal"
+  },
+  {
+    "name": "nobledraconian/roblox-libmodules",
+    "version": "3.1.0",
+    "alias": "RobloxLibmodules"
+  },
+  {
+    "name": "notfenv/mutex",
+    "version": "1.0.0",
+    "alias": "Mutex"
+  },
+  {
+    "name": "notkaif/motus",
+    "version": "1.1.0",
+    "alias": "Motus"
+  },
+  {
+    "name": "ro-bura/signal",
+    "version": "0.1.8",
+    "alias": "RoburaSignal"
+  },
+  {
+    "name": "roblox/luau-polyfill-collections",
+    "version": "1.2.5",
+    "alias": "LuauPolyfillCollections"
+  },
+  {
+    "name": "sparefuse/trove",
+    "version": "1.6.0",
+    "alias": "SparefuseTrove"
+  },
+  {
+    "name": "stravant/draggerframework",
+    "version": "0.1.4",
+    "alias": "Draggerframework"
+  },
+  {
+    "name": "thenexusavenger/nexus-buffered-replication",
+    "version": "1.0.0",
+    "alias": "NexusBufferedReplication"
+  },
+  {
+    "name": "tim7775/cargo-semver",
+    "version": "1.0.20",
+    "alias": "CargoSemver"
+  },
+  {
+    "name": "zythdotdev/bag",
+    "version": "2.0.0",
+    "alias": "Bag"
+  },
+  {
+    "name": "alexinite/logger",
+    "version": "0.1.1",
+    "alias": "AlexiniteLogger"
+  },
+  {
+    "name": "anexpia/squish",
+    "version": "6.1.4",
+    "alias": "Squish"
+  },
+  {
+    "name": "biotoxin495/uihighlighter",
+    "version": "1.0.3",
+    "alias": "Uihighlighter"
+  },
+  {
+    "name": "bubshurb/numberutil",
+    "version": "3.0.0",
+    "alias": "Numberutil"
+  },
+  {
+    "name": "cameronpcampbell/supercorner",
+    "version": "0.1.1",
+    "alias": "Supercorner"
+  },
+  {
+    "name": "cody-nelson/logr",
+    "version": "0.0.9",
+    "alias": "Logr"
+  },
+  {
+    "name": "egomoose/deque",
+    "version": "0.2.1",
+    "alias": "Deque"
+  },
+  {
+    "name": "haedrix/scheduler",
+    "version": "17.3.10",
+    "alias": "HaedrixScheduler"
+  },
+  {
+    "name": "jsdotlua/expect",
+    "version": "3.10.0",
+    "alias": "Expect"
+  },
+  {
+    "name": "jsdotlua/instance-of",
+    "version": "1.2.7",
+    "alias": "InstanceOf"
+  },
+  {
+    "name": "jsdotlua/string",
+    "version": "1.2.7",
+    "alias": "JsdotluaString"
+  },
+  {
+    "name": "kadenb04/soundmodule",
+    "version": "0.1.0",
+    "alias": "Soundmodule"
+  },
+  {
+    "name": "matter-ecs/matter-hooks",
+    "version": "0.2.1",
+    "alias": "MatterHooks"
+  },
+  {
+    "name": "miagobble/bucket",
+    "version": "1.0.5",
+    "alias": "Bucket"
+  },
+  {
+    "name": "morgann1/maybe",
+    "version": "0.1.0",
+    "alias": "Maybe"
+  },
+  {
+    "name": "nazumahk/byteflow",
+    "version": "2.1.1",
+    "alias": "Byteflow"
+  },
+  {
+    "name": "ouw2204/data-serializer",
+    "version": "1.0.4",
+    "alias": "DataSerializer"
+  },
+  {
+    "name": "pongpongz/jest-environment",
+    "version": "3.14.1",
+    "alias": "PongpongzJestEnvironment"
+  },
+  {
+    "name": "pongpongz/jest-snapshot",
+    "version": "3.14.1",
+    "alias": "PongpongzJestSnapshot"
+  },
+  {
+    "name": "pongpongz/jest-test-result",
+    "version": "3.14.1",
+    "alias": "PongpongzJestTestResult"
+  },
+  {
+    "name": "rasmusmerzin/maid",
+    "version": "1.0.0",
+    "alias": "RasmusmerzinMaid"
+  },
+  {
+    "name": "rasmusmerzin/stackqueue",
+    "version": "1.0.0",
+    "alias": "Stackqueue"
+  },
+  {
+    "name": "rbxmath/primelist",
+    "version": "0.2.0",
+    "alias": "Primelist"
+  },
+  {
+    "name": "red-blox/bin",
+    "version": "1.0.0",
+    "alias": "Bin"
+  },
+  {
+    "name": "red-blox/red",
+    "version": "2.3.2",
+    "alias": "RedbloxRed"
+  },
+  {
+    "name": "ro-bura/tuplepacker",
+    "version": "0.1.2",
+    "alias": "Tuplepacker"
+  },
+  {
+    "name": "roblox/luau-polyfill-es7-types",
+    "version": "1.2.5",
+    "alias": "LuauPolyfillEs7Types"
+  },
+  {
+    "name": "roblox/luau-polyfill-number",
+    "version": "1.2.5",
+    "alias": "LuauPolyfillNumber"
+  },
+  {
+    "name": "royal0959/rblx-nonvoxel-greedy-meshing",
+    "version": "1.0.3",
+    "alias": "RblxNonvoxelGreedyMeshing"
+  },
+  {
+    "name": "ryanlua/satchel",
+    "version": "1.4.1",
+    "alias": "Satchel"
+  }
+]
