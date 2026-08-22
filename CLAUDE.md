@@ -486,6 +486,7 @@ rarn.json -> resolve -> fetch -> extract -> prune -> link -> rarn.lock
 | `publish` | archive building, `wally.toml` generation, GitHub device flow | know about `RARN_MODULE` layout |
 | `import` | `wally.toml` text in, a `Manifest` out | touch the filesystem or the network |
 | `project` (place) | read `default.project.json`, say where each realm lands in the DataModel | ever throw; an uninterpretable project file is a note |
+| `install` | the pipeline: read, resolve or reuse, fetch, link, record | print anything, or default its registry to the network |
 | `cli` | commander wiring, output, exit codes | contain business logic |
 
 Business logic lives in the layers; `cli/` only wires and prints. Anything worth testing must

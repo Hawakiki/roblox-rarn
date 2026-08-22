@@ -87,11 +87,11 @@ rarn.lock
 |---|---|---|---|
 | M1 | 라이브 발행 1회 | ✅ | `hawakiki/luau-mathlib@0.1.0` 발행. Rarn·Wally 양쪽에서 설치 확인 — [기록](docs/milestones/v1/m01-live-publish.md) |
 | M2 | 별칭 충돌 정책 확정 | ✅ | 섹션 단위로 확정. 규칙은 CLAUDE.md Naming 에 — [기록](docs/milestones/v1/m02-alias-scope.md) |
-| M3 | 파이프라인을 `cli/` 에서 꺼내기 | | `install` 의 합성이 `src/cli/` 밖에 있고 합성 테스트가 있다. 여기가 유일하게 테스트 없는 부분 |
+| M3 | 파이프라인을 `cli/` 에서 꺼내기 | ✅ | `src/install/run.ts`. 합성 테스트 8개, 행동 변화 0 — [기록](docs/milestones/v1/m03-install-pipeline.md) |
 | M4 | 스키마 동결 리뷰 | | 두 스키마의 모든 필드를 한 번씩 변호한다. **이게 동결 그 자체다** |
 | M5 | 문서·주장 감사 | | README·CLAUDE.md 의 주장을 코드와 대조한다. 1.0 은 문서도 약속이 된다 |
 
-M3 는 독립이다. M4 는 M2 를 기다렸고 이제 열려 있다. M5 는 마지막이다.
+M4 는 M2·M3 를 기다렸고 이제 열려 있다. M5 는 마지막이다.
 
 ### M1 — 라이브 발행 1회 ✅
 
@@ -114,11 +114,13 @@ M3 는 독립이다. M4 는 M2 를 기다렸고 이제 열려 있다. M5 는 마
 
 상세와 측정은 [기록](docs/milestones/v1/m02-alias-scope.md).
 
-### M3 — 파이프라인을 `cli/` 에서 꺼내기
+### M3 — 파이프라인을 `cli/` 에서 꺼내기 ✅
 
-R2 §6.4 의 마지막 남은 단계. `src/cli/commands/install.ts` 가 파이프라인 전체를 합성하는데,
-CLAUDE.md 의 레이어 표는 `cli` 에 비즈니스 로직을 금지한다. `src/cli/` 밖에서의 import 0건,
-`tests/` 에서의 import 0건 — 제품에서 유일하게 합성 테스트가 없는 자리다.
+`src/install/run.ts` 가 파이프라인을 갖고 `src/cli/commands/install.ts` 는 배선만 남았다.
+진행 상황은 `observer` 로 뒤집어, 터미널 없는 호출자가 특수한 경우가 아니게 했다.
+
+합성 테스트 8개가 생겼다. **행동 변화 0** — 실제 설치의 출력과 파일 트리를 옛 코드와
+`diff` 해서 확인했다. 상세는 [기록](docs/milestones/v1/m03-install-pipeline.md).
 
 ### M4 — 스키마 동결 리뷰
 
