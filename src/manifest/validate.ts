@@ -214,11 +214,23 @@ function assertRange(range: string, field: string, where: string): void {
  * Two packages whose names PascalCase to the same alias would generate one shim file
  * and one of them would silently disappear. Caught here rather than at link time so
  * the message can point at the manifest the user can actually edit.
+ *
+ * **Scoped to one section, because that is what a shim path is scoped to.** Root shims
+ * are written per manifest section — `dependencies` into the shared realm directory,
+ * `serverDependencies` into the server one, `devDependencies` into dev — so two aliases
+ * only ever land on the same path when they came from the same section.
+ *
+ * Pooling all three refused two arrangements the layout has no objection to. One is a
+ * shared `@evaera/promise` beside a server `@nezuo/promise`: different directories,
+ * different files, and a person requires them through different services anyway. The
+ * other is the same package declared in two sections, which `writeRootShims` explicitly
+ * supports — *"a package declared in two sections should be reachable from both realm
+ * directories"* — and which this refused as a collision with itself.
  */
 function assertNoAliasCollisions(manifest: Manifest, where: string): void {
-  const byAlias = new Map<string, string[]>()
-
   for (const section of DEPENDENCY_SECTIONS) {
+    const byAlias = new Map<string, string[]>()
+
     for (const name of Object.keys(manifest[section] ?? {})) {
       const override = manifest.aliases?.[name]
       const alias = override ?? deriveAlias(parsePackageName(name))
@@ -226,17 +238,17 @@ function assertNoAliasCollisions(manifest: Manifest, where: string): void {
       if (existing === undefined) byAlias.set(alias, [name])
       else existing.push(name)
     }
-  }
 
-  for (const [alias, names] of byAlias) {
-    if (names.length < 2) continue
-    throw new RarnError({
-      code: Code.AliasCollision,
-      what: `${names.length} packages would both be installed as '${alias}'.`,
-      where,
-      detail: names.map((name) => `  ${name}`).join('\n'),
-      how: `Give one of them a different name under "aliases", for example:\n  "aliases": { ${JSON.stringify(names[0] ?? '')}: "${alias}2" }`,
-    })
+    for (const [alias, names] of byAlias) {
+      if (names.length < 2) continue
+      throw new RarnError({
+        code: Code.AliasCollision,
+        what: `${names.length} packages in "${section}" would both be installed as '${alias}'.`,
+        where,
+        detail: names.map((name) => `  ${name}`).join('\n'),
+        how: `Give one of them a different name under "aliases", for example:\n  "aliases": { ${JSON.stringify(names[0] ?? '')}: "${alias}2" }`,
+      })
+    }
   }
 }
 

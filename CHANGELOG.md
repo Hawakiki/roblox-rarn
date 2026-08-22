@@ -43,6 +43,16 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ### Fixed
 
+- **An alias only has to be unique within one manifest section.** Root shims are
+  written per section — `dependencies` into the shared realm directory,
+  `serverDependencies` into the server one — so two aliases only land on the same path
+  when they came from the same section. Pooling all three refused a shared
+  `@evaera/promise` beside a server `@nezuo/promise`, which are different files in
+  different directories, and refused the same package declared in two sections, which
+  the linker explicitly supports and which the pooled check read as a collision of a
+  package with itself. The message now names the section, because the same alias is
+  fine in another one.
+
 - **`rarn publish` could ship another package manager's install directory.** The
   built-in exclusions cover Rarn's own realm directories, which it derives from
   `packageDir` — but not Wally's `Packages/`, `ServerPackages/` and `DevPackages/`,
