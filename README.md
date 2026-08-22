@@ -518,4 +518,4 @@ every stub added widens the area in which a *passing* harness can be silently wr
 
 ## License
 
-MIT
+MIT. The full text is in [LICENSE](LICENSE).
