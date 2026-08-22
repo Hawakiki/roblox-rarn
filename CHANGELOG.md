@@ -131,7 +131,11 @@ rather than silently misread, and a `0.x` release may bump it.
   graph it is the larger of the two because every package is asked about while only
   the chosen ones are downloaded.
 
-- **A package containing a file over 512 KiB could not be installed** (RN-6). fflate's
+- **A package containing a file over 512 KiB could not be installed** (RN-6). **This was
+  recorded for a while as having shipped in 0.1.1, and it did not** — the fix commit is
+  after the tag, so anyone on 0.1.1 still cannot install one. Reproduced against the
+  released binary with a cold cache; it fails with `RN0310 … The download may be corrupt.
+  Try again`, which cannot work because the archive is not corrupt. fflate's
   async `unzip` hands entries above that to a worker, and under Bun the worker returns
   nothing — the callback reports `undefined is not an object (evaluating 'dat.length')`.
   The same archives inflate correctly under Node, and the boundary is the *uncompressed*
