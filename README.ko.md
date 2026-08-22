@@ -49,6 +49,8 @@ installed 5 packages into RARN_MODULE
 > **매니페스트와 락파일 포맷은 1.0 전까지 안정하지 않다.** 1.0 이 뜻하는 게 바로 그거다.
 > 기능을 다 만들었다는 선언이 아니라, 포맷을 더는 못 바꾸게 못 박겠다는 약속이다.
 >
+> 나머지 문서는 [docs/](docs/README.md) 가 질문별로 안내한다.
+>
 > 무엇이 바뀌었는지는 [CHANGELOG.md](CHANGELOG.md), 앞으로 어디로 가는지는
 > [PLAN.md](PLAN.md), 설계가 딛고 선 플랫폼 제약과 그 근거 측정값은
 > [CLAUDE.md](CLAUDE.md) 에 있다.

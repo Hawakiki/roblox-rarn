@@ -811,6 +811,11 @@ is one that eventually contradicts it.
 
 ## Where documents live
 
+- `docs/README.md` — the index, organised by the question rather than by the filename.
+  There are 44 documents and about 6,800 lines between them, and a list of paths is not
+  navigation. It carries **no content of its own**: a fact written in two places is a fact
+  that will diverge, and then there is no way to tell which copy is right. It also records
+  which document owns which kind of fact, which is the rule that keeps them from drifting.
 - `PLAN.md` — decisions, the milestones, and the gates. Deliberately thin: every
   completed milestone's full record (with its measurements) moves to `docs/milestones/`
   at completion and is **frozen** there — link fixes only, never content edits.
