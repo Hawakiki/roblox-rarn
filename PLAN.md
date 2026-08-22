@@ -88,10 +88,11 @@ rarn.lock
 | M1 | 라이브 발행 1회 | ✅ | `hawakiki/luau-mathlib@0.1.0` 발행. Rarn·Wally 양쪽에서 설치 확인 — [기록](docs/milestones/v1/m01-live-publish.md) |
 | M2 | 별칭 충돌 정책 확정 | ✅ | 섹션 단위로 확정. 규칙은 CLAUDE.md Naming 에 — [기록](docs/milestones/v1/m02-alias-scope.md) |
 | M3 | 파이프라인을 `cli/` 에서 꺼내기 | ✅ | `src/install/run.ts`. 합성 테스트 8개, 행동 변화 0 — [기록](docs/milestones/v1/m03-install-pipeline.md) |
-| M4 | 스키마 동결 리뷰 | | 두 스키마의 모든 필드를 한 번씩 변호한다. **이게 동결 그 자체다** |
+| M4a | 스키마 리뷰 (지금 할 수 있는 것) | ✅ | 안건 4개 결론, 결함 1개 발견·수정, 설명문에 근거 — [기록](docs/milestones/v1/m04a-schema-review.md) |
+| M4b | 동결 선언 | | 게이트가 열려야 한다. 시간이 아니라 행동을 기다린다 |
 | M5 | 문서·주장 감사 | ✅ | 낡은 것 3, 빠진 것 2. 나머지는 맞았다 — [기록](docs/milestones/v1/m05-doc-audit.md) |
 
-M4 만 남았다.
+M4b 만 남았고, 그것은 게이트에 걸려 있다.
 
 ### M1 — 라이브 발행 1회 ✅
 
@@ -122,13 +123,27 @@ M4 만 남았다.
 합성 테스트 8개가 생겼다. **행동 변화 0** — 실제 설치의 출력과 파일 트리를 옛 코드와
 `diff` 해서 확인했다. 상세는 [기록](docs/milestones/v1/m03-install-pipeline.md).
 
-### M4 — 스키마 동결 리뷰
+### M4a — 스키마 리뷰 ✅
 
-두 스키마를 처음부터 끝까지 읽고 **모든 필드를 한 번씩 변호한다.** 바꿀 것이 있으면 그것이
-마지막 breaking change 이고 0.2.0 으로 낸다. 없으면 없다는 결론을 근거와 함께 기록한다.
+안건 넷을 결론냈다. `registry` 두 뜻은 이미 옳았고, `place` 에 dev 가 없는 것도 맞았으며,
+`lockfileVersion` 은 1.0 에서 올리지 않는다(포맷을 따르지 릴리스를 따르지 않는다).
 
-미리 아는 안건: `lockfileVersion` 을 1 로 둘 것인가 · `place` 에 dev 가 없는 것이 맞나 ·
-`resolutions` 의 의미 · `aliases`(M2 의 결과) · M1 이 발행 경로에서 무엇을 드러내는가.
+**읽다가 출하된 결함 하나가 나왔다** — `dataModelPath` 패턴이 Luau 식별자를 요구했는데 Rojo
+인스턴스 이름에는 그런 제약이 없다. `"My Packages"` 같은 이름이 파생되면 생성된 shim 이
+**파싱되지 않는 Luau** 였고, 설치는 초록색으로 끝났다. 렌더링이 이제 점이 닿지 못하는
+세그먼트만 대괄호로 감싼다.
+
+필드마다 "왜 이 모양인지"를 설명문에 넣었다. 상세는 [기록](docs/milestones/v1/m04a-schema-review.md).
+
+### M4b — 동결 선언
+
+게이트가 열려야 한다. **저절로 열리지 않는다** — 사용자가 0명인 상태로 가만히 있으면 영영
+0명이고, 이것은 시간이 아니라 행동을 기다린다.
+
+그 사이에 쓸 증거로 **일부러 과하게 만든 테스트 게임**이 있다. 스키마 필드 대부분이 아직
+진짜로 쓰인 적이 없다 — `resolutions`, `aliases`, `place.serverPackages`, `include`/`exclude`.
+동결 전에 실제로 써 보는 것보다 나은 것이 없고, `test/roblox/` 가 5 패키지짜리라 크게 만들면
+영구 픽스처로도 남는다. **다만 그것으로 게이트가 닫히지는 않는다** — 우리가 만든 것은 우리다.
 
 ### M5 — 문서·주장 감사 ✅
 

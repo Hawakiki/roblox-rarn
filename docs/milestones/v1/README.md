@@ -15,4 +15,5 @@
 | M1 | [라이브 발행 1회](m01-live-publish.md) | `hawakiki/luau-mathlib@0.1.0` 발행. Rarn·Wally 양쪽에서 설치 확인 |
 | M2 | [별칭 충돌 정책](m02-alias-scope.md) | 섹션 단위로 확정. 전역으로 세던 것이 링커의 문서화된 동작을 막고 있었다 |
 | M3 | [파이프라인 `cli/` 탈출](m03-install-pipeline.md) | `src/install/run.ts`. 합성 테스트 8개, 행동 변화 0 |
+| M4a | [스키마 리뷰](m04a-schema-review.md) | 안건 4개 결론. 읽다가 파싱 안 되는 Luau 를 내던 결함 발견 |
 | M5 | [문서·주장 감사](m05-doc-audit.md) | 낡은 것 3, 빠진 것 2. 기계적 검사가 값을 했다 |

@@ -43,6 +43,22 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ### Fixed
 
+- **A `place` path with a space in it produced Luau that does not parse.** `place` is
+  derived from the project's Rojo files when the manifest does not declare it, and an
+  *instance* name has none of Luau's restrictions — Rojo is perfectly happy with
+  `"My Packages"`. The generated cross-realm shim pasted the path in verbatim and came
+  out as `require(game.ReplicatedStorage.My Packages._Index[...])`, so the install
+  finished green, the tree was correct, and the file failed to parse in Studio. Segments
+  a dot cannot reach are now bracketed, and only those, so an ordinary path still reads
+  as `game.ReplicatedStorage.Packages`.
+
+- **A cross-realm link into the dev realm would have named the wrong service.**
+  `requirePlacePath` took any placement and fell through to `serverPackages` for
+  anything that was not `shared`. Unreachable today — placement resolves to the widest
+  requester, so nothing outside dev can point into it — but the signature now says so
+  and the boundary checks it, because unreachable today and unreachable tomorrow are
+  different claims.
+
 - **An alias only has to be unique within one manifest section.** Root shims are
   written per section — `dependencies` into the shared realm directory,
   `serverDependencies` into the server one — so two aliases only land on the same path

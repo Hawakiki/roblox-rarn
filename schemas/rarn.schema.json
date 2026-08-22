@@ -21,7 +21,7 @@
 
     "version": {
       "$ref": "#/$defs/semver",
-      "description": "This package's own version. Exact semver, never a range."
+      "description": "This package's own version. Exact semver, never a range. Publishing one is permanent — the registry has no unpublish and answers 409 to a repeat — so this field is the only thing standing between a mistake and a version number that can never be reused."
     },
 
     "description": { "type": "string", "maxLength": 512 },
@@ -63,12 +63,12 @@
       "type": "string",
       "default": "RARN_MODULE",
       "pattern": "^(?!\\.{1,2}$)[A-Za-z0-9._-]+$",
-      "description": "Directory the shared install tree is written to. Never \".\" or \"..\": installing deletes and rebuilds it, so those would destroy the project. Server and dev packages go to sibling directories named by appending '_SERVER' and '_DEV'. Renaming is safe; the _Index shape inside is not negotiable."
+      "description": "Directory the shared install tree is written to. Never \".\" or \"..\": installing deletes and rebuilds it, so those would destroy the project. Server and dev packages go to sibling directories named by appending '_SERVER' and '_DEV'. Renaming is safe; the _Index shape inside is not negotiable. This pattern constrains the shape of the path and nothing else — on a case-insensitive filesystem \"Packages\" also names a packages/ source tree, which is how 0.1.0 deleted one. Whether the directory is Rarn's to replace is checked separately at install time, and an install refuses with RN0421 when it is not."
     },
 
     "place": {
       "type": "object",
-      "description": "Where each package directory ends up in the Roblox DataModel. Required only when a server or dev package depends on a shared one: the two directories live under different services, so no relative script.Parent walk can reach across and the generated shim must use an absolute path instead. Rarn errors with an explanation if a cross-realm link needs a path that is not declared here.",
+      "description": "Where each package directory ends up in the Roblox DataModel. Required only when a server or dev package depends on a shared one: the two directories live under different services, so no relative script.Parent walk can reach across and the generated shim must use an absolute path instead. Rarn errors with an explanation if a cross-realm link needs a path that is not declared here. Derived from the project's Rojo files when absent — every *.project.json down to three levels is read, and where two of them disagree about a realm nothing is derived, because no single absolute path would be right for two DataModels. There is deliberately no devPackages: placement resolves to the widest requester, so a dev-placed package can only have dev-placed requesters and nothing ever needs to cross *into* dev.",
       "additionalProperties": false,
       "properties": {
         "sharedPackages": {
@@ -107,7 +107,7 @@
 
     "aliases": {
       "type": "object",
-      "description": "Overrides the auto-derived Luau shim filename. Only needed when two packages PascalCase to the same alias, or when a specific require name is wanted.",
+      "description": "Overrides the auto-derived Luau shim filename. Only needed when two packages PascalCase to the same alias, or when a specific require name is wanted. An alias has to be unique within one dependency section and nowhere wider: root shims are written per section, dependencies into the shared realm directory and serverDependencies into the server one, so two aliases only ever land on the same path when they came from the same section. Of the 506 most-depended-upon packages in the registry, 40 aliases name more than one package, so a real project meets this at twenty or thirty dependencies rather than at five.",
       "propertyNames": { "$ref": "#/$defs/scopedName" },
       "additionalProperties": { "$ref": "#/$defs/alias" },
       "examples": [{ "@evaera/promise": "Promise", "@roblox/roact": "Roact" }]
@@ -116,13 +116,13 @@
     "include": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Glob patterns of files to include when publishing. Empty means everything not excluded."
+      "description": "Glob patterns of files to include when publishing. Empty means everything not excluded. Naming a path exactly overrides the built-in exclusions; a glob does not, because \".env\" can only be deliberate while \"src/**\" is a statement about a directory and should not quietly pull in a secret nobody considered."
     },
 
     "exclude": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Glob patterns to drop when publishing."
+      "description": "Glob patterns to drop when publishing, applied last so they win over include as well. Excluded already, without being named here: .git, node_modules, dist, lockfiles, place files, .DS_Store, .env and its variants, *.pem, *.key, this project's own realm directories, and any directory holding an _Index — that last one is another package manager's install tree, recognised by shape because Rarn cannot know what someone else's directory was called. A published version is permanent, so the two ways of being wrong are not symmetric: one file too few breaks an install and is fixed in minutes, one file too many cannot be undone at all."
     }
   },
 
@@ -168,8 +168,8 @@
 
     "dataModelPath": {
       "type": "string",
-      "pattern": "^game(\\.[A-Za-z_][A-Za-z0-9_]*)+$",
-      "description": "Absolute DataModel path, starting at 'game'. Used verbatim inside generated cross-realm shims."
+      "pattern": "^game(\\.[^.\\[\\]\"]+)+$",
+      "description": "Absolute DataModel path, starting at 'game', written as dot-separated instance names. A segment does not have to be a Luau identifier: Rojo is perfectly happy with an instance called \"My Packages\", and a project file saying so is where a derived path comes from. The generated shim brackets whatever a dot cannot reach, so write the names and not the brackets — no [ ], no quotes."
     },
 
     "dependencyMap": {

@@ -54,8 +54,35 @@ export function crossRealmShim(
   indexDirName: string,
   moduleName: string,
 ): string {
-  return line(`${placePath}.${INDEX_DIR_NAME}${index(indexDirName)}${index(moduleName)}`)
+  return line(
+    `${renderPlacePath(placePath)}.${INDEX_DIR_NAME}${index(indexDirName)}${index(moduleName)}`,
+  )
 }
+
+/**
+ * Turns a dotted DataModel path into Luau, bracketing what a dot cannot reach.
+ *
+ * `place` is written and derived as dot-separated names because that is how a person
+ * says it, but an *instance* name has none of Luau's restrictions — Rojo is perfectly
+ * happy with `"My Packages"`, and a project file saying so is where the derived path
+ * comes from. Pasting that in verbatim produced
+ * `require(game.ReplicatedStorage.My Packages._Index[...])`, which is not Luau at all:
+ * the install succeeded, the tree was correct, and the file failed to parse in Studio.
+ *
+ * Only the segments that need it are bracketed, so the common path still reads as
+ * `game.ReplicatedStorage.Packages` rather than as a row of quotes.
+ */
+function renderPlacePath(path: string): string {
+  const [root, ...rest] = path.split('.')
+  return rest.reduce(
+    (built, segment) =>
+      IDENTIFIER.test(segment) ? `${built}.${segment}` : `${built}${index(segment)}`,
+    root ?? path,
+  )
+}
+
+/** What Luau will accept after a dot. */
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 function line(expression: string): string {
   return `${HEADER}\nreturn require(${expression})\n`
@@ -69,10 +96,21 @@ function index(name: string): string {
 /**
  * The `place` entry a cross-realm link needs, or a failure explaining what to add.
  *
- * Only `shared` and `server` are ever crossed *into*: `dev` is the narrowest
- * placement, so nothing outside dev can point at something placed there.
+ * Only `shared` and `server` are ever crossed *into*, and the signature says so rather
+ * than a comment saying so. `dev` is the narrowest placement, so a dev-placed package
+ * can only have dev-placed requesters — anything wider would have widened it. That is
+ * also why `place` in the manifest has two fields and not three.
+ *
+ * It used to take a bare `Placement`, which meant a `dev` target fell through to
+ * `serverPackages` and produced a shim pointing at the wrong service. Unreachable
+ * today, but the kind of unreachable that a later change turns into a silently wrong
+ * path rather than an error — `assertCrossable` makes it an error instead.
  */
-export function requirePlacePath(place: PlaceInfo, target: Placement, requester: string): string {
+export function requirePlacePath(
+  place: PlaceInfo,
+  target: Exclude<Placement, 'dev'>,
+  requester: string,
+): string {
   const declared = target === 'shared' ? place.sharedPackages : place.serverPackages
   if (declared !== undefined && declared !== '') return declared
 
@@ -92,5 +130,23 @@ export function requirePlacePath(place: PlaceInfo, target: Placement, requester:
       '    }',
     ].join('\n'),
     how: `The two directories end up under different Roblox services, so the generated link has to name an absolute path. Set it to wherever you place the ${target} package directory.`,
+  })
+}
+
+/**
+ * Narrows a placement to one that can be crossed into.
+ *
+ * The invariant is real — placement resolves to the widest requester, so nothing
+ * outside dev can point at a dev-placed package — but it is an invariant of the
+ * resolver, enforced two layers away from here. This is where it gets checked, so
+ * that breaking it produces a report rather than a shim naming the wrong service.
+ */
+export function assertCrossable(target: Placement, requester: string): Exclude<Placement, 'dev'> {
+  if (target !== 'dev') return target
+
+  throw new RarnError({
+    code: Code.InternalError,
+    what: `${requester} needs a cross-realm link into the 'dev' realm, which should not be reachable.`,
+    how: 'This is a bug in Rarn. Please report it along with your rarn.json.',
   })
 }
