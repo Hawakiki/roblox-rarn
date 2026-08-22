@@ -355,4 +355,28 @@ describe.skipIf(lune === null)('Lune require harness', () => {
     expect(output).toContain('FAIL')
     expect(code).not.toBe(0)
   }, 30_000)
+
+  /**
+   * The model checking itself, rather than a tree checked against the model.
+   *
+   * Everything above asks whether a tree Rarn built resolves under this emulator.
+   * Nothing asked whether the emulator behaves the way it says it does, and two
+   * defects lived in exactly that gap — a missing `:WaitForChild`, which is how the
+   * JS-port half of the registry navigates, and a failed require reported ever after
+   * as a cycle. The assertions live in Lune beside the emulator; this runs them.
+   */
+  test('the emulator behaves the way it claims to', async () => {
+    const scratch = join(dir, 'selftest')
+    await mkdir(scratch, { recursive: true })
+
+    const proc = Bun.spawn(
+      [lune ?? 'lune', 'run', 'tests/roblox/emulate-selftest.luau', '--', scratch],
+      { cwd: REPO, stdout: 'pipe', stderr: 'pipe' },
+    )
+    const output = await new Response(proc.stdout).text()
+    const code = await proc.exited
+
+    expect(output).not.toContain('FAIL')
+    expect(code).toBe(0)
+  }, 30_000)
 })
