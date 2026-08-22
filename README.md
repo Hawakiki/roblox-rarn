@@ -137,7 +137,7 @@ Yarn's names, because Rarn is Yarn's model applied to Roblox.
 |---|---|
 | `rarn list` (`ls`) | the installed tree. `--depth <n>` |
 | `rarn why <pkg>` | every path from `rarn.json` down to it |
-| `rarn dedupe` | packages installed at more than one version, and who asked |
+| `rarn dedupe` | packages installed at more than one version, and who asked — including trees outside this project that share its DataModel |
 | `rarn outdated` | installed vs newest-in-range vs newest. `--check` for CI |
 | `rarn doctor` | requires in the installed source vs the declared dependencies |
 

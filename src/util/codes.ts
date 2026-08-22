@@ -94,6 +94,7 @@ export const WarnCode = {
   ProjectFileFallback: 'RN0402',
   DuplicateMajorWarning: 'RN0212',
   CircularDependencyWarning: 'RN0231',
+  CrossTreeDuplicate: 'RN0213',
 } as const
 
 export type WarnCode = (typeof WarnCode)[keyof typeof WarnCode]

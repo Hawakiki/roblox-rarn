@@ -169,6 +169,29 @@ Dedupe is therefore mandatory, not an optimization.
 There is also no resolution algorithm — no walking up directories looking for
 `node_modules`. Luau can only navigate the tree it is given (`script.Parent.Parent.Foo`).
 
+**The boundary is one DataModel, not one project.** This is the constraint's actual scope
+and it took R2 to state it: a Rojo project file is free to mount trees from anywhere, so two
+projects installed side by side, each resolving correctly and each reporting `no duplicates`,
+put two ModuleScript instances of one package into one place. Measured, with `rojo sourcemap`
+on the trees two real installs produced:
+
+```
+ws.ReplicatedStorage.Alpha._Index.evaera_promise@3.2.0.promise
+ws.ReplicatedStorage.Beta._Index.evaera_promise@3.2.1.promise
+```
+
+Every per-project check is blind to that by construction — the lockfiles are both right.
+`src/doctor/places.ts` is the one thing that looks at it: it reads the *project files* rather
+than any lockfile, so a Wally install and a tree Rarn never made both count, exactly as they
+do to Rojo. It reports (`RN0213`) and does not resolve; converging the ranges or separating
+the places is a decision about layout, not one Rarn can make.
+
+Two rules keep it from becoming noise. It searches only from a **repository root**, because
+that is the one boundary the user actually drew — an earlier version fell back to "one level
+up" and scanned every unrelated sibling in a shared folder. And it reports only places that
+mount **this project's own install directories**, since the question is what shares a
+DataModel with these packages, not what duplicates exist somewhere nearby.
+
 ### 2. The `_Index` + link-shim layout is forced, not chosen
 
 Downloaded package source contains **hardcoded** `require(script.Parent.Parent.Alias)` calls.
@@ -459,7 +482,7 @@ rarn.json -> resolve -> fetch -> extract -> prune -> link -> rarn.lock
 | `project` | Rojo `default.project.json` interpretation, module-root pruning | know about semver |
 | `linker` | build `RARN_MODULE/`, `_Index/`, generate `.luau` shims | perform network I/O |
 | `lockfile` | read/write/verify `rarn.lock` | resolve anything itself |
-| `doctor` | scan installed Luau for requires, compare against declared deps | fetch or resolve anything |
+| `doctor` | scan installed Luau for requires, compare against declared deps; scan project files for trees sharing a DataModel | fetch or resolve anything |
 | `publish` | archive building, `wally.toml` generation, GitHub device flow | know about `RARN_MODULE` layout |
 | `import` | `wally.toml` text in, a `Manifest` out | touch the filesystem or the network |
 | `project` (place) | read `default.project.json`, say where each realm lands in the DataModel | ever throw; an uninterpretable project file is a note |
