@@ -17,6 +17,7 @@ export const Code = {
   Unimplemented: 'RN0001',
   InvalidArguments: 'RN0002',
   InternalError: 'RN0003',
+  PromptAborted: 'RN0004',
 
   // RN0010-RN0099 — manifest and project files
   ManifestNotFound: 'RN0010',

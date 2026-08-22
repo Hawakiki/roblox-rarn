@@ -10,6 +10,44 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ### Fixed
 
+- **`rarn doctor` could not read the require form that most of the registry uses**
+  (RN-7). Package sources reach their dependencies four ways —
+  `.Name`, `["Name"]`, `:WaitForChild("Name")`, `:FindFirstChild("Name")` — and the
+  scanner knew the first two. The JS-port half of the ecosystem (react-lua, jest-lua,
+  luau-polyfill, every `jsdotlua/*` package) writes the third and nothing else, so on a
+  real 52-package React install **1655 of 1663 requires were unreadable**. That did not
+  show up as "could not check"; it showed up as 310 lines reporting a correct install's
+  dependencies as declared-but-never-required.
+
+  All four spellings now read as one operation, and only the first lookup past the
+  parent chain counts as the dependency, so `script.Parent.Parent.Foo.Bar` reaches
+  `Foo` instead of being unreadable. A dot inside an instance name survives too: Rojo
+  strips one extension, so `ReactFiberWorkLoop.new.lua` is an instance called
+  `ReactFiberWorkLoop.new`, and the name used to be erased as punctuation.
+
+  On the same install: **1663 unreadable requires → 10**, output 310 lines → 46, and
+  every one of the remaining 10 is genuinely dynamic (Luau string requires, and names
+  built at runtime in test mocks).
+
+- **`rarn doctor` understated what it had read** (RN-10). The summary summed files over
+  the packages it had something to *report* on, then printed that beside the count of
+  all packages — "scanned 212 files across 52 packages" for a run that read 444. The
+  sentence read as coverage while measuring noise, and got quieter as the tool got
+  better.
+
+- **`rarn init` did nothing, silently, whenever stdin was not a terminal** (RN-8) —
+  every script, every CI job, every non-interactive caller. It printed the first prompt,
+  wrote no manifest, said nothing, and exited 0, which is the one failure
+  indistinguishable from success. It now uses the defaults and says so. Ending the input
+  mid-prompt (Ctrl+D) used to do the same thing and now reports `RN0004`.
+
+- **`rarn init`'s Rojo advice was silent in exactly the case that needed it** (RN-9).
+  An unmounted package directory produces no error anywhere, so `init` offers the
+  snippet to paste — but it skipped that when there was no project file at all, which is
+  the state every first `rarn init` is in. Walked in the field in this order: `init` in
+  an empty directory (silence), then `rarn add -D`, which failed with `RN0031` because
+  there was still nothing to derive `place` from.
+
 - **Resolution opened one socket per package and got slower the wider the graph
   was.** Metadata fetching walks the dependency graph breadth-first, and each round
   was a bare `Promise.all` over every package at that depth — for a project with 506
@@ -38,10 +76,6 @@ rather than silently misread, and a `0.x` release may bump it.
   API dump and could not be installed by any release of Rarn; `wally install` handles it.
   Inflation is now synchronous. The parallelism it cost was measured at 23ms for that
   archive, against a class of package that could not be installed at all.
-
-## Unreleased
-
-### Fixed
 
 - **The require harness reported a realm holding only cross-realm shims as broken.**
   Placement resolves to the widest requester, so a package declared under
@@ -89,6 +123,43 @@ rather than silently misread, and a `0.x` release may bump it.
   obvious fix and the wrong one — a project whose *source* lives in `Packages/` would
   then publish nothing, and `include` cannot rescue a whole directory because only an
   exactly-named path overrides a default exclusion.
+
+### Changed
+
+- **`RN0012` pointed at a file nobody has.** Its advice ended *"The full schema is in
+  schemas/rarn.schema.json"* — a path in this repository, offered to people who
+  installed a binary. It now links to the schema, and says more before needing to: an
+  unknown field gets the field it was probably reaching for (`dependancies` → *did you
+  mean 'dependencies'?*), or the list of what that object does take, when the name was
+  invented rather than mistyped.
+
+- **`place.devPackages` is answered instead of merely refused.** Three dependency
+  sections go in and `place` has two entries, so people write a third; "unknown field"
+  is correct and leaves the harder half — where dev packages actually land. The message
+  now names `<packageDir>_DEV`, says to mount it wherever the test project likes, and
+  explains why nothing ever reaches *into* dev: a package lands in the widest realm that
+  asked for it, so anything requiring a dev package would have pulled it out of dev
+  already.
+
+### Documentation
+
+- **The install instructions produced a tool that could not be run.** README showed the
+  finished `rokit.toml` but not the command, and `rokit add Hawakiki/roblox-rarn` names
+  the tool after its repository — so `rarn` fails with *"Failed to find tool 'rarn' in
+  any project manifest file"* while a `rarn` shim sits in `~/.rokit/bin` looking
+  installed. The error reads as *add it*, so the obvious next move is to add it again,
+  which changes nothing. The alias is now in the command: `rokit add
+  Hawakiki/roblox-rarn rarn`.
+
+- **Where the three realm directories come from, and which of them need a `place`.**
+  `packageDir` plus `_SERVER` and `_DEV` was visible only as a diagram of the default,
+  so a project with `packageDir: "Packages"` had to guess `Packages_DEV` — or, as
+  happened, grep the generated shims for it.
+
+- **Packages that ship their own tests.** A module root may contain `init.spec.lua`, and
+  Rarn copies what the author declared rather than second-guessing it. Harmless as
+  bytes; not harmless if a test framework's default pattern discovers the package's
+  specs as yours. The fix belongs in `globIgnorePaths`, and the README now says so.
 
 ## 0.1.1 — 2026-08-22
 

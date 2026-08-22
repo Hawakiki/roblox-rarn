@@ -17,3 +17,4 @@
 | M3 | [파이프라인 `cli/` 탈출](m03-install-pipeline.md) | `src/install/run.ts`. 합성 테스트 8개, 행동 변화 0 |
 | M4a | [스키마 리뷰](m04a-schema-review.md) | 안건 4개 결론. 읽다가 파싱 안 되는 Luau 를 내던 결함 발견 |
 | M5 | [문서·주장 감사](m05-doc-audit.md) | 낡은 것 3, 빠진 것 2. 기계적 검사가 값을 했다 |
+| M6 | [현장 보고 대응](m06-field-report.md) | 결함 4·메시지 2·문서 3. 제일 큰 둘은 보고서에 없었다 |

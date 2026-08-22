@@ -77,6 +77,54 @@ describe('validateManifest — shape', () => {
     expect(error.detail).toContain('dependencies')
     expect(error.detail).not.toContain('~1')
   })
+
+  /**
+   * "Unknown field" is true and useless on its own — the reader still has to find out
+   * what the field should have been. Both halves of that were reported from the field:
+   * a schema pointer to a repository path nobody installing a binary has, and a
+   * rejection with no hint of what was valid.
+   */
+  test('suggests the field a typo was reaching for', () => {
+    const error = expectCode(
+      () => validateManifest({ ...minimal, dependancies: {} }, 'rarn.json'),
+      Code.ManifestInvalid,
+    )
+    expect(error.detail).toContain("did you mean 'dependencies'?")
+  })
+
+  test('lists what a small object does take when the name was invented', () => {
+    const error = expectCode(
+      () => validateManifest({ ...minimal, place: { clientPackages: 'game.X' } }, 'rarn.json'),
+      Code.ManifestInvalid,
+    )
+    expect(error.detail).toContain('sharedPackages, serverPackages')
+  })
+
+  test('points somewhere a reader can actually open', () => {
+    const error = expectCode(
+      () => validateManifest({ ...minimal, nope: 1 }, 'rarn.json'),
+      Code.ManifestInvalid,
+    )
+    expect(error.how).toContain('https://')
+  })
+
+  /**
+   * Three dependency sections go in and `place` takes two entries, so people write a
+   * third. The generic message can only say the key is wrong; this one says where dev
+   * packages land, which is what was actually being asked.
+   */
+  test('place.devPackages is answered, not just rejected', () => {
+    const error = expectCode(
+      () =>
+        validateManifest(
+          { ...minimal, packageDir: 'Packages', place: { devPackages: 'game.X' } },
+          'rarn.json',
+        ),
+      Code.ManifestInvalid,
+    )
+    expect(error.detail).toContain('Packages_DEV/')
+    expect(error.how).toContain('widest realm')
+  })
 })
 
 describe('validateManifest — semantics', () => {
