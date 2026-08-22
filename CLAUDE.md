@@ -875,6 +875,23 @@ is one that eventually contradicts it.
   right place, and that a stacked PR's parent merged first. **Both have gone wrong
   here** — a stacked PR merged out of order once and RN-3 did not reach `develop` until
   a recovery PR put it there.
+
+  A third was covered rather than left to us. The husky guard sees the *branch name at
+  commit time* and cannot see a PR's base, so aiming a `feat/*` at `master` was always
+  one click away; what actually prevented it was that GitHub's default branch is
+  `develop`, which makes that the base a PR opens with. That is an accident protecting a
+  rule, and it disappears the moment the default changes. The `base` job in `ci.yml`
+  fails a PR into `master` from anything but `release/*` or `hotfix/*`, so the rule now
+  holds on its own. It reports; making it *block* means marking it required in `master`'s
+  branch protection, which is a repository setting.
+
+  **The default branch should become `master`, at the next release and not before.** The
+  repository's front page is whatever the default branch says, and `develop` runs ahead
+  of what anyone can install — which is precisely the failure that put M7 in the README
+  days before it shipped, and recorded RN-6 as fixed in a release that did not contain
+  it. Waiting for a release is not caution but arithmetic: `LICENSE` lives on `develop`
+  and reaches `master` with the next one, and switching sooner would make GitHub report
+  the project as unlicensed until then.
 - Biome formats and catches syntax; ESLint carries **only** type-aware rules that Biome
   structurally cannot express (`no-floating-promises` above all — an unawaited download
   leaves a half-written cache and no error). Do not duplicate a rule across both.
