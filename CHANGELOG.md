@@ -6,7 +6,108 @@ Rarn follows semver, with one clarification that matters before 1.0: **the manif
 lockfile formats are not stable yet.** `lockfileVersion` exists so a change can be detected
 rather than silently misread, and a `0.x` release may bump it.
 
-## 0.1.0 — 2026-08-21
+## 0.1.1 — 2026-08-22
+
+**0.1.0 is withdrawn; this replaces it.** R2, a research pass over what a workspace would
+mean on this platform, found five defects instead — one of which deleted a directory the
+user wrote. Each was reproduced before it was fixed, and two turned out not to be what the
+report said they were. Nothing here changes the manifest or lockfile format.
+
+### Install
+
+```toml
+# rokit.toml
+[tools]
+rarn = "Hawakiki/roblox-rarn@0.1.1"
+```
+
+```bash
+rokit trust Hawakiki/roblox-rarn
+rokit install
+```
+
+The trust step is Rokit's own policy — without it the install stops with "has not been
+marked as trusted". It is asked once per machine.
+
+### Added
+
+- **Duplicates are now checked across every tree that lands in one DataModel** (RN-3).
+  Constraint 1's boundary is a Lua environment, and a Rojo project file can mount trees
+  from anywhere — so two projects installed side by side, each resolving correctly and
+  each reporting `no duplicates`, put two ModuleScript instances of one package into one
+  place. Every per-project check is blind to it: both lockfiles are right.
+  `rarn dedupe` now reads the project files that mount this project's install directories
+  and reports what else is in the same DataModel (`RN0213`), naming each version and the
+  tree it came from; `rarn install` warns about the semver-compatible case, which is the
+  one that breaks singletons. Nothing here reads a lockfile, so a Wally install and a tree
+  Rarn never made count the same — as they do to Rojo. It reports rather than resolves:
+  converging the ranges or separating the places is a decision about layout.
+
+  Two limits, both deliberate. The search starts at a repository root and nowhere else,
+  because that is the only boundary the project actually stated. And it reports only places
+  that mount this project's own realm directories, so an unrelated sibling never appears.
+
+### Fixed
+
+- **`rarn install` could delete a directory it did not create** (RN-1). Installing
+  replaces the realm directories wholesale, and the only thing separating that from a
+  user's source tree was the directory *name* — which on Windows and macOS does not
+  even distinguish `Packages` from `packages`. Since `rarn import` writes
+  `packageDir: "Packages"`, a monorepo with a `packages/` source directory lost it to
+  `rarn import && rarn install`, with no warning and a success line. Installing now
+  refuses (`RN0421`) unless the directory holds `_Index/` or nothing but Rarn's own
+  generated shims, and says so before any download rather than at swap time. An
+  existing Wally install still passes, because replacing one is what migrating means.
+  `rarn import` warns about the same collision at the moment it picks the name.
+
+- **Resolution could install a version that does not satisfy a requirement, and
+  report success** (RN-5). When greedy grouping produced two versions sharing a
+  major, they were merged and the higher one kept — which is semver's contract for a
+  *caret* requirement and for nothing else. `~1.2.0` and `^1.5.0` share a major and
+  have an empty intersection, so the merge installed `1.9.0`, recorded `~1.2.0`
+  beside it in the lockfile as satisfied, and printed `installed`. The surviving
+  version is now re-checked against every constraint it absorbs — including the ones
+  the group already held, since raising the survivor can break those too — and
+  anything it cannot satisfy is reported as a conflict (`RN0200`) naming the
+  requesters and their ranges. Compatible ranges that genuinely do intersect, such as
+  `^1.2.0` and `^1.5.0`, still collapse to one version.
+
+- **`place` was derived from one fixed filename, and found nothing in the projects
+  that needed it** (RN-4). Only `<projectDir>/default.project.json` was read, but Rojo's
+  convention is any `*.project.json`, and of the 30 multi-place repositories surveyed for
+  R2, 25 have no `default.project.json` at the root — they name the file per place or nest
+  one per place under `places/`. Those are exactly the projects with a cross-realm link to
+  derive, and they got `RN0031` asking them to write `place` by hand. Every
+  `*.project.json` down to three levels is now read (skipping dot-directories,
+  `node_modules`, the realm directories and `_Index`), and `$path` is resolved against the
+  file's own directory, so a nested place file reaching `"../../Packages"` matches. Where
+  two project files agree on a realm the path is derived; where they disagree nothing is
+  derived and both paths are printed, because no single absolute path is right for two
+  DataModels.
+
+- **The unmounted-realm warning was silent for a library's project file** (RN-4).
+  `{ "tree": { "$path": "src" } }` mounts nothing, and that was treated as *nothing was
+  checked* — so the warning CLAUDE.md promises ("a realm directory the project file does
+  not mount is a warning, not an error") never fired in the shape every publishable
+  package uses. Reading a project file and finding nothing in it are now separate facts.
+  With no project file at all it stays silent, since then there is no place for the
+  warning to be about.
+
+- **The require harness could not check a cross-realm shim, and reported the correct
+  form as broken** (RN-2). A shim crossing realms names an absolute DataModel path,
+  and the harness's `game` stub returned a bare table, so the path resolved to nil.
+  `verify.luau` now takes `--mount=<DataModelPath>=<dir>` and the runtime builds
+  `game` from those mounts, wrapping them through the same proxy table as the primary
+  realm — so a package reached across a realm boundary still compares equal to itself.
+  Without a mount the check is reported as *not verified* rather than failed, and the
+  harness test now exercises both paths, which CI never did.
+
+## 0.1.0 — 2026-08-21 (withdrawn)
+
+**Withdrawn on 2026-08-22 and not installable.** `rarn install` could replace a directory it
+did not create: on a case-insensitive filesystem `packageDir: "Packages"` names a `packages/`
+source tree, and `rarn import` writes exactly that name. The release was deleted the day after
+it went out — four asset downloads, all our own. The tag stays as history. Use 0.1.1.
 
 First release. The install path is complete and verified; publishing works but has never been
 run against the live registry.

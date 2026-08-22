@@ -14,7 +14,6 @@ import {
 import { validateManifest } from '../../manifest/validate.ts'
 import { writeManifest } from '../../manifest/write.ts'
 import { rojoSnippet, scanPlaceProject } from '../../project/place.ts'
-import { PROJECT_FILE_NAME } from '../../project/rojo.ts'
 import { Code } from '../../util/codes.ts'
 import { RarnError } from '../../util/errors.ts'
 import { isNotFoundError, pathExists } from '../../util/fs.ts'
@@ -91,11 +90,12 @@ async function rojoAdvice(dir: string): Promise<(string | null)[]> {
     packageDir: DEFAULT_PACKAGE_DIR,
   })
   const scan = await scanPlaceProject(dir, probe)
-  if (!scan.scanned || scan.found.has(DEFAULT_PACKAGE_DIR)) return []
+  if (!scan.scanned) return []
+  if (scan.found.has(DEFAULT_PACKAGE_DIR) || scan.disputed.has(DEFAULT_PACKAGE_DIR)) return []
 
   return [
     '',
-    `${chalk.yellow('note')} ${PROJECT_FILE_NAME} does not put ${DEFAULT_PACKAGE_DIR}/ anywhere yet.`,
+    `${chalk.yellow('note')} no Rojo project file puts ${DEFAULT_PACKAGE_DIR}/ anywhere yet.`,
     chalk.dim('  Rojo syncs only what the project file names, so add something like:'),
     '',
     chalk.dim(rojoSnippet(DEFAULT_PACKAGE_DIR, 'ReplicatedStorage')),

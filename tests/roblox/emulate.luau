@@ -115,6 +115,26 @@ export type Options = {
 		linker's.
 	]]
 	execute: boolean?,
+	--[[
+		Other realm trees, keyed by the DataModel path they are mounted at.
+
+		    { ["game.ReplicatedStorage.RARN_MODULE"] = sharedRealmNode }
+
+		A cross-realm shim cannot walk relatively — the realms sync to different
+		services — so it names an absolute path instead:
+
+		    return require(game.ReplicatedStorage.RARN_MODULE._Index["…"]["promise"])
+
+		Without a mount, `game.ReplicatedStorage` is a bare stub, `.RARN_MODULE` is
+		nil, and the require fails. That failure looks identical to a broken install
+		while the install is in fact correct — so the harness reported the one shim
+		form it exists to check as broken, and had no way to check it at all.
+
+		Mounted nodes go through the same `wrap`, so a package reached across a realm
+		boundary compares equal to the same package reached within one. That identity
+		is the whole question, and it only becomes askable here.
+	]]
+	mounts: { [string]: Node }?,
 }
 
 -- Marker Rarn writes into every file it generates.
@@ -186,6 +206,38 @@ function Emulator.runtime(root: Node, options: Options?): Runtime
 		return proxy
 	end
 
+	--[[
+		The `game` a shim sees.
+
+		Built here rather than handed in as a global because proxy identity belongs to
+		this runtime: a mounted realm has to go through the same `wrap` as the primary
+		one, or a package reached across realms would compare unequal to itself and the
+		dedupe assertion would be answering a different question than it appears to.
+
+		Unmounted paths keep returning a permissive stub. Package code under
+		`--execute` calls `game:GetService` and similar at module scope, and making
+		that a hard error would trade one false failure for another.
+	]]
+	local mounts = (options and options.mounts) or {}
+
+	local function stubFor(prefix: string): any
+		return setmetatable({ Name = string.match(prefix, "[^.]+$") or prefix }, {
+			__index = function(_, key: string): any
+				local path = `{prefix}.{key}`
+				local mounted = mounts[path]
+				if mounted ~= nil then
+					return wrap(mounted)
+				end
+				return stubFor(path)
+			end,
+			__tostring = function()
+				return prefix
+			end,
+		})
+	end
+
+	local gameStub = stubFor("game")
+
 	local cache: { [any]: any } = {}
 	local loading: { [any]: boolean } = {}
 	local loads = 0
@@ -219,7 +271,9 @@ function Emulator.runtime(root: Node, options: Options?): Runtime
 		assert(not loading[target], `cyclic require of {node.Name}`)
 		loading[target] = true
 
-		local environment: { [string]: any } = { script = target, require = requireFn }
+		-- `game` is supplied here, before the caller's globals, so a caller may still
+		-- override it — but no longer has to invent one to make a shim resolve.
+		local environment: { [string]: any } = { script = target, require = requireFn, game = gameStub }
 		for key, value in globals do
 			environment[key] = value
 		end

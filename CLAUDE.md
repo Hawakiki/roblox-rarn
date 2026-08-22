@@ -42,7 +42,7 @@ Roblox-side tools come from `rokit.toml` and are needed only to check output, ne
 to build Rarn. `~/.rokit/bin` must be on PATH, and the shims resolve against that file.
 
 ```bash
-lune run tests/roblox/verify.luau -- <install-dir> [<realm>] [--execute]
+lune run tests/roblox/verify.luau -- <install-dir> [<realm>] [--mount=<path>=<dir>]... [--execute]
 ```
 
 Reimplements Roblox's `require` — instance-based lookup, per-instance caching — over
@@ -53,6 +53,18 @@ runtime, when every singleton inside quietly becomes two.
 
 `bun test` runs it automatically on a synthetic tree, with three deliberately broken
 trees alongside — a harness nothing can fail is worth nothing.
+
+A **cross-realm shim needs `--mount`**. It names an absolute DataModel path out of
+`place`, so there is nothing to resolve against unless the sibling realm is mounted:
+
+```bash
+lune run tests/roblox/verify.luau -- <proj>/RARN_MODULE_SERVER RARN_MODULE_SERVER   --mount=game.ReplicatedStorage.RARN_MODULE=<proj>/RARN_MODULE
+```
+
+Mounted trees wrap through the same proxy table as the primary realm, so identity
+still means what it means. Without a mount the check reports as **not verified**, never
+as a failure — until 2026-08-22 it reported the correct shim as broken, which is worse
+than not checking, and CI never invoked it this way to notice.
 
 It **skips, loudly, when `lune` is absent**, since nothing about building Rarn needs a
 Roblox-side tool. CI installs `lune` rather than accepting the skip: this is the only
@@ -157,6 +169,29 @@ Dedupe is therefore mandatory, not an optimization.
 There is also no resolution algorithm — no walking up directories looking for
 `node_modules`. Luau can only navigate the tree it is given (`script.Parent.Parent.Foo`).
 
+**The boundary is one DataModel, not one project.** This is the constraint's actual scope
+and it took R2 to state it: a Rojo project file is free to mount trees from anywhere, so two
+projects installed side by side, each resolving correctly and each reporting `no duplicates`,
+put two ModuleScript instances of one package into one place. Measured, with `rojo sourcemap`
+on the trees two real installs produced:
+
+```
+ws.ReplicatedStorage.Alpha._Index.evaera_promise@3.2.0.promise
+ws.ReplicatedStorage.Beta._Index.evaera_promise@3.2.1.promise
+```
+
+Every per-project check is blind to that by construction — the lockfiles are both right.
+`src/doctor/places.ts` is the one thing that looks at it: it reads the *project files* rather
+than any lockfile, so a Wally install and a tree Rarn never made both count, exactly as they
+do to Rojo. It reports (`RN0213`) and does not resolve; converging the ranges or separating
+the places is a decision about layout, not one Rarn can make.
+
+Two rules keep it from becoming noise. It searches only from a **repository root**, because
+that is the one boundary the user actually drew — an earlier version fell back to "one level
+up" and scanned every unrelated sibling in a shared folder. And it reports only places that
+mount **this project's own install directories**, since the question is what shares a
+DataModel with these packages, not what duplicates exist somewhere nearby.
+
 ### 2. The `_Index` + link-shim layout is forced, not chosen
 
 Downloaded package source contains **hardcoded** `require(script.Parent.Parent.Alias)` calls.
@@ -208,15 +243,15 @@ absolute DataModel path taken from the manifest's `place`:
 return require(game.ReplicatedStorage.Packages._Index["evaera_promise@4.0.0"].promise)
 ```
 
-`place` is **derived from `default.project.json` when the manifest does not declare it**, by
-walking the tree for a node whose `$path` is a realm directory and reading the DataModel path
+`place` is **derived from the project's Rojo files when the manifest does not declare it**, by
+walking each tree for a node whose `$path` is a realm directory and reading the DataModel path
 back off the trail. It cannot be guessed from `packageDir`: the instance name and the folder
 name are independent, and real projects use that (`"SharedPackages": { "$path": "Packages" }`).
 
 If a cross-realm link is needed and neither source supplies the path, fail with an explanation
 of what to add — there is no way to synthesize it.
 
-Three things the project-file walker has to get right, all taken from real files rather than
+Five things the project-file walker has to get right, all taken from real files rather than
 imagined:
 
 - **A service node need not carry `$className`.** `"ReplicatedStorage": { "Packages": {...} }`
@@ -225,15 +260,38 @@ imagined:
   that may not exist yet — which is precisely what a project using a package manager writes.
 - **A node can carry `$path` *and* children.** Stopping at the first `$path` misses whatever is
   below it.
+- **The file is not called `default.project.json`.** Rojo's convention is any `*.project.json`,
+  and of the 30 multi-place repositories surveyed for R2, **25 have no `default.project.json` at
+  the root** — the file is named per place (`client.project.json`) or nested one directory per
+  place (`places/lobby/default.project.json`). Reading one fixed name found nothing in exactly
+  the projects that have a cross-realm path to derive. Every `*.project.json` down to three
+  levels is read, skipping dot-directories, `node_modules`, the realm directories, and `_Index`
+  — an install holds one project file per package and none of them describe this project.
+- **`$path` is relative to the file, not to the project root.** A nested place file reaches a
+  root-level realm as `"../../Packages"`, so the string has to be resolved against the file's own
+  directory before it is compared. Matching the literal text worked only for a file sitting at
+  the root, which is the arrangement those 25 repositories do not use.
+
+Two project files are two DataModels. Where they agree on a realm — measured: **12 of 12**
+multi-place repositories that mount a dependency directory mount it at the same DataModel path
+in every place — the agreed path is derived. Where they disagree, no path is right for both, so
+nothing is derived and the disagreement is printed: guessing produces the opaque Studio failure
+described above, while not deriving produces `RN0031`, which says what to add.
 
 When the two sources disagree the manifest wins and the disagreement is printed. Someone who
 wrote a path down meant it; but one of the two is wrong, and the runtime will not say which —
 see the Studio measurements above for what it says instead.
 
-**A realm directory the project file does not mount is a warning, not an error.** The install
-succeeds, the tree is right, and the packages simply never reach Studio. This is exactly what a
-Wally import produces: Wally used `ServerPackages`, Rarn derives `Packages_SERVER` by suffix, and
-the old Rojo entry does not cover it.
+**A realm directory no project file mounts is a warning, not an error.** The install succeeds,
+the tree is right, and the packages simply never reach Studio. This is exactly what a Wally
+import produces: Wally used `ServerPackages`, Rarn derives `Packages_SERVER` by suffix, and the
+old Rojo entry does not cover it.
+
+The warning fires whenever a project file was **read**, which is not the same as one having
+mounted something. A library's project file is `{ "tree": { "$path": "src" } }`; walking it finds
+nothing, and treating "found nothing" as "checked nothing" silenced this warning in the shape
+every publishable package uses. Silence is still right when there is no project file at all —
+then there is no place for the warning to be about.
 
 Two related rules:
 
@@ -261,28 +319,7 @@ Two consequences, and both close doors:
   the physical shim files with any kind of resolver would make that `nil`.
 
 So the layout in constraint 2 is not free to optimize away later. Measured, not assumed:
-see `docs/pnp-feasibility.md`, which also records why a Yarn-PnP-style resolver was
-investigated and rejected. Revisit only if Roblox ships `.luaurc` alias maps.
-
-### 2a-2. The shim files are observable API, not an implementation detail
-
-`sleitnick/knit` — one of the most used Roblox frameworks — does this:
-
-```lua
---[=[ @prop Util Folder  @within KnitClient  @readonly ]=]
-KnitClient.Util = (script.Parent :: Instance).Parent   -- the _Index entry folder
-local Promise = require(KnitClient.Util.Promise)       -- via that variable
-```
-
-Two consequences, and both close doors:
-
-- **Static rewriting of package sources is not viable.** The require does not name
-  `script.Parent.Parent.Promise` anywhere; the folder is stashed in a variable first.
-- **The folder is documented public API.** User code calls `Knit.Util.Signal`. Replacing
-  the physical shim files with any kind of resolver would make that `nil`.
-
-So the layout in constraint 2 is not free to optimize away later. Measured, not assumed:
-see `docs/pnp-feasibility.md`, which also records why a Yarn-PnP-style resolver was
+see `docs/research/r1-pnp-feasibility.md`, which also records why a Yarn-PnP-style resolver was
 investigated and rejected. Revisit only if Roblox ships `.luaurc` alias maps.
 
 ### 2b. Install by rebuilding, then swapping
@@ -296,6 +333,14 @@ over the top is identical work right up until something interrupts it, and then 
 difference is everything the user had: with staging they keep the previous install, without
 it they keep neither. The previous tree moves to `.rarn-old-<token>/` and is deleted only
 once every realm is in place.
+
+**Never replace a directory Rarn did not create.** `linker/ownership.ts` runs before any
+work and refuses unless the realm directory holds `_Index/`, holds only Rarn-generated
+shims, or is empty. `assertSafePackageDir` constrains the *shape* of the path and nothing
+more — it once claimed otherwise, and the gap between the claim and the code is what
+withdrew 0.1.0: on a case-insensitive filesystem `packageDir: "Packages"` names a
+`packages/` source tree, and the install replaced it. An existing Wally install passes the
+check deliberately; replacing one is what migrating means.
 
 Three properties that are easy to lose when touching `linker/swap.ts`:
 
@@ -351,15 +396,6 @@ bloated install *and the wrong require depth*. Wally's `unpack_into_path` is a b
 `archive.extract(output)` — it copies everything and lets Rojo reinterpret the nested project
 file at sync time, which is exactly why Wally installs need Rojo and Rarn's do not. Pruning at
 install time is doing Rojo's job early.
-
-Three things a 13-package survey turned up that the obvious implementation gets wrong:
-
-- **Half the sample has no project file at all** (every `sleitnick/*` package). Those set
-  `include` at publish time, so the zip root already *is* the module. Absent is the normal
-  case, not an error — warn about it and half of all installs print a warning.
-- **`$path` can name a file, not a directory** (`red-blox/signal` → `"Signal.luau"`).
-- Savings range from 100% (promise, 340 → 2) to 15% (react, 20 → 17). Promise is the
-  dramatic case, not the typical one.
 
 Three things a 13-package survey turned up that the obvious implementation gets wrong:
 
@@ -446,7 +482,7 @@ rarn.json -> resolve -> fetch -> extract -> prune -> link -> rarn.lock
 | `project` | Rojo `default.project.json` interpretation, module-root pruning | know about semver |
 | `linker` | build `RARN_MODULE/`, `_Index/`, generate `.luau` shims | perform network I/O |
 | `lockfile` | read/write/verify `rarn.lock` | resolve anything itself |
-| `doctor` | scan installed Luau for requires, compare against declared deps | fetch or resolve anything |
+| `doctor` | scan installed Luau for requires, compare against declared deps; scan project files for trees sharing a DataModel | fetch or resolve anything |
 | `publish` | archive building, `wally.toml` generation, GitHub device flow | know about `RARN_MODULE` layout |
 | `import` | `wally.toml` text in, a `Manifest` out | touch the filesystem or the network |
 | `project` (place) | read `default.project.json`, say where each realm lands in the DataModel | ever throw; an uninterpretable project file is a note |
@@ -597,8 +633,27 @@ parameter list does not.
 No JSDoc type tags (`@param {string}`). Types live in the signature; a duplicated type
 is one that eventually contradicts it.
 
+## Where documents live
+
+- `PLAN.md` — decisions, the status table, and what is next. Deliberately thin: every
+  completed milestone's full record (with its measurements) moves to `docs/milestones/`
+  at completion and is **frozen** there — link fixes only, never content edits.
+- `docs/research/` — investigations whose conclusion is fixed (R1 PnP, R2 workspaces,
+  the Wally internals read-through). Never edited after their conclusion; research that
+  supersedes one gets a new file, it does not rewrite the old one.
+- `docs/known-issues.md` — the living record of **reproduced** defects, RN-numbered.
+  When one is fixed, its detail collapses to a one-line stub under "해결됨" and the
+  RN number is never reused — the same rule `codes.ts` applies to error codes.
+  Fix details belong to CHANGELOG, not here.
+- This file is the constraint authority and is loaded every session. Keep it deduplicated
+  and do not split it: the constraints being in one place is what has kept them from
+  drifting apart.
+
 ## Conventions
 
+- Documentation language: what a user reads is **English** (README, CHANGELOG, release
+  notes, CLI output); working documents are **Korean** (PLAN.md, docs/, commit messages).
+  This file stays English.
 - Commit messages in Korean, `type: subject` — matching the existing history.
 - Git flow, local only: `master` (releases), `develop` (integration), `feat/*` (work).
   Merge into `develop` with `--no-ff`. Never commit directly to `master`.

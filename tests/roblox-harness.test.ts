@@ -41,14 +41,20 @@ if (lune === null) {
   )
 }
 
-async function runHarness(installDir: string): Promise<{ code: number; output: string }> {
+async function runHarness(
+  installDir: string,
+  extra: readonly string[] = [],
+): Promise<{ code: number; output: string }> {
   // The fallback is unreachable — the suite below is skipped when `lune` is null —
   // and exists so the type stays honest without an assertion.
-  const proc = Bun.spawn([lune ?? 'lune', 'run', 'tests/roblox/verify.luau', '--', installDir], {
-    cwd: REPO,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const proc = Bun.spawn(
+    [lune ?? 'lune', 'run', 'tests/roblox/verify.luau', '--', installDir, ...extra],
+    {
+      cwd: REPO,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  )
   const [stdout, stderr] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
@@ -121,6 +127,65 @@ async function buildDiamond(): Promise<string> {
   return join(project, 'RARN_MODULE')
 }
 
+/**
+ * A server package whose dependency is placed in the shared realm.
+ *
+ * The realms sync to different Roblox services, so the generated shim cannot walk
+ * relatively — it names an absolute DataModel path out of `place`. That is the one
+ * shim form the harness could not check until it learned to mount sibling realms,
+ * and it reported the correct form as a failure while it could not.
+ */
+async function buildCrossRealm(): Promise<{ server: string; shared: string }> {
+  const project = join(dir, 'cross')
+  await mkdir(project, { recursive: true })
+
+  const packages = new Map<string, ResolvedPackage>()
+  const sources = new Map<string, string>()
+
+  const specs = [
+    { name: 'a/server-thing', placement: 'server' as const, deps: { Base: '@a/base@1.0.0' } },
+    { name: 'a/base', placement: 'shared' as const, deps: {} },
+  ]
+
+  for (const spec of specs) {
+    const name = parseWallyName(spec.name)
+    const key = `@${spec.name}@1.0.0`
+    const source = join(dir, 'cross-cache', `${name.scope}_${name.name}`)
+    await mkdir(source, { recursive: true })
+    await writeFile(join(source, 'init.lua'), `return { name = "${name.name}" }`)
+    sources.set(key, source)
+
+    packages.set(key, {
+      name,
+      version: '1.0.0',
+      realm: spec.placement === 'server' ? 'server' : 'shared',
+      placement: spec.placement,
+      dependencies: new Map(Object.entries(spec.deps)),
+      requestedBy: [{ from: 'root', range: '*', placement: spec.placement }],
+      dev: false,
+      forcedBy: undefined,
+    })
+  }
+
+  const manifest: Manifest = {
+    name: 'game',
+    version: '1.0.0',
+    place: { sharedPackages: 'game.ReplicatedStorage.RARN_MODULE' },
+    dependencies: { '@a/base': '^1.0.0' },
+    serverDependencies: { '@a/server-thing': '^1.0.0' },
+  }
+
+  const resolution: Resolution = { packages, duplicates: new Map(), overrides: new Map() }
+  await link({
+    projectDir: project,
+    manifest: normalizeManifest(manifest),
+    resolution,
+    sources,
+  })
+
+  return { server: join(project, 'RARN_MODULE_SERVER'), shared: join(project, 'RARN_MODULE') }
+}
+
 describe.skipIf(lune === null)('Lune require harness', () => {
   test('a linked tree resolves and deduplicates', async () => {
     const installDir = await buildDiamond()
@@ -170,6 +235,34 @@ describe.skipIf(lune === null)('Lune require harness', () => {
     const { code, output } = await runHarness(installDir)
     expect(output).toContain('pruning may have left it nested')
     expect(code).not.toBe(0)
+  }, 30_000)
+
+  // The form every cross-realm link takes. Before mounts existed, this reported the
+  // correct shim as broken — so the check the harness most needed to make was the one
+  // it could not, and CI never called it this way to find out.
+  test('a cross-realm shim resolves when the other realm is mounted', async () => {
+    const { server, shared } = await buildCrossRealm()
+    const { code, output } = await runHarness(server, [
+      'RARN_MODULE_SERVER',
+      `--mount=game.ReplicatedStorage.RARN_MODULE=${shared}`,
+    ])
+
+    expect(output).toContain('checks passed')
+    expect(output).not.toContain('FAIL')
+    expect(output).not.toContain('not verified')
+    expect(code).toBe(0)
+  }, 30_000)
+
+  // The alternative to a false failure is not a silent pass. Without a mount the
+  // check cannot be made, and the run has to say which one it skipped.
+  test('without a mount it reports the check as unverified rather than failed', async () => {
+    const { server } = await buildCrossRealm()
+    const { code, output } = await runHarness(server, ['RARN_MODULE_SERVER'])
+
+    expect(output).toContain('not verified')
+    expect(output).toContain('cross-realm shim points at game.ReplicatedStorage.RARN_MODULE')
+    expect(output).not.toContain('FAIL')
+    expect(code).toBe(0)
   }, 30_000)
 
   test('catches a shim pointing at nothing', async () => {

@@ -33,3 +33,7 @@ test/roblox/RARN_MODULE/
 test/roblox/RARN_MODULE_SERVER/
 test/roblox/RARN_MODULE_DEV/
 test/roblox/rarn.lock
+
+# 워크플로 도구가 저장하는 스크립트. 실행 산출물이고 단독 모듈이 아니라
+# (최상위 return) 린터도 통과하지 못한다. 결과는 docs/research/ 에 있다.
+.claude/workflows/

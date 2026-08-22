@@ -57,6 +57,7 @@ export const Code = {
   ModuleRootMissing: 'RN0401',
   LinkTargetMissing: 'RN0410',
   InstallSwapFailed: 'RN0420',
+  InstallTargetNotOurs: 'RN0421',
 
   // RN0500-RN0599 — lockfile
   LockfileInvalid: 'RN0500',
@@ -93,6 +94,7 @@ export const WarnCode = {
   ProjectFileFallback: 'RN0402',
   DuplicateMajorWarning: 'RN0212',
   CircularDependencyWarning: 'RN0231',
+  CrossTreeDuplicate: 'RN0213',
 } as const
 
 export type WarnCode = (typeof WarnCode)[keyof typeof WarnCode]

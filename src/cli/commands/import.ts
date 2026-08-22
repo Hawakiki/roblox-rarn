@@ -2,8 +2,9 @@ import { readFile } from 'node:fs/promises'
 import { join, resolve as resolvePath } from 'node:path'
 import chalk from 'chalk'
 import { fromWallyToml } from '../../import/wally.ts'
+import { findCaseVariant } from '../../linker/ownership.ts'
 import { manifestPath } from '../../manifest/read.ts'
-import { MANIFEST_FILE_NAME } from '../../manifest/types.ts'
+import { DEFAULT_PACKAGE_DIR, MANIFEST_FILE_NAME } from '../../manifest/types.ts'
 import { validateManifest } from '../../manifest/validate.ts'
 import { writeManifest } from '../../manifest/write.ts'
 import { Code } from '../../util/codes.ts'
@@ -33,6 +34,20 @@ export async function importWally(options: ImportOptions): Promise<void> {
 
   const text = await readWallyToml(source)
   const result = fromWallyToml(text, source)
+
+  // Said here as well as refused at install time. `import` is the command that
+  // chooses `packageDir`, so it is the first moment the collision is knowable — and
+  // on Windows and macOS a project with a `packages/` source directory is exactly
+  // the shape this writes `Packages` into.
+  const packageDir = result.manifest.packageDir ?? DEFAULT_PACKAGE_DIR
+  const collision = await findCaseVariant(projectDir, packageDir)
+  const warnings =
+    collision === undefined
+      ? result.warnings
+      : [
+          ...result.warnings,
+          `packageDir is "${packageDir}" but this project already has "${collision}/". On Windows and macOS those are one directory, so installing would replace it — rename one of them first.`,
+        ]
   validateManifest(result.manifest, target)
 
   if (options.force !== true && options.dryRun !== true && (await pathExists(target))) {
@@ -48,7 +63,7 @@ export async function importWally(options: ImportOptions): Promise<void> {
     writeJson({
       manifest: result.manifest,
       dependencies: result.dependencies,
-      warnings: result.warnings,
+      warnings,
       written: options.dryRun !== true,
     })
     if (options.dryRun !== true) await writeManifest(projectDir, result.manifest)
@@ -79,10 +94,10 @@ export async function importWally(options: ImportOptions): Promise<void> {
     lines.push('')
   }
 
-  for (const warning of result.warnings) {
+  for (const warning of warnings) {
     lines.push(`${chalk.yellow('warning')} ${warning}`)
   }
-  if (result.warnings.length > 0) lines.push('')
+  if (warnings.length > 0) lines.push('')
 
   if (options.dryRun === true) {
     lines.push(chalk.dim(`would write ${target}`), '')
