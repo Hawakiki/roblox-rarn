@@ -178,7 +178,177 @@ function Emulator.runtime(root: Node, options: Options?): Runtime
 	local proxyOf: { [Node]: any } = {}
 	local nodeOf: { [any]: Node } = {}
 
-	local function wrap(node: Node): any
+	local wrap: (Node) -> any
+
+	--[[
+		The read-only tree queries, which are not engine behaviour whatever the names
+		suggest: every one is a pure function of the tree already built above, and
+		`:WaitForChild("x")` is `["x"]` with a different spelling.
+
+		They are here because real package code reaches for them constantly — 6171
+		calls across the 584 packages in a warm cache, `:WaitForChild` alone 3256 —
+		and without them `--execute` could not load the JS-port half of the registry
+		at all. Measured on two real install trees, adding them takes package loads
+		from 5/38 to 17/38.
+
+		**Nothing that changes the tree is here.** `:Destroy` and `:Clone` are common
+		too (876 and 132), and both are refused on purpose: a tree that package code
+		can mutate would put the identity guarantee this harness exists to check at
+		the mercy of the thing being checked.
+	]]
+	local queries: { [string]: (Node, ...any) -> any }
+
+	--[[
+		Enough of the class hierarchy to answer `:IsA` honestly.
+
+		Short because it is complete for what `Emulator.tree` can produce: a node is a
+		ModuleScript or a Folder and there is no third case. Inventing the rest of the
+		hierarchy would be modelling classes this harness can never hold.
+	]]
+	local CLASS_PARENT: { [string]: string } = {
+		ModuleScript = "LuaSourceContainer",
+		LuaSourceContainer = "Instance",
+		Folder = "Instance",
+	}
+
+	local function descend(node: Node, into: { Node })
+		for _, child in queries.GetChildren(node) do
+			table.insert(into, nodeOf[child])
+			descend(nodeOf[child], into)
+		end
+	end
+
+	queries = {
+		FindFirstChild = function(node: Node, name: string, recursive: boolean?): any
+			local child = node.Children[name]
+			if child ~= nil then
+				return wrap(child)
+			end
+			if recursive ~= true then
+				return nil
+			end
+			for _, descendant in queries.GetDescendants(node) do
+				if descendant.Name == name then
+					return descendant
+				end
+			end
+			return nil
+		end,
+
+		--[[
+			The tree is static, so there is nothing to wait for: a child that is absent
+			now is absent for the whole run. Roblox would yield and then warn; returning
+			the same answer `FindFirstChild` gives is the honest translation, and a
+			harness that blocked would only ever hang.
+		]]
+		WaitForChild = function(node: Node, name: string): any
+			return queries.FindFirstChild(node, name)
+		end,
+
+		FindFirstChildOfClass = function(node: Node, className: string): any
+			for _, child in queries.GetChildren(node) do
+				if child.ClassName == className then
+					return child
+				end
+			end
+			return nil
+		end,
+
+		FindFirstAncestor = function(node: Node, name: string): any
+			local current = node.Parent
+			while current ~= nil do
+				if current.Name == name then
+					return wrap(current)
+				end
+				current = current.Parent
+			end
+			return nil
+		end,
+
+		--[[
+			Sorted by name, which Roblox does not do.
+
+			Roblox returns children in the order they were added, and a tree read off a
+			filesystem has no such order to recover — `fs.readDir` decides it. Sorting is
+			the one choice that makes a run repeatable, and a harness whose result
+			depends on directory iteration order would be worse than one that is
+			knowingly ordered differently from the engine.
+		]]
+		GetChildren = function(node: Node): { any }
+			local names = {}
+			for name in node.Children do
+				table.insert(names, name)
+			end
+			table.sort(names)
+
+			local out = {}
+			for _, name in names do
+				table.insert(out, wrap(node.Children[name]))
+			end
+			return out
+		end,
+
+		GetDescendants = function(node: Node): { any }
+			local nodes: { Node } = {}
+			descend(node, nodes)
+
+			local out = {}
+			for _, found in nodes do
+				table.insert(out, wrap(found))
+			end
+			return out
+		end,
+
+		IsA = function(node: Node, className: string): boolean
+			local current: string? = node.ClassName
+			while current ~= nil do
+				if current == className then
+					return true
+				end
+				current = CLASS_PARENT[current]
+			end
+			return false
+		end,
+
+		IsDescendantOf = function(node: Node, other: any): boolean
+			local target = nodeOf[other]
+			if target == nil then
+				return false
+			end
+			local current = node.Parent
+			while current ~= nil do
+				if current == target then
+					return true
+				end
+				current = current.Parent
+			end
+			return false
+		end,
+
+		IsAncestorOf = function(node: Node, other: any): boolean
+			local target = nodeOf[other]
+			return if target == nil then false else queries.IsDescendantOf(target, wrap(node))
+		end,
+
+		--[[
+			Starts at whatever tree was loaded, not at `game`.
+
+			Roblox's version names the path from the DataModel root, and this harness is
+			handed one realm directory. The difference is real and is left as it is: the
+			alternative is inventing service names that were never loaded.
+		]]
+		GetFullName = function(node: Node): string
+			local parts = { node.Name }
+			local current = node.Parent
+			while current ~= nil do
+				table.insert(parts, 1, current.Name)
+				current = current.Parent
+			end
+			return table.concat(parts, ".")
+		end,
+	}
+
+	wrap = function(node: Node): any
 		local existing = proxyOf[node]
 		if existing ~= nil then
 			return existing
@@ -193,6 +363,16 @@ function Emulator.runtime(root: Node, options: Options?): Runtime
 				elseif key == "Parent" then
 					return if node.Parent ~= nil then wrap(node.Parent) else nil
 				end
+
+				-- Members before children, as Roblox resolves them: an instance with a
+				-- child called `GetChildren` still answers the method there.
+				local query = queries[key]
+				if query ~= nil then
+					return function(_self: any, ...): any
+						return query(node, ...)
+					end
+				end
+
 				local child = node.Children[key]
 				return if child ~= nil then wrap(child) else nil
 			end,
@@ -229,6 +409,24 @@ function Emulator.runtime(root: Node, options: Options?): Runtime
 					return wrap(mounted)
 				end
 				return stubFor(path)
+			end,
+			--[[
+				A stub is callable, so `game:GetService("RunService")` yields another stub
+				instead of an error.
+
+				This is what the paragraph above always claimed and the code did not do:
+				every key returned a table, and calling one failed with `attempt to call a
+				table value`. Measured across two real install trees, that was 7 of 33
+				failed package loads under `--execute` — a hard error in the exact place a
+				permissive stub was supposed to prevent one.
+
+				It buys reach, not fidelity. A package whose module scope only *touches*
+				the engine now gets past it; one that depends on the engine answering
+				truthfully is still not being tested, and `--execute` still cannot say
+				whether anything works in Roblox.
+			]]
+			__call = function(_, ...): any
+				return stubFor(`{prefix}()`)
 			end,
 			__tostring = function()
 				return prefix
@@ -284,8 +482,25 @@ function Emulator.runtime(root: Node, options: Options?): Runtime
 		})
 
 		loads += 1
-		local result = chunk()
+
+		--[[
+			The flag is cleared whether the module returned or threw.
+
+			Clearing it only on success left a failed module marked as still loading
+			forever, so every later require of it reported `cyclic require` — a cause
+			that was not there, in place of the one that was. Reproduced in two lines:
+			a module that errors once answers "cyclic require" the second time.
+
+			It bites hardest where it is least visible. `verify.luau` pcalls each shim
+			and carries on, so the first real failure in a run rewrites the diagnosis of
+			everything downstream of it.
+		]]
+		local completed, result = pcall(chunk)
 		loading[target] = nil
+		if not completed then
+			error(result, 0)
+		end
+
 		cache[target] = result
 		return result
 	end

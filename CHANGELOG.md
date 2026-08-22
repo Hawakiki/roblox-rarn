@@ -10,6 +10,38 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ### Fixed
 
+- **The require harness had no `:WaitForChild`** (RN-11), which is how most of the
+  registry navigates its own tree — 3256 calls across the 584 packages in a warm
+  cache, against 1052 for `:FindFirstChild` and none of the ten read-only queries
+  implemented at all. Nothing in the default checks noticed, because Rarn's own shims
+  index with `.Name` and `["Name"]`; it meant `--execute` could not load the JS-port
+  half of the registry, which is the half whose install correctness is hardest to
+  reason about by eye.
+
+  All ten are implemented now (`WaitForChild`, `FindFirstChild`,
+  `FindFirstChildOfClass`, `FindFirstAncestor`, `GetChildren`, `GetDescendants`,
+  `IsA`, `IsDescendantOf`, `IsAncestorOf`, `GetFullName`) — none of them engine
+  behaviour, each a pure function of the tree the harness already holds. `:Destroy`
+  and `:Clone` stay out on purpose. Measured over two real install trees, packages
+  that load under `--execute` went from **5/38 to 34/38**; the four that remain are
+  `Instance.new` and a Luau string require, which are the engine boundary rather than
+  a gap.
+
+- **A module that failed once was reported as a cyclic require ever after** (RN-12).
+  The in-flight flag was cleared after the chunk returned and not when it threw, so
+  the second attempt met its own leftover marker. Two lines reproduce it. It bites
+  hardest where it is least visible: `verify.luau` pcalls each shim and carries on, so
+  the first genuine failure in a run silently rewrote the diagnosis of everything
+  downstream of it — the wrong cause, in place of the one that was there.
+
+- **The `game` stub was a hard error in the one place it existed to prevent one**
+  (RN-13). Its own comment said unmounted paths stay permissive so that package code
+  calling `game:GetService` at module scope does not fail — but every key returned a
+  table, and calling a table is an error. 7 of 33 failed package loads under
+  `--execute` were this. Stubs are callable now, so a stub yields another stub. That
+  buys reach, not fidelity: a package that merely *touches* the engine gets past it,
+  and one that needs the engine to answer truthfully is still not being tested.
+
 - **`rarn doctor` could not read the require form that most of the registry uses**
   (RN-7). Package sources reach their dependencies four ways —
   `.Name`, `["Name"]`, `:WaitForChild("Name")`, `:FindFirstChild("Name")` — and the

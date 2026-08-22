@@ -82,6 +82,33 @@ and `task.defer` at module scope, so running it measures stub completeness rathe
 than install correctness; package modules resolve to a per-instance sentinel instead.
 `--execute` opts in.
 
+**Where the model stops is a decision, and the line is drawn at mutation.** The
+read-only tree queries are implemented — `WaitForChild`, `FindFirstChild`,
+`FindFirstChildOfClass`, `FindFirstAncestor`, `GetChildren`, `GetDescendants`, `IsA`,
+`IsDescendantOf`, `IsAncestorOf`, `GetFullName` — because none of them is engine
+behaviour: each is a pure function of the tree already built, and `:WaitForChild("x")`
+is `["x"]` with a different spelling. Package code leans on them heavily (6171 calls
+across the 584 packages in a warm cache, `:WaitForChild` alone 3256), and without them
+`--execute` could not load the JS-port half of the registry at all.
+
+`:Destroy` and `:Clone` are common too (876 and 132) and are refused: a tree the code
+under test can mutate would put the identity guarantee this harness exists to check at
+the mercy of the thing being checked. Beyond that — `Enum` (4165), `Instance.new`
+(1845), `task` (1663), `RunService` (1644) — is the engine, and stays out. Adding
+stubs there widens the area in which a *passing* harness can be silently wrong, which
+is the one direction that costs more than it buys.
+
+Two places where the model knowingly differs from the engine, both commented at the
+source: `GetChildren` sorts by name, because a tree read off a filesystem has no
+insertion order to recover and a result that depends on `readDir` order is worse than
+one that is knowingly ordered differently; and `GetFullName` starts at whatever tree
+was loaded rather than at `game`.
+
+`tests/roblox/emulate-selftest.luau` checks the model against its own claims, which is
+a different question from every other test here — those ask whether a tree is correct
+*under* the model. Both defects that made it necessary were the harness answering
+confidently about something it had not implemented.
+
 **This does not replace `test/roblox/`.** The harness proves the tree is consistent
 under a *model* of Roblox. If the model is wrong the harness passes and Studio breaks,
 so the manual check stays — run it whenever the linker changes.

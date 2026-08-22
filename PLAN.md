@@ -92,9 +92,25 @@ rarn.lock
 | M4b | 동결 선언 | | 게이트가 열려야 한다. 시간이 아니라 행동을 기다린다 |
 | M5 | 문서·주장 감사 | ✅ | 낡은 것 3, 빠진 것 2. 나머지는 맞았다 — [기록](docs/milestones/v1/m05-doc-audit.md) |
 | M6 | 현장 보고 대응 | ✅ | 결함 4(RN-7~RN-10), 메시지 2, 문서 3 — [기록](docs/milestones/v1/m06-field-report.md) |
+| M6b | 하니스 보강 | ✅ | 결함 3(RN-11~RN-13). `--execute` 로드 5/38 → 34/38 — [기록](docs/milestones/v1/m06b-harness-selfcheck.md) |
 | M7 | shim 이 타입을 전달하게 | | `--!strict` 로 타입 있는 패키지를 쓸 수 있어야 한다 |
 
 M4b 와 M7 이 남았다. M4b 는 게이트에 걸려 있고, M7 은 걸려 있지 않다.
+
+### M6b — 하니스 보강 ✅
+
+"하니스가 얼마나 현실적이냐"에 답하려고 재다가 결함 셋이 나왔다. 읽기 전용 트리 질의 열
+개가 통째로 빠져 있었고(`:WaitForChild` 만 캐시 584패키지에서 3256회 호출된다), 한 번
+실패한 모듈이 이후 계속 `cyclic require` 로 오진됐고, `game` 스텁이 자기 주석과 반대로
+하드 에러를 냈다.
+
+**선은 변경(mutation)에서 그었다.** `:Destroy`·`:Clone` 은 흔하지만 넣지 않았다 — 코드가
+트리를 바꿀 수 있게 되면 이 하니스가 검사하려는 동일성 보장이 검사 대상의 처분에 놓인다.
+`Enum`·`Instance.new`·`task`·`RunService` 는 엔진이라 그대로 뒀다.
+
+`tests/roblox/emulate-selftest.luau` 가 생겼다 — 체크 30개. 다른 테스트가 *트리가 모델
+아래서 옳은가*를 묻는다면 이건 *모델이 자기 주장대로 하는가*를 묻는다. 결함 셋 다 그
+틈에 있었다. 상세는 [기록](docs/milestones/v1/m06b-harness-selfcheck.md).
 
 ### M7 — shim 이 타입을 전달하게
 
