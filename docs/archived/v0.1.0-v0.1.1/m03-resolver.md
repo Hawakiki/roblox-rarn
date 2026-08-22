@@ -5,7 +5,7 @@
 
 Wally의 리졸버는 **탐욕적 + 백트래킹 없음**이라 큐 순서에 결과가 좌우되고,
 `^1.2.0` 과 `^1.5.0` 처럼 명백히 풀리는 조합에서도 실패할 수 있다
-(상세: [docs/research/wally-internals.md](docs/research/wally-internals.md) 2절).
+(상세: [docs/research/wally-internals.md](../../research/wally-internals.md) 2절).
 
 **"major당 한 버전" 정책은 그대로 유지하되, 알고리즘을 순서 독립적으로 만든다.**
 버전을 하나라도 고르기 전에 제약을 전부 모으는 게 핵심이다.
