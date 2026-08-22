@@ -8,6 +8,26 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.2.0 — 2026-08-22
+
+**Everything below has been sitting unreleased, and one of it matters more than the rest:
+RN-6 was recorded as fixed in 0.1.1 and was not.** The fix commit landed after the tag, so
+anyone on 0.1.1 still cannot install a package containing a file over 512 KiB — they get
+`RN0310 … The download may be corrupt. Try again`, on an archive that is not corrupt.
+Reproduced against the released binary before writing this.
+
+The formats are unchanged: `rarn.json` and `rarn.lock` written by 0.1.1 load here and
+nothing needs migrating. The minor bump is for what a shim looks like — packages that
+export types now get several lines instead of one — and for how much `rarn doctor` output
+changes on a real project.
+
+Most of this came from a session that had never seen Rarn building a React project in
+another folder and writing down where it got stuck, which found four defects and three
+documentation errors, and from answering "how realistic is the harness, roughly?", which
+found three more.
+
 ### Added
 
 - **A link shim now forwards the package's exported types.** Luau carries a required
