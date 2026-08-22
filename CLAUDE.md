@@ -511,6 +511,22 @@ other project sharing the cache. A `--linked` opt-in may come later.
 - The Luau shim filename (the alias) is derived by PascalCasing the name part:
   `@evaera/promise` becomes `Promise.luau`. Collisions are a hard error, overridable via the
   manifest's `aliases` map.
+- **An alias has to be unique within one manifest section, and nowhere wider.** Root shims
+  are written per section — `dependencies` into the shared realm directory,
+  `serverDependencies` into the server one, `devDependencies` into dev — so two aliases
+  only ever land on the same path when they came from the same section.
+
+  Pooling the three was stricter than the layout, and refused two arrangements it has no
+  objection to: a shared `@evaera/promise` beside a server `@nezuo/promise` (different
+  directories, and a person reaches them through different services), and the same package
+  declared in two sections, which the linker explicitly supports and which the pooled check
+  read as a collision of a package with itself. Both are measured — the second installs one
+  copy in `_Index` and reaches it from the other realm by absolute path, so constraint 1
+  still holds.
+
+  The width matters more than it looks: of the 506 most-depended-upon packages, **40 aliases
+  name more than one package** (`React` is published by `jsdotlua`, `haedrix` and
+  `core-packages`). A real project meets this at twenty or thirty dependencies, not at five.
 - **An alias may contain a hyphen.** Both schemas allowed only Luau identifiers, on the
   reasoning that `require(Packages.Alias)` should parse. The reasoning was fine and the rule
   was wrong: the entire `jsdotlua` family publishes `luau-polyfill`, `es7-types`,

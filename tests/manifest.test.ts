@@ -135,19 +135,56 @@ describe('alias collisions', () => {
     expect(error.how).toContain('aliases')
   })
 
-  test('detects a collision across different sections too', () => {
-    expectCode(
+  // The message has to say which section, because the same alias is fine in another
+  // one and "2 packages would both be installed as 'Promise'" does not say where.
+  test('the message names the section', () => {
+    const error = expectCode(
       () =>
         validateManifest(
-          {
-            ...minimal,
-            dependencies: { '@a/promise': '^1.0.0' },
-            devDependencies: { '@b/promise': '^1.0.0' },
-          },
+          { ...minimal, dependencies: { '@a/promise': '^1.0.0', '@b/promise': '^1.0.0' } },
           'rarn.json',
         ),
       Code.AliasCollision,
     )
+    expect(error.what).toContain('dependencies')
+  })
+
+  /**
+   * Root shims are written per section — `dependencies` into the shared realm
+   * directory, `serverDependencies` into the server one — so two aliases only collide
+   * when they came from the same section. Pooling all three refused an arrangement the
+   * layout has no objection to, and a person reaches the two through different Roblox
+   * services anyway.
+   */
+  test('the same alias in two sections is two files, not a collision', () => {
+    expect(() =>
+      validateManifest(
+        {
+          ...minimal,
+          dependencies: { '@a/promise': '^1.0.0' },
+          serverDependencies: { '@b/promise': '^1.0.0' },
+        },
+        'rarn.json',
+      ),
+    ).not.toThrow()
+  })
+
+  /**
+   * `writeRootShims` says a package declared in two sections should be reachable from
+   * both realm directories. Pooling the sections made that a collision of a package
+   * with itself, so the linker's documented behaviour was unreachable.
+   */
+  test('one package declared in two sections is not a collision with itself', () => {
+    expect(() =>
+      validateManifest(
+        {
+          ...minimal,
+          dependencies: { '@a/promise': '^1.0.0' },
+          devDependencies: { '@a/promise': '^1.0.0' },
+        },
+        'rarn.json',
+      ),
+    ).not.toThrow()
   })
 
   test('an aliases override resolves the collision', () => {
