@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, normalize, sep } from 'node:path'
-import { unzip } from 'fflate'
+import { unzipSync } from 'fflate'
 import { Code } from '../util/codes.ts'
 import { RarnError } from '../util/errors.ts'
 
@@ -46,7 +46,7 @@ export async function extractZip(
     })
   }
 
-  const entries = await inflate(bytes, subject)
+  const entries = inflate(bytes, subject)
   const files: string[] = []
 
   for (const [rawName, content] of Object.entries(entries)) {
@@ -63,27 +63,36 @@ export async function extractZip(
   return { files: files.sort() }
 }
 
-function inflate(bytes: Uint8Array, subject: string): Promise<Record<string, Uint8Array>> {
-  // fflate's async form hands the work to a worker, so a large package does not
-  // stall every other download running in parallel.
-  return new Promise((resolve, reject) => {
-    unzip(bytes, (error, data) => {
-      if (error) {
-        reject(
-          new RarnError({
-            code: Code.ArchiveUnreadable,
-            what: `The archive for ${subject} could not be unpacked.`,
-            where: subject,
-            detail: `  ${error.message}`,
-            how: 'The download may be corrupt. Try again.',
-            cause: error,
-          }),
-        )
-        return
-      }
-      resolve(data)
+/**
+ * Inflates synchronously, which is not the obvious choice and is the only working one.
+ *
+ * fflate's async `unzip` hands entries above 512 KiB to a worker, and under Bun that
+ * path returns nothing: the callback reports `undefined is not an object (evaluating
+ * 'dat.length')`. Measured — the same archives inflate correctly under Node, and the
+ * boundary is the *uncompressed* size, so a 1 KiB compressed entry that expands past
+ * 512 KiB fails too. Rarn ships as a Bun binary, so this was every user.
+ *
+ * It shipped in 0.1.1 as `RN0310: the download may be corrupt. Try again` — advice that
+ * cannot work, on packages that are not corrupt at all. `4x8matrix/class-index@3.0.0`
+ * carries a 2.7 MB API dump and could not be installed by any version of Rarn; Wally
+ * installs it.
+ *
+ * The cost of blocking is small enough to have been the wrong thing to optimise: that
+ * same 2.7 MB archive inflates in 23ms.
+ */
+function inflate(bytes: Uint8Array, subject: string): Record<string, Uint8Array> {
+  try {
+    return unzipSync(bytes)
+  } catch (error) {
+    throw new RarnError({
+      code: Code.ArchiveUnreadable,
+      what: `The archive for ${subject} could not be unpacked.`,
+      where: subject,
+      detail: `  ${error instanceof Error ? error.message : String(error)}`,
+      how: 'The download may be corrupt. Try again.',
+      cause: error instanceof Error ? error : undefined,
     })
-  })
+  }
 }
 
 /**

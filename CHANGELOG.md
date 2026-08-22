@@ -6,6 +6,23 @@ Rarn follows semver, with one clarification that matters before 1.0: **the manif
 lockfile formats are not stable yet.** `lockfileVersion` exists so a change can be detected
 rather than silently misread, and a `0.x` release may bump it.
 
+## Unreleased
+
+### Fixed
+
+- **A package containing a file over 512 KiB could not be installed** (RN-6). fflate's
+  async `unzip` hands entries above that to a worker, and under Bun the worker returns
+  nothing — the callback reports `undefined is not an object (evaluating 'dat.length')`.
+  The same archives inflate correctly under Node, and the boundary is the *uncompressed*
+  size, so a kilobyte of compressed data that expands past the threshold fails too. Rarn
+  ships as a Bun binary, so this was every user, on every version.
+
+  It surfaced as `RN0310: the download may be corrupt. Try again` — advice that cannot
+  work, on archives that are not corrupt. `4x8matrix/class-index@3.0.0` carries a 2.7 MB
+  API dump and could not be installed by any release of Rarn; `wally install` handles it.
+  Inflation is now synchronous. The parallelism it cost was measured at 23ms for that
+  archive, against a class of package that could not be installed at all.
+
 ## 0.1.1 — 2026-08-22
 
 **0.1.0 is withdrawn; this replaces it.** R2, a research pass over what a workspace would
