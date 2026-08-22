@@ -89,9 +89,9 @@ rarn.lock
 | M2 | 별칭 충돌 정책 확정 | ✅ | 섹션 단위로 확정. 규칙은 CLAUDE.md Naming 에 — [기록](docs/milestones/v1/m02-alias-scope.md) |
 | M3 | 파이프라인을 `cli/` 에서 꺼내기 | ✅ | `src/install/run.ts`. 합성 테스트 8개, 행동 변화 0 — [기록](docs/milestones/v1/m03-install-pipeline.md) |
 | M4 | 스키마 동결 리뷰 | | 두 스키마의 모든 필드를 한 번씩 변호한다. **이게 동결 그 자체다** |
-| M5 | 문서·주장 감사 | | README·CLAUDE.md 의 주장을 코드와 대조한다. 1.0 은 문서도 약속이 된다 |
+| M5 | 문서·주장 감사 | ✅ | 낡은 것 3, 빠진 것 2. 나머지는 맞았다 — [기록](docs/milestones/v1/m05-doc-audit.md) |
 
-M4 는 M2·M3 를 기다렸고 이제 열려 있다. M5 는 마지막이다.
+M4 만 남았다.
 
 ### M1 — 라이브 발행 1회 ✅
 
@@ -130,11 +130,13 @@ M4 는 M2·M3 를 기다렸고 이제 열려 있다. M5 는 마지막이다.
 미리 아는 안건: `lockfileVersion` 을 1 로 둘 것인가 · `place` 에 dev 가 없는 것이 맞나 ·
 `resolutions` 의 의미 · `aliases`(M2 의 결과) · M1 이 발행 경로에서 무엇을 드러내는가.
 
-### M5 — 문서·주장 감사
+### M5 — 문서·주장 감사 ✅
 
-오늘 하루에만 세 개가 낡아 있었다 — README 가 404 를 가리켰고, place 파생 설명이 고정 파일명을
-말했고, 하니스 호출에 `--mount` 가 빠져 있었다. CLAUDE.md 는 이미 *"behavior looks different,
-re-verify with curl and update this file in the same commit"* 을 요구한다. 1.0 전에 한 번 전수.
+경로 21 · 에러 코드 8 · CLI 명령 16 · 스크립트 7 · 레이어 디렉터리 12 · 식별자 9 · 링크 35,
+그리고 Wally API 사실 5개를 라이브로. **낡은 것 3, 빠진 것 2.**
+
+낡은 셋 중 둘은 같은 날 바뀐 코드를 문서가 못 따라간 것이다 — 문제는 문서를 안 쓴 것이 아니라
+**코드와 같은 커밋에서 안 고친 것**이었다. 상세는 [기록](docs/milestones/v1/m05-doc-audit.md).
 
 ---
 
