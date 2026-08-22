@@ -43,6 +43,14 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ### Fixed
 
+- **The require harness reported a realm holding only cross-realm shims as broken.**
+  Placement resolves to the widest requester, so a package declared under
+  `serverDependencies` that a shared package also needs is stored in the shared realm —
+  and the server directory then keeps only the shim pointing across at it, with no
+  `_Index` at all. The harness exited 1 on that, calling a correct install broken. It
+  now says what it found and carries on; a realm with neither an `_Index` nor any shim
+  still fails, because nothing to check is not the same as nothing being there.
+
 - **A `place` path with a space in it produced Luau that does not parse.** `place` is
   derived from the project's Rojo files when the manifest does not declare it, and an
   *instance* name has none of Luau's restrictions — Rojo is perfectly happy with

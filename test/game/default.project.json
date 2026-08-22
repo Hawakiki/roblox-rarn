@@ -1,0 +1,19 @@
+{
+  "name": "rarn-overbuilt-game",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Shared Packages": { "$path": { "optional": "Packages" } },
+      "Shared": { "$path": "src/shared" }
+    },
+    "ServerScriptService": {
+      "ServerPackages": { "$path": { "optional": "Packages_SERVER" } },
+      "Server": { "$path": "src/server" }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "Client": { "$path": "src/client" }
+      }
+    }
+  }
+}
