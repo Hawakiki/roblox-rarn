@@ -803,6 +803,14 @@ is one that eventually contradicts it.
 - `docs/archived/<version-range>/` — a closed era, whole. `v0.1.0-v0.1.1/` holds M0–M17,
   which is everything from an empty directory to the 0.1.1 release. Closed means closed:
   the folder's own README says what the era was for, and nothing inside it changes.
+
+  **A frozen record that turns out to be wrong gets a dated correction appended, never an
+  edit.** The freeze exists to stop history being quietly rewritten, and silently leaving
+  a false statement in place serves that goal no better than rewriting it would — a reader
+  has no way to know. So the original text stays exactly as written, a `> **정정 (date).**`
+  block says what is wrong and what is true, and the living document keeps the current
+  state. Reached for once, over the archived index summarising M17 as shipping RN-6 when
+  the fix commit is after the tag.
 - `docs/research/` — investigations whose conclusion is fixed (R1 PnP, R2 workspaces,
   the Wally internals read-through). Never edited after their conclusion; research that
   supersedes one gets a new file, it does not rewrite the old one.
