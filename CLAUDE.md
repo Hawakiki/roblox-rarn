@@ -27,6 +27,7 @@ bun run lint                         # eslint, type-aware rules
 bun run check                        # format + lint + typecheck + test, in that order
 bun run build                        # bun build --compile -> dist/rarn(.exe)
 bash scripts/smoke.sh dist/rarn.exe  # prove a compiled binary actually starts
+bash scripts/signals.sh             # the signals the 1.0 gate is waiting on
 ```
 
 `bun run check` is what the pre-commit hook runs, and what CI runs. Run it before
@@ -194,6 +195,14 @@ variable set it fails immediately with `RN0130`. Only the global fetch is wrappe
 one is a stand-in by definition, so the guard never touches the suite.
 
 `scripts/smoke.sh <binary>` runs anywhere, not just in CI.
+
+`scripts/signals.sh` answers a different kind of question — whether anyone outside this
+repository is using Rarn, which is what the 1.0 gate waits on. Four numbers, ranked by
+what each actually measures, and two more marked as noise so they stop being quoted:
+clone counts are mostly CI cloning per job, and release downloads mix rokit, CI and
+curiosity into one counter. The ranking and the caveats live in PLAN.md §3; the script
+exists so the answer is a command rather than something to re-derive each time it comes
+up. It needs `gh` and skips loudly without it.
 
 ## Hard constraints — read before designing anything
 
