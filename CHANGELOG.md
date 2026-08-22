@@ -8,6 +8,24 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ## Unreleased
 
+### Added
+
+- **Duplicates are now checked across every tree that lands in one DataModel** (RN-3).
+  Constraint 1's boundary is a Lua environment, and a Rojo project file can mount trees
+  from anywhere — so two projects installed side by side, each resolving correctly and
+  each reporting `no duplicates`, put two ModuleScript instances of one package into one
+  place. Every per-project check is blind to it: both lockfiles are right.
+  `rarn dedupe` now reads the project files that mount this project's install directories
+  and reports what else is in the same DataModel (`RN0213`), naming each version and the
+  tree it came from; `rarn install` warns about the semver-compatible case, which is the
+  one that breaks singletons. Nothing here reads a lockfile, so a Wally install and a tree
+  Rarn never made count the same — as they do to Rojo. It reports rather than resolves:
+  converging the ranges or separating the places is a decision about layout.
+
+  Two limits, both deliberate. The search starts at a repository root and nowhere else,
+  because that is the only boundary the project actually stated. And it reports only places
+  that mount this project's own realm directories, so an unrelated sibling never appears.
+
 ### Fixed
 
 - **`rarn install` could delete a directory it did not create** (RN-1). Installing

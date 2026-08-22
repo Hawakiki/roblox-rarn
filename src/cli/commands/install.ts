@@ -2,6 +2,7 @@ import { relative, resolve as resolvePath } from 'node:path'
 import chalk from 'chalk'
 import { fetchPackages } from '../../cache/fetch.ts'
 import { createCacheStore } from '../../cache/store.ts'
+import { type PlaceReport, scanPlaces } from '../../doctor/places.ts'
 import { type LinkResult, link } from '../../linker/link.ts'
 import { checkFreshness } from '../../lockfile/freshness.ts'
 import { readLockfile, resolutionFromLockfile } from '../../lockfile/read.ts'
@@ -9,13 +10,14 @@ import { LOCKFILE_NAME } from '../../lockfile/types.ts'
 import { buildLockfile, writeLockfile } from '../../lockfile/write.ts'
 import { readManifest } from '../../manifest/read.ts'
 import type { NormalizedManifest } from '../../manifest/types.ts'
+import { realmDirs } from '../../manifest/types.ts'
 import { resolvePlace, unmountedRealms } from '../../project/place.ts'
 import { createRegistryClient } from '../../registry/client.ts'
 import { DEFAULT_API_URL } from '../../registry/types.ts'
 import type { RegistryClient } from '../../registry/types.ts'
 import { resolve } from '../../resolver/resolve.ts'
 import type { Resolution } from '../../resolver/types.ts'
-import { Code } from '../../util/codes.ts'
+import { Code, WarnCode } from '../../util/codes.ts'
 import { RarnError } from '../../util/errors.ts'
 import { outputSettings, verbose } from '../output.ts'
 import { createProgress } from '../progress.ts'
@@ -32,6 +34,14 @@ export interface InstallOutcome {
   readonly manifest: NormalizedManifest
   /** Disagreements between rarn.json and default.project.json. Always worth printing. */
   readonly placeNotes: readonly string[]
+  /**
+   * Compatible duplicates this install's packages share a DataModel with.
+   *
+   * Only the compatible ones, and only on install: two majors are two packages and
+   * belong in the report someone asked for, but a compatible duplicate is a defect
+   * that no per-project check can see, so it goes where it will actually be read.
+   */
+  readonly placeDuplicates: readonly PlaceReport[]
   readonly resolution: Resolution
   readonly link: LinkResult
   readonly cached: number
@@ -157,6 +167,7 @@ async function run(
     // realms actually received anything — warning about an empty realm nobody uses
     // would be noise on every install that has no server dependencies.
     placeNotes: [...place.notes, ...unmountedRealms(place.scan, manifest, linked.usedRealms)],
+    placeDuplicates: await hazardsInPlace(projectDir, manifest),
     resolution,
     link: linked,
     cached: summary.cached,
@@ -171,6 +182,25 @@ async function run(
     process.stdout.write(report(outcome, projectDir))
   }
   return outcome
+}
+
+/**
+ * Compatible duplicates only, because install output has to earn every line.
+ *
+ * `dedupe` reports both kinds; two majors are a fact about the graph that someone
+ * asked to see. A compatible duplicate is a defect, it is invisible to every check
+ * scoped to one project, and the person who just ran an install is the one who can
+ * still do something about it.
+ */
+async function hazardsInPlace(
+  projectDir: string,
+  manifest: NormalizedManifest,
+): Promise<PlaceReport[]> {
+  const scan = await scanPlaces(projectDir, Object.values(realmDirs(manifest.packageDir)))
+
+  return scan.places
+    .map((place) => ({ ...place, duplicates: place.duplicates.filter((d) => d.compatible) }))
+    .filter((place) => place.duplicates.length > 0)
 }
 
 function integrityOf(lockfile: NonNullable<Awaited<ReturnType<typeof readLockfile>>>) {
@@ -222,6 +252,16 @@ function report(outcome: InstallOutcome, projectDir: string): string {
     lines.push(
       `${chalk.yellow('duplicate')} ${name} installed at ${versions.join(' and ')}`,
       chalk.dim('  these are separate modules at runtime; run `rarn why` to see who asked'),
+    )
+  }
+
+  for (const place of outcome.placeDuplicates) {
+    const names = place.duplicates.map((d) => d.name).join(', ')
+    const verb = place.duplicates.length === 1 ? 'is' : 'are'
+    lines.push(
+      `${chalk.yellow(WarnCode.CrossTreeDuplicate)} ${names} ${verb} installed twice in the DataModel ${place.project} builds.`,
+      chalk.dim('  Two copies are two ModuleScript instances, each with its own state.'),
+      chalk.dim('  Run `rarn dedupe` for the versions and which tree each came from.'),
     )
   }
 

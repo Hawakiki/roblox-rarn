@@ -165,7 +165,11 @@ async function readTree(
  * hundreds of library-form files describing somebody else's module, none of which say
  * anything about this project's places.
  */
-async function findProjectFiles(root: string, realms: ReadonlySet<string>): Promise<string[]> {
+export async function findProjectFiles(
+  root: string,
+  skip: ReadonlySet<string>,
+  maxDepth = MAX_DEPTH,
+): Promise<string[]> {
   const files: string[] = []
 
   async function visit(dir: string, depth: number): Promise<void> {
@@ -183,11 +187,11 @@ async function findProjectFiles(root: string, realms: ReadonlySet<string>): Prom
         continue
       }
       if (!entry.isDirectory()) continue
-      if (depth + 1 > MAX_DEPTH) continue
+      if (depth + 1 > maxDepth) continue
       if (entry.name.startsWith('.') || entry.name === 'node_modules') continue
       if (entry.name === INDEX_DIR_NAME) continue
       // A realm directory holds installed packages, never this project's own places.
-      if (realms.has(entry.name)) continue
+      if (skip.has(entry.name)) continue
       await visit(path, depth + 1)
     }
   }
@@ -208,7 +212,7 @@ function rank(root: string, file: string): number {
 }
 
 /** `_Index`, spelled here to avoid the linker depending on this module or vice versa. */
-const INDEX_DIR_NAME = '_Index'
+export const INDEX_DIR_NAME = '_Index'
 
 interface WalkContext {
   /** Directory the project file sits in; `$path` is relative to this, not the root. */
