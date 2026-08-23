@@ -50,6 +50,29 @@ rather than silently misread, and a `0.x` release may bump it.
   installs on Linux CI and shadows a package on the author's Mac is worse than one that
   is refused in both places.
 
+### Changed
+
+- **A repeat install is about 20% faster, because deleting the previous tree moved off
+  the critical path.** `swapIn` used to delete the tree it had just retired, as the last
+  thing in the install — 2,049ms of a 6,517ms repeat install of a 506-package graph,
+  every millisecond of it spent after the tree on disk was already correct. The install
+  that retires a tree now leaves it, and the next one deletes it *while it builds*, where
+  it hides inside work that was happening anyway.
+
+  Measured on the shipped binary, 506 packages, warm cache and lockfile: 6,352 → 5,057ms
+  (20.4%), with the arms run on/off/on to rule out drift. In TypeScript the same change
+  measures 31.9%, and the gap between the two is not explained; the binary is what you
+  run, so 20.4% is the number. Smaller graphs behave the same way: 6 packages 18.4%,
+  49 packages 29.6%, 52 packages 30.4%, all measured in-process and none overlapping.
+
+  **What this costs is one directory.** Between installs the project now holds the
+  previous tree as well as the current one — 43MB at 506 packages, proportionally less
+  below that. `rarn init` already lists both scratch names in `.gitignore`, and `rarn
+  publish` now excludes them by name.
+
+  The safety story does not change, except to improve: the tree you had survives longer,
+  not less. An interrupted install still leaves the previous install intact.
+
 ### Added
 
 - Tests for `rarn cache`, which had none. It was the second command carrying its

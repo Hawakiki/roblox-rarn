@@ -472,13 +472,71 @@ describe('install atomicity', () => {
     })
   }
 
-  test('leaves nothing staged behind on success', async () => {
+  /**
+   * A *first* install retires nothing — there is no previous tree to move aside — so
+   * this stays true for the reason it always was. Spelled out because a repeat install
+   * now deliberately leaves one directory behind, and the two cases are one line apart.
+   */
+  test('a first install leaves nothing behind at all', async () => {
     await run({ 'a/one': {} }, { dependencies: { '@a/one': '^1.0.0' } })
 
     const left = (await readdir(project())).filter(
       (entry) => entry.startsWith('.rarn-tmp') || entry.startsWith('.rarn-old-'),
     )
     expect(left).toEqual([])
+  })
+
+  /**
+   * The retired tree is no longer deleted by the install that retires it — the next one
+   * deletes it, while it is building. That took 1,984ms off a repeat install of a
+   * 506-package graph (6,373.7 -> 4,381.8, n=7 per arm, non-overlapping, and a revert
+   * arm at 6,358.2 to rule out drift), because the delete used to be the last thing
+   * between a correct tree on disk and the command returning.
+   *
+   * What is asserted here is the shape that makes it safe: exactly one is kept, never
+   * more, and the staging directory is still cleared eagerly.
+   */
+  test('a repeat install keeps the tree it retired, and only that one', async () => {
+    await run({ 'a/one': {} }, { dependencies: { '@a/one': '^1.0.0' } })
+    await relink({ 'b/two': {} }, { dependencies: { '@b/two': '^1.0.0' } })
+
+    const entries = await readdir(project())
+    expect(entries.filter((entry) => entry.startsWith('.rarn-old-'))).toHaveLength(1)
+    expect(entries).not.toContain('.rarn-tmp')
+  })
+
+  /** The kept tree is the previous install, which is the whole reason keeping it is safe. */
+  test('the kept tree holds what the previous install had', async () => {
+    await run(
+      { 'a/one': { files: { 'init.lua': 'return "first"' } } },
+      { dependencies: { '@a/one': '^1.0.0' } },
+    )
+    await relink({ 'b/two': {} }, { dependencies: { '@b/two': '^1.0.0' } })
+
+    const retired = (await readdir(project())).find((entry) => entry.startsWith('.rarn-old-'))
+    expect(retired).toBeDefined()
+    expect(
+      await readFile(
+        join(project(), retired ?? '', 'shared', '_Index', 'a_one@1.0.0', 'one', 'init.lua'),
+        'utf8',
+      ),
+    ).toBe('return "first"')
+  })
+
+  /**
+   * Three installs, still one directory. Without this the deferral would be a leak
+   * rather than a deferral, and disk would grow by a whole tree per install.
+   */
+  test('a third install clears the first retired tree rather than accumulating', async () => {
+    await run({ 'a/one': {} }, { dependencies: { '@a/one': '^1.0.0' } })
+    await relink({ 'b/two': {} }, { dependencies: { '@b/two': '^1.0.0' } })
+    const first = (await readdir(project())).find((entry) => entry.startsWith('.rarn-old-'))
+
+    await relink({ 'a/one': {} }, { dependencies: { '@a/one': '^1.0.0' } })
+
+    const entries = await readdir(project())
+    expect(entries.filter((entry) => entry.startsWith('.rarn-old-'))).toHaveLength(1)
+    expect(entries).not.toContain(first)
   })
 
   // The reason the staging directory exists. Before it, this test's project would be

@@ -18,7 +18,7 @@ import {
 } from './layout.ts'
 import { assertRealmsAreOurs } from './ownership.ts'
 import { assertCrossable, crossRealmShim, requirePlacePath, rootShim, siblingShim } from './shim.ts'
-import { STAGING_DIR, clearLeftovers, swapIn } from './swap.ts'
+import { STAGING_DIR, clearRetired, clearStaging, swapIn } from './swap.ts'
 import { type TypeExport, readTypeExports } from './type-exports.ts'
 
 export interface LinkOptions {
@@ -68,7 +68,14 @@ export async function link(options: LinkOptions): Promise<LinkResult> {
   // they are Rarn's to replace.
   await assertRealmsAreOurs(final)
 
-  await clearLeftovers(final.projectDir)
+  // The build writes into the staging directory, so clearing it has to finish first.
+  await clearStaging(final.projectDir)
+
+  // Deleting the previous install's retired tree does not. Started here and awaited
+  // below, it runs while the new tree is being copied out of the cache instead of after
+  // it — on a repeat install of 506 packages that is 2,049ms of 6,517ms which nothing
+  // was overlapping, because the delete was the last thing in the install.
+  const retiring = clearRetired(final.projectDir)
 
   // The staged tree is built at a different root, which is only safe because no shim
   // ever names a filesystem path — they are `script.Parent…` walks or DataModel paths
@@ -86,6 +93,12 @@ export async function link(options: LinkOptions): Promise<LinkResult> {
     await rm(join(final.projectDir, STAGING_DIR), { recursive: true, force: true }).catch(
       () => undefined,
     )
+
+    // Awaited on both paths rather than left floating. It cannot reject — `clearRetired`
+    // swallows — so this only ever costs the remainder of a delete the build did not
+    // outlast, and it keeps the install from ending with filesystem work still in
+    // flight, which is a thing a caller has no way to see and no way to wait for.
+    await retiring
   }
 }
 

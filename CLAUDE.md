@@ -446,8 +446,33 @@ and the argument for it is the half-updated tree rather than the price.
 **Build into `.rarn-tmp/`, then rename into place.** Deleting the old tree first and writing
 over the top is identical work right up until something interrupts it, and then the
 difference is everything the user had: with staging they keep the previous install, without
-it they keep neither. The previous tree moves to `.rarn-old-<token>/` and is deleted only
-once every realm is in place.
+it they keep neither. The previous tree moves to `.rarn-old-<token>/` once every realm is in
+place.
+
+**The install that retires a tree does not delete it; the next one does, while it builds.**
+The delete was the last thing in the install and nothing overlapped it — 2,049ms of a
+6,517ms repeat install of 506 packages, spent after the tree on disk was already correct.
+Started before the build and awaited after, it hides inside work that was happening anyway:
+measured 6,352 → 5,057ms with the shipped binary (20.4%, arms bracketed on/off/on) and
+6,299 → 4,293ms in TypeScript (31.9%). **The gap between those two is not explained**, and
+the binary is the one a user runs, so 20.4% is the number to quote.
+
+Three things this rests on, and the second is the one to preserve:
+
+- **The staging directory is cleared eagerly and the retired trees are not.** `clearStaging`
+  must finish before the build, because the build writes into what it removes;
+  `clearRetired` is an input to nothing, which is the whole reason it can overlap.
+- **`clearRetired` reads the directory once, at the start.** The tree `swapIn` retires later
+  is therefore not in its list and cannot be deleted out from under a rollback.
+- **Its failures are swallowed.** A retired tree used to mean an interrupted run, so throwing
+  was informative; now one exists after every install, and on Windows a file held open by
+  Studio refuses deletion. Failing a correct install over garbage nobody is waiting on would
+  be the wrong trade — the next run tries again, which is what `clearRetired` has always
+  been for.
+
+The cost is one directory: between installs the project holds the previous tree as well as
+the current one, 43MB at 506 packages. `rarn init` already gitignores both scratch names,
+and `publish` excludes them by name rather than relying on `_Index` shape-detection.
 
 **Never replace a directory Rarn did not create.** `linker/ownership.ts` runs before any
 work and refuses unless the realm directory holds `_Index/`, holds only Rarn-generated

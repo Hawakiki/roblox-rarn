@@ -1,6 +1,7 @@
 import { readFile, stat } from 'node:fs/promises'
 import { join, posix, relative, sep } from 'node:path'
 import { zipSync } from 'fflate'
+import { RETIRED_PREFIX, STAGING_DIR } from '../linker/swap.ts'
 import type { NormalizedManifest } from '../manifest/types.ts'
 import { realmDirs } from '../manifest/types.ts'
 import { INDEX_DIR_NAME } from '../project/place.ts'
@@ -194,6 +195,13 @@ function alwaysExcluded(manifest: NormalizedManifest): string[] {
     '**/*.pem',
     '**/*.key',
     ...Object.values(realms).map((dir) => `${dir}/**`),
+    // Rarn's own scratch directories, named rather than shape-detected: unlike another
+    // tool's install directory these are ours and the names are constants. A retired
+    // tree used to appear only after an interrupted run; since the delete moved off the
+    // install's critical path there is one after every install, so this went from a
+    // rarity worth catching by shape to a certainty worth naming.
+    `${STAGING_DIR}/**`,
+    `${RETIRED_PREFIX}*/**`,
   ]
 }
 
