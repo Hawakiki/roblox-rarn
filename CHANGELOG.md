@@ -8,7 +8,33 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ## Unreleased
 
-Nothing yet.
+### Fixed
+
+- **`rarn cache clean` no longer exits 0 having done nothing when stdin is not a
+  terminal** (RN-14). It printed the confirmation, waited on input that had already
+  ended, and exited successfully with the cache untouched — the same shape `rarn init`
+  had, in the one other command that asks a question. It now refuses with `RN0004` and
+  names `--yes`.
+
+  `init` fills in its defaults in this situation and this does not, because the two
+  directions do not cost the same. Guessing wrong at `init` writes a file that can be
+  edited; guessing wrong here sends every project on the machine back to the network
+  for its next install.
+
+  Pressing Ctrl+D at the question is now read as declining, rather than leaving the
+  same unanswered promise behind.
+
+- **`rarn cache verify --json` now fails when a digest does not match** (RN-15). It
+  listed the mismatch in the JSON body and exited 0, while the human output exited 1
+  on the same cache. `--json` is the form a script reads, and a script reads the exit
+  code — so the one finding here that could be an attack was reported loudly to a
+  person and silently to the caller built to catch it.
+
+### Added
+
+- Tests for `rarn cache`, which had none. It was the second command carrying its
+  behaviour in `cli/` rather than in a layer, and the second one to ship a defect
+  because of it.
 
 ## 0.2.0 — 2026-08-22
 

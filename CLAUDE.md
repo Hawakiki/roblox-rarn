@@ -916,5 +916,14 @@ is one that eventually contradicts it.
   given an `mtime`, so any fixture archive fixes it — a digest comparison against a
   rebuilt archive otherwise fails only when the two calls straddle a timestamp tick,
   which is to say rarely, remotely, and never while you are looking.
+- **A test asserting on `process.exitCode` has to reset it with `0`.** Measured on Bun
+  1.3.14: `process.exitCode = undefined` leaves the previous value in place, so a test
+  that set 1 hands 1 to the next one. This is not a slow leak — it made a new test pass
+  against the very defect it was written to catch, and only the control run said so.
+  The same shape reaches the suite as a whole: a leaked 1 fails a green run.
+- **A defect in a hand-rolled prompt, an exit code, or a `--json` branch belongs to a
+  *place*, not a file.** RN-8 was fixed in `init.ts` and the identical defect sat in
+  `cache.ts` for two releases, because the fix looked at the file rather than at
+  `grep -rn "createInterface" src/`. Before closing one of these, count the sites.
 - Every Wally API claim in this file was verified against the live service. If behavior looks
   different, re-verify with `curl` and **update this file in the same commit** as the fix.
