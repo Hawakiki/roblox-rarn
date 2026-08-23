@@ -317,29 +317,71 @@ function assertRange(range: string, field: string, where: string): void {
  * other is the same package declared in two sections, which `writeRootShims` explicitly
  * supports — *"a package declared in two sections should be reachable from both realm
  * directories"* — and which this refused as a collision with itself.
+ *
+ * **Grouped case-insensitively, because that is how the filesystem groups them** (RN-16).
+ * Windows and a default macOS volume both treat `EnumList.luau` and `Enumlist.luau` as
+ * one file, so a case-sensitive comparison here let one shim overwrite the other while
+ * the install reported success and the lockfile stayed correct — nothing downstream can
+ * see it. Both spellings in that example are what `deriveAlias` produces on its own, so
+ * writing no `aliases` entry is not a way to avoid it: of the 506 most-depended-upon
+ * packages, `deriveAlias` alone puts 62 groups into case-insensitive collision.
+ *
+ * This is stricter than a case-sensitive filesystem needs, deliberately. A manifest that
+ * installs on Linux CI and shadows a package on the author's Mac is worse than one that
+ * is refused in both places.
  */
 function assertNoAliasCollisions(manifest: Manifest, where: string): void {
   for (const section of DEPENDENCY_SECTIONS) {
-    const byAlias = new Map<string, string[]>()
+    const byAlias = new Map<string, { alias: string; name: string }[]>()
 
     for (const name of Object.keys(manifest[section] ?? {})) {
       const override = manifest.aliases?.[name]
       const alias = override ?? deriveAlias(parsePackageName(name))
-      const existing = byAlias.get(alias)
-      if (existing === undefined) byAlias.set(alias, [name])
-      else existing.push(name)
+      const key = alias.toLowerCase()
+      const existing = byAlias.get(key)
+      if (existing === undefined) byAlias.set(key, [{ alias, name }])
+      else existing.push({ alias, name })
     }
 
-    for (const [alias, names] of byAlias) {
-      if (names.length < 2) continue
+    for (const group of byAlias.values()) {
+      const first = group[0]
+      if (group.length < 2 || first === undefined) continue
+
+      const spellings = [...new Set(group.map((entry) => entry.alias))]
+      const quoted = spellings.map((spelling) => `'${spelling}'`).join(' and ')
+
       throw new RarnError({
         code: Code.AliasCollision,
-        what: `${names.length} packages in "${section}" would both be installed as '${alias}'.`,
+        // Two spellings that differ only in case have to be shown as two, and named as
+        // one file. Printing only the folded form would read as a bug in Rarn — the
+        // reader is looking at two names that are visibly different.
+        what:
+          spellings.length === 1
+            ? `${group.length} packages in "${section}" would both be installed as '${first.alias}'.`
+            : `${group.length} packages in "${section}" would be installed as ${quoted}, which are one file on Windows and macOS — filenames there are not case-sensitive.`,
         where,
-        detail: names.map((name) => `  ${name}`).join('\n'),
-        how: `Give one of them a different name under "aliases", for example:\n  "aliases": { ${JSON.stringify(names[0] ?? '')}: "${alias}2" }`,
+        detail: group.map((entry) => `  ${entry.name} -> ${entry.alias}.luau`).join('\n'),
+        how: `Give one of them a different name under "aliases", for example:\n  "aliases": { ${JSON.stringify(first.name)}: ${JSON.stringify(freeAlias(byAlias, first.alias))} }`,
       })
     }
+  }
+}
+
+/**
+ * A replacement alias nothing else in the section has taken.
+ *
+ * `RN0031` is the best-received message in this tool because the JSON it prints can be
+ * pasted, and that only holds while the suggestion is actually free. Suggesting
+ * `Promise2` to a manifest that already declares a `@c/promise2` would send the reader
+ * straight back to the same error.
+ *
+ * Takes the map the caller already built rather than rereading the section: its keys are
+ * exactly the folded aliases in use, so the two can never disagree about what is taken.
+ */
+function freeAlias(taken: ReadonlyMap<string, unknown>, alias: string): string {
+  for (let suffix = 2; ; suffix += 1) {
+    const candidate = `${alias}${suffix}`
+    if (!taken.has(candidate.toLowerCase())) return candidate
   }
 }
 

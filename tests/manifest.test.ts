@@ -198,6 +198,113 @@ describe('alias collisions', () => {
   })
 
   /**
+   * RN-16. The alias rule compared strings case-sensitively and the filesystem does
+   * not: `EnumList.luau` and `Enumlist.luau` are one file on Windows and on a default
+   * macOS volume, so one package's shim silently overwrote the other's, the install
+   * reported success, and `rarn.lock` was correct so nothing downstream could see it.
+   *
+   * These two are real and both aliases are what `deriveAlias` produces on its own —
+   * no `aliases` entry is involved, so a person cannot avoid it by not writing one.
+   * Found by counting: `link` reported 1,136 shims and 1,131 files carried the marker.
+   */
+  test('rejects two packages whose aliases differ only in case', () => {
+    const error = expectCode(
+      () =>
+        validateManifest(
+          {
+            ...minimal,
+            dependencies: { '@bubshayz/enumlist': '^1.0.0', '@sleitnick/enum-list': '^1.0.0' },
+          },
+          'rarn.json',
+        ),
+      Code.AliasCollision,
+    )
+    expect(error.detail).toContain('@bubshayz/enumlist')
+    expect(error.detail).toContain('@sleitnick/enum-list')
+  })
+
+  /**
+   * The two names look different, so a message that printed only one of them would
+   * read as a bug in Rarn rather than as something the reader can act on. It has to
+   * show both spellings and say why they are one file.
+   */
+  test('the message shows both spellings and says why they are one file', () => {
+    const error = expectCode(
+      () =>
+        validateManifest(
+          {
+            ...minimal,
+            dependencies: { '@bubshayz/enumlist': '^1.0.0', '@sleitnick/enum-list': '^1.0.0' },
+          },
+          'rarn.json',
+        ),
+      Code.AliasCollision,
+    )
+    expect(error.what).toContain('Enumlist')
+    expect(error.what).toContain('EnumList')
+    expect(error.what.toLowerCase()).toContain('case')
+  })
+
+  /** An override is no protection if it only differs from a derived alias by case. */
+  test('an aliases override that differs only in case still collides', () => {
+    expectCode(
+      () =>
+        validateManifest(
+          {
+            ...minimal,
+            dependencies: { '@a/promise': '^1.0.0', '@b/signal': '^1.0.0' },
+            aliases: { '@b/signal': 'PROMISE' },
+          },
+          'rarn.json',
+        ),
+      Code.AliasCollision,
+    )
+  })
+
+  /**
+   * `RN0031` is the best-received message in this tool because the JSON it prints can
+   * be pasted. That only holds if the suggested name is actually free — suggesting
+   * `Promise2` when a `@c/promise2` is already declared would send the reader straight
+   * back here.
+   */
+  test('the suggested replacement does not collide with something already declared', () => {
+    const error = expectCode(
+      () =>
+        validateManifest(
+          {
+            ...minimal,
+            dependencies: {
+              '@a/promise': '^1.0.0',
+              '@b/promise': '^1.0.0',
+              '@c/promise2': '^1.0.0',
+            },
+          },
+          'rarn.json',
+        ),
+      Code.AliasCollision,
+    )
+    expect(error.how).not.toContain('"Promise2"')
+    expect(error.how).toContain('"Promise3"')
+  })
+
+  /**
+   * Case-insensitivity must not widen the rule past the section boundary it already
+   * respects, for the same reason the exact-match version does not.
+   */
+  test('case-only difference across two sections is still two files', () => {
+    expect(() =>
+      validateManifest(
+        {
+          ...minimal,
+          dependencies: { '@bubshayz/enumlist': '^1.0.0' },
+          serverDependencies: { '@sleitnick/enum-list': '^1.0.0' },
+        },
+        'rarn.json',
+      ),
+    ).not.toThrow()
+  })
+
+  /**
    * Root shims are written per section — `dependencies` into the shared realm
    * directory, `serverDependencies` into the server one — so two aliases only collide
    * when they came from the same section. Pooling all three refused an arrangement the

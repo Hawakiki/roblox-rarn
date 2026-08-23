@@ -128,6 +128,27 @@ Rarn 은 이것을 `RN0200` 으로 정확히 보고한다 — 벤치마크에서
 
 고른 결과는 `packages.json` 에 박아 두었다. 재현 가능해야 하므로 매번 다시 고르지 않는다.
 
+### 별칭 다섯 개는 손으로 풀었다 (RN-16)
+
+506개 중 다섯 쌍이 **대소문자만 다른 별칭**을 갖고 있었다 — `TableUtil` 대 `Tableutil`,
+`EnumList` 대 `Enumlist` 같은 것들. Windows 와 기본 macOS 볼륨에서 그것은 한 파일이므로
+**이 벤치마크는 그동안 다섯 패키지가 서로 덮어쓰는 설치를 재고 있었다.** 정확히 그것이
+RN-16 이고, `link` 이 shim 1,136개를 썼다고 보고하는데 디스크에 1,131개가 있던 이유다.
+
+규칙은 하나다: **파일 순서상 먼저 나온 쪽이 별칭을 지키고, 뒤에 나온 쪽이 자기 scope 를
+PascalCase 로 앞에 붙인다.** 결정적이라 다시 만들어도 같은 답이 나온다.
+
+| 패키지 | 전 | 후 |
+|---|---|---|
+| `finobinos/tableutil` | `Tableutil` | `FinobinosTableutil` |
+| `sleitnick/enum-list` | `EnumList` | `SleitnickEnumList` |
+| `howmanysmall/better-signal` | `BetterSignal` | `HowmanysmallBetterSignal` |
+| `kineticwallet/lemon-signal` | `LemonSignal` | `KineticwalletLemonSignal` |
+| `farukcoskn/waitfor` | `Waitfor` | `FarukcosknWaitfor` |
+
+**이 표의 시간들은 수정 전에 측정된 것이다.** 다섯 shim 이 더 써지므로 7,045 파일이
+7,050 이 되고, 그 차이는 잰 시간의 0.1% 미만이다 — 다시 재기 전까지는 그렇게 읽어야 한다.
+
 ## 두 매니페스트가 같은 것을 말하게 하기
 
 가장 조용히 틀릴 수 있는 자리다. **Wally 는 Cargo 문법이라 맨 `1.2.3` 이 `^1.2.3` 이고,

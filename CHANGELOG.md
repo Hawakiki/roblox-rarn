@@ -30,6 +30,26 @@ rather than silently misread, and a `0.x` release may bump it.
   code — so the one finding here that could be an attack was reported loudly to a
   person and silently to the caller built to catch it.
 
+- **Two packages whose aliases differ only in case are now refused** (RN-16). The
+  uniqueness rule compared alias strings case-sensitively and the filesystem does not:
+  `EnumList.luau` and `Enumlist.luau` are one file on Windows and on a default macOS
+  volume, so one package's shim overwrote the other's. The install reported success,
+  `rarn.lock` was correct, and `rarn doctor` could not see it — all that remained was
+  `require(Packages.EnumList)` returning whichever package was written last.
+
+  Both spellings in that example are what Rarn derives on its own, so writing no
+  `aliases` entry was not a way to avoid it. Found by counting during the R3 performance
+  research: `link` reported writing 1,136 shims and 1,131 files existed.
+
+  The message names both spellings rather than the folded form, because two names that
+  are visibly different colliding reads as a bug in Rarn unless it says why. The
+  replacement it suggests is now checked against the aliases already in the section, so
+  the JSON it prints can still be pasted.
+
+  This is stricter than a case-sensitive filesystem needs, deliberately: a manifest that
+  installs on Linux CI and shadows a package on the author's Mac is worse than one that
+  is refused in both places.
+
 ### Added
 
 - Tests for `rarn cache`, which had none. It was the second command carrying its

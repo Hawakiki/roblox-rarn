@@ -670,6 +670,29 @@ other project sharing the cache. A `--linked` opt-in may come later.
 - The Luau shim filename (the alias) is derived by PascalCasing the name part:
   `@evaera/promise` becomes `Promise.luau`. Collisions are a hard error, overridable via the
   manifest's `aliases` map.
+- **Two aliases collide when they name one file, which means the comparison is
+  case-insensitive.** It used to be case-sensitive, and that is RN-16: `EnumList.luau` and
+  `Enumlist.luau` are one file on Windows and on a default macOS volume, so one package's
+  shim overwrote the other's while the install reported success and the lockfile stayed
+  correct. Both spellings there are what `deriveAlias` produces on its own, so declaring no
+  `aliases` entry was not a way to avoid it — of the 506 most-depended-upon packages, 5
+  pairs collide this way and `deriveAlias` alone puts 62 groups into case-insensitive
+  collision. The rule is deliberately stricter than a case-sensitive filesystem needs: a
+  manifest that installs on Linux CI and shadows a package on the author's Mac is worse
+  than one refused in both places.
+
+  Two things follow for the error itself. It has to print **both spellings**, since two
+  visibly different names colliding reads as a bug in Rarn unless the message says why.
+  And the replacement it suggests has to be checked against the aliases already in the
+  section — advice that sends the reader straight back to the same error is worse than no
+  example.
+
+  The comparison inside an `_Index` entry stays **case-sensitive**, and that is not an
+  oversight: a module folder `promise` and a dependency shim `Promise.luau` are distinct
+  on disk (one carries the extension) and distinct in the DataModel (Roblox instance names
+  are case-sensitive). Measured across 4,492 registry versions: 0 packages declare two
+  dependency aliases that differ only in case, and the 19 that alias a dependency to their
+  own module name's other casing are all legal.
 - **An alias has to be unique within one manifest section, and nowhere wider.** Root shims
   are written per section — `dependencies` into the shared realm directory,
   `serverDependencies` into the server one, `devDependencies` into dev — so two aliases

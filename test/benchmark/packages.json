@@ -172,7 +172,7 @@
   {
     "name": "finobinos/tableutil",
     "version": "3.2.2",
-    "alias": "Tableutil"
+    "alias": "FinobinosTableutil"
   },
   {
     "name": "sleitnick/component",
@@ -572,7 +572,7 @@
   {
     "name": "sleitnick/enum-list",
     "version": "2.1.0",
-    "alias": "EnumList"
+    "alias": "SleitnickEnumList"
   },
   {
     "name": "boatbomber/highlighter",
@@ -1137,7 +1137,7 @@
   {
     "name": "howmanysmall/better-signal",
     "version": "2.1.0",
-    "alias": "BetterSignal"
+    "alias": "HowmanysmallBetterSignal"
   },
   {
     "name": "jessekroeske/numberstore-shared",
@@ -2097,7 +2097,7 @@
   {
     "name": "kineticwallet/lemon-signal",
     "version": "1.10.0",
-    "alias": "LemonSignal"
+    "alias": "KineticwalletLemonSignal"
   },
   {
     "name": "mariochao/container-mechanic",
@@ -2207,7 +2207,7 @@
   {
     "name": "farukcoskn/waitfor",
     "version": "1.0.1",
-    "alias": "Waitfor"
+    "alias": "FarukcosknWaitfor"
   },
   {
     "name": "gcaptn/tailwind-colors",
