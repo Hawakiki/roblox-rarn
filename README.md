@@ -51,6 +51,7 @@ place and leave for Rojo to sort out at sync time.
 > 1.0**, which is what 1.0 will mean — a format freeze, not a feature list.
 >
 > [CHANGELOG.md](CHANGELOG.md) is what changed · [PLAN.md](PLAN.md) is where it is going ·
+> [docs/](docs/README.md) indexes everything else by the question it answers ·
 > [CLAUDE.md](CLAUDE.md) is every platform constraint the design is built around, with the
 > measurements behind each one.
 
