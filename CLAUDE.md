@@ -433,8 +433,15 @@ Nothing new is broken; the same require was already unresolvable.
 ### 2b. Install by rebuilding, then swapping
 
 Rebuild the realm directories from the lockfile every time. No incremental updates, no
-orphan tracking — a half-updated tree is far worse than a slightly slower install, and the
-copy is cheap once the cache is warm. Scope deletion strictly to Rarn's own directories.
+orphan tracking — a half-updated tree is far worse than a slightly slower install. Scope
+deletion strictly to Rarn's own directories.
+
+**The copy is not cheap, and this file used to say it was.** Measured (R3, 2026-08-23) on a
+repeat install of the 506-package graph: 6,517ms total, 95.2% of it with a filesystem call
+in flight, and half of *that* is two call types — the prune copy at 32.8% and the delete of
+the previous tree at 31.4%. The cost is per *file*, not per byte, and a scanned NTFS volume
+prices it at 0.74ms each. Rebuilding every time is still the right trade, but it is a trade,
+and the argument for it is the half-updated tree rather than the price.
 
 **Build into `.rarn-tmp/`, then rename into place.** Deleting the old tree first and writing
 over the top is identical work right up until something interrupts it, and then the
@@ -588,7 +595,15 @@ Measured against the live registry, 150 packages, best of two runs:
 Unbounded is twelve times slower than the best, which matters because resolution walks the
 graph breadth-first: one round is every package at one depth, so a project with 506 direct
 dependencies opened 506 sockets at the same instant and spent 44.8s where 8.9s was
-available. Metadata runs 32 at a time and downloads 8 — different numbers because the
+available. **This curve is a property of the network it was measured on, and the file did
+not say so.** On another uplink (R3, 2026-08-23) width 32 *stalls*: the 9th concurrent SYN
+goes unanswered and the client climbs a 1/3/7s retransmit ladder, so 32 metadata requests
+cost 7.4s where the curve above says 1.8s. The budget is machine-wide, not per-origin —
+8 connections to two hosts at once behaves exactly like 16 to one. So the ceiling is right
+and the *number* is local: anyone moving these constants has to re-measure on their own
+network, and lowering the constant is the wrong fix (10, 12 and 16 are indistinguishable;
+staggering the connection attempts by 5ms beats all of them while keeping width 32).
+Metadata runs 32 at a time and downloads 8 — different numbers because the
 bodies are different sizes, and both chosen by measuring rather than by taste.
 
 ### 5. Dedupe policy: one version per major, resolved order-independently

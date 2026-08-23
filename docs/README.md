@@ -70,6 +70,7 @@
 |---|---|
 | [r1-pnp-feasibility](research/r1-pnp-feasibility.md) | Yarn PnP 방식 리졸버가 가능한가 → **불가**. 되살아나는 조건도 적혀 있다 |
 | [r2-workspaces](research/r2-workspaces.md) | Roblox 에서 워크스페이스란 무엇인가 → **REDUCE_SCOPE**. 795줄. dedupe 경계가 DataModel 이라는 결론이 여기서 나왔다 |
+| [r3-performance](research/r3-performance.md) | `rarn install` 은 시간을 어디에 쓰는가 → **병목 둘 다 Rarn 코드가 아니다**. 841줄. 리졸버는 575패키지에 122 ms 고, warm 설치의 95.2% 는 파일시스템이다 |
 | [wally-internals](research/wally-internals.md) | Wally 를 뜯어본 것 |
 
 ## "정말 되는지 어떻게 아나"
