@@ -51,7 +51,7 @@
 
 마일스톤 기록은 **완료 시점의 사실만** 담고 그 뒤로 동결된다. 측정값이 여기 있다.
 
-- [`milestones/v1/`](milestones/v1/) — 1.0 을 향한 M1~M8. [색인](milestones/v1/README.md)
+- [`milestones/v1/`](milestones/v1/) — 1.0 을 향한 M1~M9. [색인](milestones/v1/README.md)
 - [`archived/v0.1.0-v0.1.1/`](archived/v0.1.0-v0.1.1/) — 빈 디렉터리에서 0.1.1 까지, M0~M17.
   닫힌 시대라 그대로 둔다. [색인](archived/v0.1.0-v0.1.1/README.md)
 

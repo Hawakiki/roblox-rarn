@@ -377,6 +377,69 @@ describe('mapWithConcurrency', () => {
     expect((caught as Error | undefined)?.message).toBe('boom')
     expect(started).toBeLessThan(50)
   })
+
+  /**
+   * The caller's cleanup runs in a `finally`, so returning while workers are still
+   * writing means the cleanup deletes a directory that then fills up behind it. That is
+   * not hypothetical: it is what `link` did the day its prune loop became concurrent —
+   * the staging tree survived a failed install, which is the one thing that `finally`
+   * exists to prevent.
+   */
+  test('waits for work already in flight before the failure propagates', async () => {
+    let running = 0
+    let peakAfterFailure = 0
+    let failed = false
+
+    await mapWithConcurrency(
+      Array.from({ length: 8 }, (_, i) => i),
+      4,
+      async (i) => {
+        running++
+        // The first item fails immediately; the other three in flight linger.
+        if (i === 0) {
+          failed = true
+          running--
+          throw new Error('boom')
+        }
+        await new Promise((r) => setTimeout(r, 20))
+        if (failed) peakAfterFailure = Math.max(peakAfterFailure, running)
+        running--
+        return i
+      },
+    ).catch(() => undefined)
+
+    expect(peakAfterFailure).toBeGreaterThan(0)
+    expect(running).toBe(0)
+  })
+
+  /**
+   * Callers sort their input so that a rerun reports the same item first. Concurrency
+   * would take that away if the reported failure were whichever lost the race, so it is
+   * the lowest-indexed one instead — which is well defined, since indices are handed out
+   * in order and anything before a failure either finished or failed itself.
+   */
+  test('reports the lowest-indexed failure, not the fastest', async () => {
+    let caught: unknown
+    try {
+      await mapWithConcurrency(
+        Array.from({ length: 8 }, (_, i) => i),
+        4,
+        async (i) => {
+          // 3 fails late, 1 fails early. Racing would report 3; ordering reports 1.
+          if (i === 3) throw new Error('three')
+          if (i === 1) {
+            await new Promise((r) => setTimeout(r, 30))
+            throw new Error('one')
+          }
+          return i
+        },
+      )
+    } catch (error) {
+      caught = error
+    }
+
+    expect((caught as Error | undefined)?.message).toBe('one')
+  })
 })
 
 describe('atomic writes', () => {

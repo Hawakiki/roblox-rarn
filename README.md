@@ -386,19 +386,25 @@ The method, the other set sizes, and how the set was chosen are in
 
 | | rarn | wally |
 |---|---:|---:|
-| install, warm cache | **5.6 s** — no network at all | 9.8 s — re-downloads all 575 |
-| install, cold cache | 37.3 s | 9.8 s |
-| first run on a machine | 37.3 s | 9.8 s **+ 12 s** index clone (46 MB, needs `git`) |
-| files written | **7,045** | 12,956 |
-| bytes written | **43.3 MB** | 107.9 MB |
+| install, warm cache | **4.0 s** — no network at all | 10.0 s — re-downloads all 575 |
+| install, cold cache | 38.0 s | 10.0 s |
+| first run on a machine | 38.0 s | 10.0 s **+ 12 s** index clone (46 MB, needs `git`) |
+| files written | **7,050** | 12,961 |
+| bytes written | **43.6 MB** | 107.9 MB |
 | module roots that resolve without Rojo | **548 / 556 (98.6%)** | 148 / 575 (25.7%) |
 | a package's types reachable through the link | **yes** | no — `Unknown type` at every call site |
+
+Warm is a median of five and cold is a single run — the full table carries the spread and
+the sample count for every cell, and the raw data is committed beside it. **Do not compare
+a cold number against one measured on another day**: over half of a cold install is time
+spent waiting on the registry, so the difference is usually the network rather than the
+tool.
 
 Three things that table is not hiding:
 
 - **Wally wins the cold install.** It clones the registry index, so resolving costs it no
-  network; Rarn asks over HTTP and spends 8.9 s of those 37.3 s doing it. That is the
-  price of not needing `git` and not keeping a 46 MB clone.
+  network; Rarn asks over HTTP. That is the price of not needing `git` and not keeping a
+  46 MB clone.
 - **Wally has no package cache.** Only the index is cached, so every install downloads
   every archive again. That is why its column has one number and not two, and why CI is
   where the difference shows.

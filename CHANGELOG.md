@@ -52,6 +52,31 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ### Changed
 
+- **The per-package copy out of the cache now runs eight at a time.** It was one package
+  after another, and the cost of that copy is per *file* rather than per byte — on Windows
+  each one pays an open, a write, a close and an on-access scan, none of which the process
+  can overlap with anything while it waits.
+
+  Measured on the shipped binary, 506 packages, warm cache and lockfile: 5,133 → 4,024ms
+  (21.6%), arms run on/off/on. In TypeScript, 4,297 → 2,848ms (33.7%). At 49 and 52
+  packages it is 30.7% and 30.6%; at 6 packages the arms overlap, so nothing is claimed
+  there.
+
+  Combined with the deferred delete below, a repeat install of that graph went from
+  6,352 to 4,024ms with the binary — 36.6%. The two savings were measured as a full 2×2
+  and are independent to within 52ms, so making the build faster did not stop the delete
+  hiding behind it.
+
+  The install output is byte-identical, and results are consumed in input order rather
+  than completion order, so the lockfile and every shim are unchanged.
+
+- **`mapWithConcurrency` now waits for work already in flight before a failure
+  propagates, and reports the lowest-indexed failure rather than the fastest.** The first
+  half is a defect the concurrent copy would otherwise have introduced: a caller's
+  cleanup runs in a `finally`, and returning while workers were still writing left `link`
+  with a staging directory it had just deleted. The second half is what keeps a sorted
+  input meaningful — the same package is named first on every run.
+
 - **A repeat install is about 20% faster, because deleting the previous tree moved off
   the critical path.** `swapIn` used to delete the tree it had just retired, as the last
   thing in the install — 2,049ms of a 6,517ms repeat install of a 506-package graph,

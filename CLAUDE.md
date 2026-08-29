@@ -443,6 +443,19 @@ the previous tree at 31.4%. The cost is per *file*, not per byte, and a scanned 
 prices it at 0.74ms each. Rebuilding every time is still the right trade, but it is a trade,
 and the argument for it is the half-updated tree rather than the price.
 
+**So the copy runs `PRUNE_CONCURRENCY` packages at a time.** Each package writes into its
+own `_Index/{scope}_{name}@{version}` directory, and two packages resolving to one version
+share that entry *by key*, so no two workers ever target the same path — that is what makes
+it safe against constraint 1 rather than merely fast. Measured: with the shipped binary,
+5,133 → 4,024ms (21.6%, on/off/on); in TypeScript 4,297 → 2,848ms (33.7%). The same
+binary-versus-TypeScript gap as the deferred delete, and still unexplained.
+
+**The two savings are independent, and that was measured rather than assumed.** Full 2×2 on
+the 506 graph, in TypeScript: neither 6,374ms, delete-only 4,297, copy-only 4,873, both
+2,847. The deferred delete is worth 2,077ms alone and 2,025ms alongside the concurrent copy,
+so making the build faster did not stop it hiding — which is the thing that would have made
+the retired directory a cost paid for nothing.
+
 **Build into `.rarn-tmp/`, then rename into place.** Deleting the old tree first and writing
 over the top is identical work right up until something interrupts it, and then the
 difference is everything the user had: with staging they keep the previous install, without
@@ -493,6 +506,13 @@ Three properties that are easy to lose when touching `linker/swap.ts`:
   Studio or a Rojo serve will refuse a rename, and the reverse rename can fail for the same
   reason. Reporting `RN0420` with the directory name is the difference between a bad moment
   and lost work.
+- **`mapWithConcurrency` waits for in-flight work before a failure propagates.** Not
+  politeness: the caller's cleanup runs in a `finally`, so returning early would delete a
+  directory that then fills up behind it. `link` left its staging tree behind exactly that
+  way the day the prune loop became concurrent, and the existing atomicity test caught it.
+  The failure it reports is the **lowest-indexed** one rather than the fastest, which is
+  well defined — indices are handed out in order, so anything before a failure either
+  finished or failed itself — and it is what lets a caller keep the property it sorted for.
 
 It is **not** atomic across the three realms, and nothing can make it so. The claim is only
 that the window is two renames on one filesystem with all the slow work already done.
@@ -621,13 +641,34 @@ Unbounded is twelve times slower than the best, which matters because resolution
 graph breadth-first: one round is every package at one depth, so a project with 506 direct
 dependencies opened 506 sockets at the same instant and spent 44.8s where 8.9s was
 available. **This curve is a property of the network it was measured on, and the file did
-not say so.** On another uplink (R3, 2026-08-23) width 32 *stalls*: the 9th concurrent SYN
-goes unanswered and the client climbs a 1/3/7s retransmit ladder, so 32 metadata requests
-cost 7.4s where the curve above says 1.8s. The budget is machine-wide, not per-origin —
-8 connections to two hosts at once behaves exactly like 16 to one. So the ceiling is right
-and the *number* is local: anyone moving these constants has to re-measure on their own
-network, and lowering the constant is the wrong fix (10, 12 and 16 are indistinguishable;
-staggering the connection attempts by 5ms beats all of them while keeping width 32).
+not say so.** On one uplink (R3, 2026-08-23) width 32 *stalls*: the 9th concurrent SYN goes
+unanswered and the client climbs a 1/3/7s retransmit ladder. It is the path rather than the
+machine — the same PC over a phone's mobile data has no ceiling at all. Two networks,
+`test/benchmark/syn-sweep.ts`, same machine and same hour:
+
+| width | home broadband | phone (mobile data) |
+|---:|---:|---:|
+| 8 | 34ms, 8/8 first-try | 69ms, 8/8 first-try |
+| 16 | 1,042ms, **9**/16 | 76ms, 16/16 |
+| 32 | 7,059ms, **10**/32 | 73ms, 32/32 |
+| 48 | 21,054ms, **12**/48 | 78ms, 48/48 |
+| 48 with a 5ms stagger | **279ms** | **319ms** |
+
+**The last row is why no fix ships from one measurement.** Staggering is a 75x win on the
+limited network and a 4x *loss* on the clean one, where the deliberate delay is the whole
+cost. Lowering `METADATA_CONCURRENCY` is wrong in both directions too: 10, 12 and 16 are
+indistinguishable on the limited path and all of them merely lose width on the clean one.
+
+Note also what the first-try column does: it saturates around 9–12 no matter how wide the
+wave gets, which is a budget on new connections rather than a limit on parallelism, and it
+is shared across destinations (8 connections to two hosts behaves like 16 to one). A home
+router's connection tracking fits that shape; so does an ISP appliance. Nothing in Rarn
+does.
+
+So the ceiling is right and the *number* is local. Anyone moving these constants has to
+run the sweep on their own network first, and anything conditional has to stay conditional
+— the only shape left standing is starting narrow and widening once connections are
+established, which costs nothing where there is no limiter. **That has not been measured.**
 Metadata runs 32 at a time and downloads 8 — different numbers because the
 bodies are different sizes, and both chosen by measuring rather than by taste.
 
@@ -898,8 +939,16 @@ is one that eventually contradicts it.
   state. Reached for once, over the archived index summarising M17 as shipping RN-6 when
   the fix commit is after the tag.
 - `docs/research/` — investigations whose conclusion is fixed (R1 PnP, R2 workspaces,
-  the Wally internals read-through). Never edited after their conclusion; research that
-  supersedes one gets a new file, it does not rewrite the old one.
+  R3 performance, the Wally internals read-through). Never edited after their conclusion;
+  research that supersedes one gets a new file, it does not rewrite the old one.
+
+  **A `C<n>` belongs to one report, so outside it write `R3-C2`.** R3 numbered its
+  optimization candidates C1…C12, which reads fine inside a document that is entirely
+  about R3 and not at all outside one — R4 will number its own candidates from C1 and then
+  `C2` means two things. This is the collision the milestone numbers already solved by
+  qualifying with a path, and the same answer applies: name what the number belongs to.
+  Unlike `RN` and `RN####`, these are **not** stable identifiers — a candidate that gets
+  rejected stops existing, and nothing outside its report should have to know it did.
 - `docs/known-issues.md` — the living record of **reproduced** defects, RN-numbered.
   When one is fixed, its detail collapses to a one-line stub under "해결됨" and the
   RN number is never reused — the same rule `codes.ts` applies to error codes.
@@ -945,8 +994,38 @@ is one that eventually contradicts it.
   `feat/*` → `develop`. RN-1 qualified, and the choice made then — withdrawing the
   release rather than patching it — remains available and is often better.
 
-  Merge into `develop` with `--no-ff`. **Never commit directly to `master`**; commits
-  appear there only as merges from `release/*` or `hotfix/*`.
+  **Squash-merge into `develop`.** One branch becomes one commit there, so `develop` reads
+  as a list of finished work rather than of everything it took to finish it. **Never commit
+  directly to `master`**; commits appear there only as merges from `release/*` or
+  `hotfix/*`, and those stay `--no-ff` — a release is not one change and flattening it
+  would throw away which changes shipped together.
+
+  **A branch has a lifetime, and the rules above only described its birth.** Nothing said
+  when one ends, so nothing ever did: **79 branches accumulated** — 41 local and 38 remote,
+  every one of them already merged — before anyone noticed, and by then the list was long
+  enough that a branch that mattered would have been invisible in it.
+
+  | | delete when |
+  |---|---|
+  | `feat/*` | its work reached `develop` and nothing more is planned on it |
+  | `release/*` | the version is tagged and merged into **both** `master` and `develop` |
+  | `hotfix/*` | merged into **both**, same as a release |
+  | `master`, `develop` | never |
+
+  **Not every `feat/*` is finished when it merges.** A long-running effort, work split
+  across several merges, or something not ready for `develop` all keep their branch. The
+  rule is about branches with nothing left to do, not about branches in general.
+
+  **Deleting a merged branch deletes a name, not history** — the commits are in `develop`.
+  Verify that rather than assuming it: `git merge-base --is-ancestor <branch> origin/develop`
+  answers exactly the question, and it is the whole safety check. Local and remote are
+  separate states and both need asking. A squash-merged branch will *not* be an ancestor —
+  compare its tree against the squash commit instead (`git diff <branch> <commit>` empty),
+  which is the same guarantee reached the other way.
+
+  **A tag is not what keeps a commit alive.** `v0.2.0` points at the merge commit on
+  `master`, not at the tip of `release/0.2.0`; what made that tip safe to delete was being
+  an ancestor of `origin/master`. Check reachability, not the tag.
 
   Two things the guard cannot check, so they are on us: that a branch was cut from the
   right place, and that a stacked PR's parent merged first. **Both have gone wrong

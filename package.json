@@ -11,9 +11,9 @@
   "scripts": {
     "rarn": "bun run src/cli.ts",
     "typecheck": "tsc --noEmit",
-    "format": "biome check src tests",
-    "format:fix": "biome check --write src tests",
-    "lint": "eslint src tests --max-warnings=0",
+    "format": "biome check src tests test/benchmark",
+    "format:fix": "biome check --write src tests test/benchmark",
+    "lint": "eslint src tests test/benchmark --max-warnings=0",
     "lint:fix": "eslint src tests --fix",
     "check": "bun run format && bun run lint && bun run typecheck && bun test",
     "lint-staged": "lint-staged",

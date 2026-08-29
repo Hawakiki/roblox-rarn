@@ -6,7 +6,11 @@ import { pruneInto } from '../project/prune.ts'
 import type { Placement, Resolution, ResolvedPackage } from '../resolver/types.ts'
 import { SECTION_PLACEMENT } from '../resolver/types.ts'
 import { Code } from '../util/codes.ts'
-import { FILE_READ_CONCURRENCY, mapWithConcurrency } from '../util/concurrency.ts'
+import {
+  FILE_READ_CONCURRENCY,
+  PRUNE_CONCURRENCY,
+  mapWithConcurrency,
+} from '../util/concurrency.ts'
 import { RarnError } from '../util/errors.ts'
 import { deriveAlias, parsePackageName, toIndexDir, toWallyName } from '../util/package-name.ts'
 import {
@@ -121,7 +125,16 @@ async function build(
   // same package first.
   const packages = [...resolution.packages.entries()].sort(([a], [b]) => a.localeCompare(b))
 
-  for (const [key, pkg] of packages) {
+  // Copied a few at a time rather than one after another. Each package writes into its
+  // own `_Index/{scope}_{name}@{version}` directory and two packages resolving to one
+  // version share that entry by key, so no two workers ever target the same path —
+  // which is what makes this safe against constraint 1 rather than merely fast.
+  //
+  // The results are consumed in input order, not completion order, so the lockfile, the
+  // shim contents and the reported counts are all identical to what the serial loop
+  // produced — and `mapWithConcurrency` reports the lowest-indexed failure rather than
+  // the fastest, so the sort above still buys what it was written to buy.
+  const pruned = await mapWithConcurrency(packages, PRUNE_CONCURRENCY, async ([key, pkg]) => {
     const source = sources.get(key)
     if (source === undefined) {
       throw new RarnError({
@@ -131,11 +144,17 @@ async function build(
       })
     }
 
-    used.add(pkg.placement)
     const dir = entryDir(layout, pkg.placement, indexDirNameOf(pkg))
     await mkdir(dir, { recursive: true })
 
-    const result = await pruneInto(source, join(dir, moduleNameOf(pkg)), key)
+    return await pruneInto(source, join(dir, moduleNameOf(pkg)), key)
+  })
+
+  for (const [index, [key, pkg]] of packages.entries()) {
+    const result = pruned[index]
+    if (result === undefined) continue
+
+    used.add(pkg.placement)
     archiveFiles += result.archiveFiles
     installedFiles += result.installedFiles
     moduleRoots.set(key, result.root.path)
