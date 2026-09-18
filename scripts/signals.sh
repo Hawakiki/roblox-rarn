@@ -16,6 +16,10 @@
 set -uo pipefail
 
 REPO="${RARN_REPO:-Hawakiki/roblox-rarn}"
+OWNER="${REPO%%/*}"
+# README 가 "쓰고 있으면 여기 적어 달라" 고 가리키는 이슈. 이 스크립트가 세는 것 중
+# 유일하게 사람이 직접 남기는 신호다.
+GUESTBOOK="${RARN_GUESTBOOK:-47}"
 
 if ! command -v gh > /dev/null 2>&1; then
   echo "gh 가 없어 신호를 읽지 못한다. https://cli.github.com" >&2
@@ -34,9 +38,18 @@ echo
 pins=$(count "roblox-rarn filename:rokit.toml")
 echo "  rokit 핀        ${pins}          <- 직접 답. 3~5 필요 (공개 저장소만 세므로 과소집계)"
 
+# 방명록에 남이 남긴 댓글. 핀과 같은 무게의 직접 답이고, 비공개 저장소도 잡힌다.
+guests=$(gh api -X GET "repos/$REPO/issues/$GUESTBOOK/comments" -f per_page=100 \
+  -q "[.[] | select(.user.login != \"$OWNER\")] | length" 2>/dev/null || echo '?')
+echo "  방명록 댓글     ${guests}          <- 직접 답. #${GUESTBOOK} 에 남이 적은 것만 센다"
+
 # 넣었고, 돌렸고, 뭔가 겪었다는 것. 핀 하나보다 무겁다.
-issues=$(repo '.open_issues_count')
-echo "  이슈·PR         ${issues}          <- 제일 강한 신호. 돌려봤다는 뜻이다"
+#
+# 우리가 연 것은 뺀다. `open_issues_count` 는 작성자를 가리지 않아서, 방명록 이슈 하나가
+# 열려 있는 것만으로 이 줄이 1 이 되고 게이트가 "신호가 있다" 고 말했다 — 신호가 우리
+# 자신이면 0 보다 나쁘다. 닫힌 것도 센다: 남이 열었다 닫힌 이슈는 여전히 돌려봤다는 뜻이다.
+issues=$(gh api -X GET search/issues -f q="repo:$REPO -author:$OWNER" -q '.total_count' 2>/dev/null || echo '?')
+echo "  이슈·PR         ${issues}          <- 제일 강한 신호. 돌려봤다는 뜻이다 (우리 것 제외)"
 
 # 고치거나 벤더링할 의도. 별보다 강하다.
 forks=$(repo '.forks_count')
@@ -58,7 +71,7 @@ downloads=$(gh api "repos/$REPO/releases" -q '[.[].assets[].download_count] | ad
 echo "    릴리스 다운로드 ${downloads}       rokit·CI·구경꾼이 섞여 구분되지 않는다"
 
 echo
-if [ "$pins" = "0" ] && [ "$issues" = "0" ] && [ "$forks" = "0" ]; then
+if [ "$pins" = "0" ] && [ "$guests" = "0" ] && [ "$issues" = "0" ] && [ "$forks" = "0" ]; then
   echo "  게이트: 닫힘. 아직 우리뿐이다."
 else
   echo "  게이트: 신호가 있다. PLAN.md §3 을 읽고 판단할 것."
