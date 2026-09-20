@@ -197,12 +197,13 @@ one is a stand-in by definition, so the guard never touches the suite.
 `scripts/smoke.sh <binary>` runs anywhere, not just in CI.
 
 `scripts/signals.sh` answers a different kind of question — whether anyone outside this
-repository is using Rarn, which is what the 1.0 gate waits on. Four numbers, ranked by
+repository is using Rarn, which is what the 1.0 gate waits on. Five numbers, ranked by
 what each actually measures, and two more marked as noise so they stop being quoted:
 clone counts are mostly CI cloning per job, and release downloads mix rokit, CI and
 curiosity into one counter. The ranking and the caveats live in PLAN.md §3; the script
 exists so the answer is a command rather than something to re-derive each time it comes
-up. It needs `gh` and skips loudly without it.
+up. It needs `gh` and skips loudly without it. **It excludes the owner** — the first
+version read `open_issues_count`, and the guestbook issue alone made it report a signal.
 
 ## Hard constraints — read before designing anything
 
