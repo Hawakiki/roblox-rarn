@@ -1,16 +1,15 @@
 import { resolve as resolvePath } from 'node:path'
 import chalk from 'chalk'
-import semver from 'semver'
 import { readManifestRaw } from '../../manifest/read.ts'
 import { DEPENDENCY_SECTIONS, type DependencySection } from '../../manifest/types.ts'
 import { validateManifest } from '../../manifest/validate.ts'
 import { withDependency, writeManifest } from '../../manifest/write.ts'
 import { createRegistryClient } from '../../registry/client.ts'
 import type { RegistryClient } from '../../registry/types.ts'
+import { type RangeUpgrade, upgradeRanges } from '../../resolver/upgrade.ts'
 import { Code } from '../../util/codes.ts'
 import { RarnError } from '../../util/errors.ts'
 import { parsePackageName, toWallyName } from '../../util/package-name.ts'
-import { normalizeRange } from '../../util/version-range.ts'
 import { install } from './install.ts'
 
 export interface UpOptions {
@@ -65,17 +64,50 @@ export async function up(
     (entry) => wanted.size === 0 || wanted.has(toWallyName(parsePackageName(entry.name))),
   )
 
-  const changes: Change[] = []
-  for (const entry of targets) {
-    const next = await nextRange(registry, entry, options.latest === true)
-    if (next === undefined || next === entry.range) continue
+  // One package in two sections is installed once, so its ranges are raised together.
+  const upgrades = new Map<Declared, RangeUpgrade>()
+  for (const entries of byPackage(targets)) {
+    const metadata = await registry.getMetadata(parsePackageName(entries[0].name))
+    const results = upgradeRanges(
+      entries.map((entry) => entry.range),
+      metadata.versions.map((v) => v.version),
+      options.latest === true,
+    )
+    for (const [index, entry] of entries.entries()) {
+      const result = results[index]
+      if (result !== undefined) upgrades.set(entry, result)
+    }
+  }
 
-    manifest = withDependency(manifest, entry.section, entry.name, next)
-    changes.push({ name: entry.name, section: entry.section, before: entry.range, after: next })
+  const changes: Change[] = []
+  const kept: string[] = []
+  for (const entry of targets) {
+    const upgrade = upgrades.get(entry)
+    if (upgrade === undefined) continue
+
+    // Said out loud rather than skipped: the range is not rewritten, so the lockfile
+    // stays fresh and, unless something else moves, the install below reuses it.
+    if (upgrade.kind === 'kept') {
+      kept.push(
+        `${chalk.yellow('kept')} ${entry.name}  ${entry.range}  ${chalk.dim(`allows ${upgrade.newest}, but no exact rewrite raising only its floor was found. Left as written, so an older version may stay installed; edit the range to move it.`)}\n`,
+      )
+    }
+    if (upgrade.kind !== 'raised') continue
+
+    manifest = withDependency(manifest, entry.section, entry.name, upgrade.range)
+    changes.push({
+      name: entry.name,
+      section: entry.section,
+      before: entry.range,
+      after: upgrade.range,
+    })
   }
 
   if (changes.length === 0) {
-    process.stdout.write(`${chalk.dim('everything is already at the newest allowed version')}\n`)
+    for (const line of kept) process.stdout.write(line)
+    if (kept.length === 0) {
+      process.stdout.write(`${chalk.dim('everything is already at the newest allowed version')}\n`)
+    }
     await install({ cwd: projectDir }, registry)
     return
   }
@@ -89,6 +121,7 @@ export async function up(
       `${chalk.green('up')} ${change.name.padEnd(width)}  ${chalk.dim(change.before)} -> ${change.after}\n`,
     )
   }
+  for (const line of kept) process.stdout.write(line)
 
   await install({ cwd: projectDir }, registry)
 }
@@ -109,34 +142,13 @@ function collectDeclared(manifest: Awaited<ReturnType<typeof readManifestRaw>>):
   return out
 }
 
-/**
- * The range this dependency should carry after upgrading, or undefined to leave it.
- *
- * Without `--latest` the newest version *the declared range already allows* is
- * chosen, and the range is rewritten to a caret on it. That looks like a no-op, and
- * usually is — the point is that `^1.2.0` becomes `^1.9.0`, which records that the
- * project has moved on and stops a later install from quietly resolving lower.
- */
-async function nextRange(
-  registry: RegistryClient,
-  entry: Declared,
-  latest: boolean,
-): Promise<string | undefined> {
-  const metadata = await registry.getMetadata(parsePackageName(entry.name))
-  const stable = metadata.versions
-    .map((v) => v.version)
-    .filter((v) => semver.prerelease(v) === null)
-
-  const candidates = latest
-    ? stable
-    : stable.filter((v) => semver.satisfies(v, normalizeRange(entry.range)))
-
-  const best = candidates[0]
-  if (best === undefined) return undefined
-
-  const next = `^${best}`
-  // Leave an exact pin alone unless --latest: someone who wrote `1.2.3` chose to
-  // freeze it, and silently widening that to a caret would undo the decision.
-  if (!latest && semver.valid(entry.range) !== null) return undefined
-  return next
+function byPackage(declared: readonly Declared[]): [Declared, ...Declared[]][] {
+  const groups = new Map<string, [Declared, ...Declared[]]>()
+  for (const entry of declared) {
+    const key = toWallyName(parsePackageName(entry.name))
+    const group = groups.get(key)
+    if (group === undefined) groups.set(key, [entry])
+    else group.push(entry)
+  }
+  return [...groups.values()]
 }

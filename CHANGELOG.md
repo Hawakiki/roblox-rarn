@@ -166,6 +166,21 @@ rather than silently misread, and a `0.x` release may bump it.
   package's versions failed. Such versions are now left out and the rest install. No range
   could ever have selected one, so no install changes.
 
+- **`rarn up` no longer widens the ranges it raises** (RN-25). Without `--latest` it
+  promises the newest version the declared range already allows, but it wrote every range
+  back as a caret: `~1.2.0` came out as `^1.2.5`, `>=1.0.0 <1.5.0` as `^1.4.2`, and a
+  Cargo-style exact pin `=1.2.3` (which `rarn import` writes) as `^1.2.3`. The reinstall
+  that followed resolved the rewritten range, installing `1.3.0`, `1.5.0` and `1.2.4` past
+  the bounds the person wrote, and reported success. Now only the floor moves, in the
+  notation it was written in: `~1.2.0` becomes `~1.2.5`, `>=1.0.0 <1.5.0` becomes
+  `>=1.4.2 <1.5.0`, and a pin stays pinned. A range no single operator can express, such
+  as `^0` at `0.5.2`, is written out as `>=0.5.2 <1`.
+
+  A package declared in more than one section is raised as one package, to the version an
+  install gives all of its ranges, and `rarn outdated` reports that same version as
+  `wanted`. `--latest` still crosses the declared bound but keeps a `^`, a `~` or an exact
+  pin, as `yarn up` does; any other range becomes the caret `rarn add` writes.
+
 ### Changed
 
 - **The per-package copy out of the cache now runs eight at a time.** It was one package

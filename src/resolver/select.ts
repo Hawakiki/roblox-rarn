@@ -30,7 +30,7 @@ export interface SelectionResult {
  * singleton hazard and are never produced deliberately.
  */
 export function selectVersions(
-  available: readonly PackageVersion[],
+  available: readonly Pick<PackageVersion, 'version'>[],
   constraints: readonly Constraint[],
   forced?: string,
 ): SelectionResult {
@@ -75,7 +75,7 @@ const OPTS = { includePrerelease: true } as const
  * distinguishing them, so a range that names a prerelease has to keep working.
  */
 function eligibleVersions(
-  available: readonly PackageVersion[],
+  available: readonly Pick<PackageVersion, 'version'>[],
   constraints: readonly Constraint[],
 ): string[] {
   const wantsPrerelease = constraints.some((c) => rangeMentionsPrerelease(c.range))
@@ -85,7 +85,7 @@ function eligibleVersions(
   return versions.sort((a, b) => semver.rcompare(a, b))
 }
 
-function rangeMentionsPrerelease(range: string): boolean {
+export function rangeMentionsPrerelease(range: string): boolean {
   return /\d+\.\d+\.\d+-/.test(range)
 }
 
