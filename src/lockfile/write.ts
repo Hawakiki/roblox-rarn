@@ -1,7 +1,7 @@
-import { writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { DEPENDENCY_SECTIONS, type NormalizedManifest } from '../manifest/types.ts'
 import type { Resolution } from '../resolver/types.ts'
+import { writeFileAtomic } from '../util/atomic-write.ts'
 import { Code } from '../util/codes.ts'
 import { RarnError } from '../util/errors.ts'
 import { byCodeUnit } from '../util/order.ts'
@@ -109,13 +109,14 @@ export function serializeLockfile(lockfile: Lockfile): string {
 export async function writeLockfile(dir: string, lockfile: Lockfile): Promise<void> {
   const path = join(resolve(dir), LOCKFILE_NAME)
   try {
-    await writeFile(path, serializeLockfile(lockfile), 'utf8')
+    await writeFileAtomic(path, serializeLockfile(lockfile))
   } catch (cause) {
     throw new RarnError({
       code: Code.LockfileInvalid,
       what: `Could not write ${LOCKFILE_NAME}.`,
       where: path,
-      how: 'Check that the file is not read-only and the directory is writable.',
+      detail: `  ${LOCKFILE_NAME} was left as it was.`,
+      how: 'Check that the file is not read-only and the directory is writable, and close anything holding the file open.',
       cause,
     })
   }

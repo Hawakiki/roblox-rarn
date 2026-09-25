@@ -5,6 +5,7 @@ import { RETIRED_PREFIX, STAGING_DIR } from '../linker/swap.ts'
 import type { NormalizedManifest } from '../manifest/types.ts'
 import { realmDirs } from '../manifest/types.ts'
 import { INDEX_DIR_NAME } from '../project/place.ts'
+import { ATOMIC_TEMP_SUFFIX } from '../util/atomic-write.ts'
 import { Code } from '../util/codes.ts'
 import { RarnError } from '../util/errors.ts'
 import { listFiles } from '../util/fs.ts'
@@ -203,6 +204,10 @@ function alwaysExcluded(manifest: NormalizedManifest): string[] {
     // rarity worth catching by shape to a certainty worth naming.
     `${STAGING_DIR}/**`,
     `${RETIRED_PREFIX}*/**`,
+    // A rarn.json or rarn.lock write that was killed before its rename. At any depth,
+    // because a symlinked manifest is written beside the file the link points at.
+    `*${ATOMIC_TEMP_SUFFIX}`,
+    `**/*${ATOMIC_TEMP_SUFFIX}`,
   ]
 }
 

@@ -1,11 +1,17 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import * as fsp from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { normalizeManifest, readManifest, suggestPackageName } from '../src/manifest/read.ts'
 import type { Manifest } from '../src/manifest/types.ts'
 import { validateManifest } from '../src/manifest/validate.ts'
-import { serializeManifest, withDependency, withoutDependency } from '../src/manifest/write.ts'
+import {
+  serializeManifest,
+  withDependency,
+  withoutDependency,
+  writeManifest,
+} from '../src/manifest/write.ts'
 import { Code } from '../src/util/codes.ts'
 import { RarnError } from '../src/util/errors.ts'
 
@@ -471,5 +477,45 @@ describe('readManifest', () => {
     await writeFile(path, serializeManifest(original))
     await readManifest(dir)
     expect(await readFile(path, 'utf8')).toBe(serializeManifest(original))
+  })
+})
+
+describe('writeManifest', () => {
+  let dir: string
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'rarn-test-'))
+  })
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  // What a full disk does to a write: some bytes land, then ENOSPC. Written in place,
+  // those bytes are the user's rarn.json by the time the error arrives — the file they
+  // maintain by hand, cut off mid-object.
+  test('a write that fails partway leaves the previous rarn.json whole', async () => {
+    const path = join(dir, 'rarn.json')
+    const original = serializeManifest(minimal)
+    await writeFile(path, original)
+
+    const real = fsp.writeFile
+    const full = spyOn(fsp, 'writeFile').mockImplementation(
+      async (...[target, data]: Parameters<typeof fsp.writeFile>) => {
+        await real(target, (data as string).slice(0, 16), 'utf8')
+        throw Object.assign(new Error('ENOSPC: no space left on device, write'), {
+          code: 'ENOSPC',
+        })
+      },
+    )
+    try {
+      const next = withDependency(minimal, 'dependencies', '@evaera/promise', '^4.0.0')
+      await expectCodeAsync(() => writeManifest(dir, next), Code.ManifestUnreadable)
+      expect(full).toHaveBeenCalled()
+    } finally {
+      full.mockRestore()
+    }
+
+    expect(await readFile(path, 'utf8')).toBe(original)
+    expect(await readdir(dir)).toEqual(['rarn.json'])
   })
 })

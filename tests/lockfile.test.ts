@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import * as fsp from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { checkFreshness } from '../src/lockfile/freshness.ts'
@@ -450,5 +451,33 @@ describe('file output', () => {
     const text = await readFile(join(dir, 'rarn.lock'), 'utf8')
     expect(text).toContain('\n  "lockfileVersion": 1')
     expect(text.split('\n').length).toBeGreaterThan(5)
+  })
+
+  // A full disk mid-write. The lockfile is regenerable, but a torn one does not
+  // regenerate itself: every install stops on a parse error until someone deletes it.
+  test('a write that fails partway leaves the previous lockfile whole', async () => {
+    await writeLockfile(dir, build({ 'a/one': {} }, { dependencies: { '@a/one': '^1.0.0' } }))
+    const original = await readFile(join(dir, 'rarn.lock'), 'utf8')
+
+    const real = fsp.writeFile
+    const full = spyOn(fsp, 'writeFile').mockImplementation(
+      async (...[target, data]: Parameters<typeof fsp.writeFile>) => {
+        await real(target, (data as string).slice(0, 16), 'utf8')
+        throw Object.assign(new Error('ENOSPC: no space left on device, write'), {
+          code: 'ENOSPC',
+        })
+      },
+    )
+    try {
+      const next = build({ 'a/one': {}, 'a/two': {} }, { dependencies: { '@a/one': '^1.0.0' } })
+      const error = await writeLockfile(dir, next).catch((e: unknown) => e)
+      expect((error as RarnError).code).toBe(Code.LockfileInvalid)
+      expect(full).toHaveBeenCalled()
+    } finally {
+      full.mockRestore()
+    }
+
+    expect(await readFile(join(dir, 'rarn.lock'), 'utf8')).toBe(original)
+    expect(await readdir(dir)).toEqual(['rarn.lock'])
   })
 })

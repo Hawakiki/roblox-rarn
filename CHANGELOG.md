@@ -62,6 +62,19 @@ rather than silently misread, and a `0.x` release may bump it.
   in `_`/`-`, or when one package is declared with two differently spelled ranges. A CI
   job that checks for a clean tree after installing will see that diff one time.
 
+- **`rarn.json` and `rarn.lock` are no longer left cut off when a write is interrupted**
+  (RN-18). Both were rewritten in place, and a write in place empties the file before the
+  first byte lands, so Ctrl+C or a full disk at the wrong moment left the hand-maintained
+  manifest truncated mid-object. Each file is now written beside itself and renamed into
+  place: it is either entirely the old content or entirely the new. A symlinked file is
+  still followed, a read-only one is still refused, and permission bits are kept.
+
+  **On Windows, a program holding either file open now delays the write, and one holding
+  it for longer than a second fails it** with `RN0011` or `RN0500`, leaving the file as it
+  was. Windows refuses to replace a file that anything has open, even only for reading;
+  the in-place write did not have that limit. An interrupted write can leave a
+  `.rarn.json.<token>.rarn-tmp` beside the file, and `rarn publish` never includes one.
+
 ### Changed
 
 - **The per-package copy out of the cache now runs eight at a time.** It was one package
