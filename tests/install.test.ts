@@ -198,6 +198,31 @@ describe('the install pipeline', () => {
   })
 
   /**
+   * Lockfiles written before the order was fixed hold the same facts in another order.
+   * Freshness compares facts, so such a file is reused offline and `--frozen-lockfile`
+   * accepts it; the rewrite at the end of that install is the only thing that changes.
+   * A freshness check that ever compared text would fail every CI run on upgrade.
+   */
+  test('a lockfile in another key order is fresh, and is rewritten in code-unit order', async () => {
+    await manifest({ dependencies: { '@a/one': '^1.0.0', '@a/two': '^2.0.0' } })
+    await install()
+    const written = await readFile(join(dir, 'rarn.lock'), 'utf8')
+
+    const lock = JSON.parse(written) as { root: { dependencies: Record<string, string> } }
+    lock.root.dependencies = Object.fromEntries(Object.entries(lock.root.dependencies).reverse())
+    const reordered = `${JSON.stringify(lock, null, 2)}\n`
+    expect(reordered).not.toBe(written)
+    await writeFile(join(dir, 'rarn.lock'), reordered)
+
+    const registry = registryOf(SPEC)
+    const outcome = await install({ registry, frozenLockfile: true })
+
+    expect(outcome.fromLockfile).toBe(true)
+    expect(registry.metadataCalls).toBe(0)
+    expect(await readFile(join(dir, 'rarn.lock'), 'utf8')).toBe(written)
+  })
+
+  /**
    * `--production` drops devDependencies, so its graph no longer describes the
    * manifest. Writing it back would leave a lockfile that a later plain install
    * would happily reuse, quietly missing the dev packages.

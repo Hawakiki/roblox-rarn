@@ -4,6 +4,7 @@ import { createRegistryClient } from '../../registry/client.ts'
 import type { PackageVersion, RegistryClient } from '../../registry/types.ts'
 import { Code } from '../../util/codes.ts'
 import { RarnError } from '../../util/errors.ts'
+import { byCodeUnit } from '../../util/order.ts'
 import { parsePackageName, toWallyName } from '../../util/package-name.ts'
 import { writeJson } from '../project.ts'
 
@@ -73,7 +74,7 @@ export async function info(
     lines.push(`    ${chalk.dim('none')}`)
   } else {
     const width = Math.max(...deps.map(([alias]) => alias.length))
-    for (const [alias, req] of deps.sort(([a], [b]) => a.localeCompare(b))) {
+    for (const [alias, req] of deps.sort(([a], [b]) => byCodeUnit(a, b))) {
       lines.push(`    ${alias.padEnd(width)}  @${toWallyName(req.name)} ${chalk.dim(req.range)}`)
     }
   }

@@ -4,6 +4,7 @@ import { DEPENDENCY_SECTIONS } from '../../manifest/types.ts'
 import { createRegistryClient } from '../../registry/client.ts'
 import type { RegistryClient } from '../../registry/types.ts'
 import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '../../util/concurrency.ts'
+import { byCodeUnit } from '../../util/order.ts'
 import { parsePackageName, toWallyName } from '../../util/package-name.ts'
 import { normalizeRange } from '../../util/version-range.ts'
 import { loadInstalled, writeJson } from '../project.ts'
@@ -77,7 +78,7 @@ export async function outdated(
     })
   ).filter((row): row is Row => row !== undefined)
 
-  rows.sort((a, b) => a.name.localeCompare(b.name))
+  rows.sort((a, b) => byCodeUnit(a.name, b.name))
 
   if (options.json === true) {
     writeJson(rows)

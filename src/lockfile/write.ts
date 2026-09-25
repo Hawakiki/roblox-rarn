@@ -4,6 +4,7 @@ import { DEPENDENCY_SECTIONS, type NormalizedManifest } from '../manifest/types.
 import type { Resolution } from '../resolver/types.ts'
 import { Code } from '../util/codes.ts'
 import { RarnError } from '../util/errors.ts'
+import { byCodeUnit } from '../util/order.ts'
 import {
   LOCKFILE_NAME,
   LOCKFILE_VERSION,
@@ -61,7 +62,7 @@ export function buildLockfile(options: BuildLockfileOptions): Lockfile {
       dependencies: sortRecord(Object.fromEntries(pkg.dependencies)),
       requestedBy: [...pkg.requestedBy]
         .map((c) => ({ from: c.from, range: c.range }))
-        .sort((a, b) => a.from.localeCompare(b.from) || a.range.localeCompare(b.range)),
+        .sort((a, b) => byCodeUnit(a.from, b.from) || byCodeUnit(a.range, b.range)),
       dev: pkg.dev,
     }
   }
@@ -126,5 +127,5 @@ function contentsUrl(registry: string, scope: string, name: string, version: str
 }
 
 function sortRecord(record: Readonly<Record<string, string>>): Record<string, string> {
-  return Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b)))
+  return Object.fromEntries(Object.entries(record).sort(([a], [b]) => byCodeUnit(a, b)))
 }

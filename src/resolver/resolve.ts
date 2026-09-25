@@ -5,6 +5,7 @@ import type { PackageMetadata, PackageVersion, RegistryClient } from '../registr
 import { Code } from '../util/codes.ts'
 import { METADATA_CONCURRENCY, mapWithConcurrency } from '../util/concurrency.ts'
 import { RarnError } from '../util/errors.ts'
+import { byCodeUnit } from '../util/order.ts'
 import {
   type PackageName,
   parsePackageName,
@@ -388,7 +389,7 @@ function reportCompatibleDuplicates(
 }
 
 function compareConstraints(a: Constraint, b: Constraint): number {
-  return a.from === b.from ? a.range.localeCompare(b.range) : a.from.localeCompare(b.from)
+  return byCodeUnit(a.from, b.from) || byCodeUnit(a.range, b.range)
 }
 
 function normalizeOverrides(resolutions: Readonly<Record<string, string>>): Map<string, string> {

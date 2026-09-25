@@ -4,6 +4,7 @@ import semver from 'semver'
 import { type PlacesScan, scanPlaces } from '../../doctor/places.ts'
 import { realmDirs } from '../../manifest/types.ts'
 import { WarnCode } from '../../util/codes.ts'
+import { byCodeUnit } from '../../util/order.ts'
 import { loadInstalled, writeJson } from '../project.ts'
 
 export interface DedupeOptions {
@@ -35,7 +36,7 @@ export async function dedupe(options: DedupeOptions): Promise<void> {
   const places = await scanPlaces(projectDir, Object.values(realmDirs(manifest.packageDir)))
 
   const report = [...resolution.duplicates.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => byCodeUnit(a, b))
     .map(([name, versions]) => ({
       name,
       versions: [...versions].sort(semver.rcompare),

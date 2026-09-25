@@ -4,6 +4,7 @@ import { dirname, join, relative, resolve as resolvePath } from 'node:path'
 import { type NormalizedManifest, type PlaceInfo, realmDirs } from '../manifest/types.ts'
 import type { Placement } from '../resolver/types.ts'
 import { isNotFoundError } from '../util/fs.ts'
+import { byCodeUnit } from '../util/order.ts'
 import { PROJECT_FILE_NAME } from './rojo.ts'
 
 /** Where each realm directory was found in a place project's tree. */
@@ -198,17 +199,25 @@ export async function findProjectFiles(
 
   await visit(root, 0)
 
-  // `default.project.json` at the root first, then shallowest, then alphabetical, so
-  // the file a reader would name themselves is the one that claims a realm first and
-  // the notes come out in the same order on every machine.
-  return files.sort((a, b) => rank(root, a) - rank(root, b) || a.localeCompare(b))
+  // `default.project.json` at the root first, then shallowest, then by path, so the
+  // file a reader would name themselves is the one that claims a realm first and the
+  // notes come out in the same order on every machine. The path compared is the one the
+  // notes print: by code unit `\` sorts after the digits and `/` before them, so the
+  // OS's own spelling would put `lobby2` ahead of `lobby` on Windows alone.
+  return files.sort(
+    (a, b) => rank(root, a) - rank(root, b) || byCodeUnit(slashed(root, a), slashed(root, b)),
+  )
 }
 
 /** Sort key: the root default file, then depth. */
 function rank(root: string, file: string): number {
-  const rel = relative(root, file).replaceAll('\\', '/')
+  const rel = slashed(root, file)
   if (rel === PROJECT_FILE_NAME) return -1
   return rel.split('/').length
+}
+
+function slashed(root: string, file: string): string {
+  return relative(root, file).replaceAll('\\', '/')
 }
 
 /** `_Index`, spelled here to avoid the linker depending on this module or vice versa. */

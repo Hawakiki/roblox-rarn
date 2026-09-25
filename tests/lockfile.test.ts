@@ -13,6 +13,7 @@ import type { Placement, Resolution, ResolvedPackage } from '../src/resolver/typ
 import { Code } from '../src/util/codes.ts'
 import { RarnError } from '../src/util/errors.ts'
 import { parseWallyName } from '../src/util/package-name.ts'
+import { asIfLocale } from './locale.ts'
 
 let dir: string
 
@@ -28,6 +29,7 @@ interface Spec {
   placement?: Placement
   deps?: Record<string, string>
   dev?: boolean
+  requestedBy?: { from: string; range: string }[]
 }
 
 function resolutionOf(spec: Record<string, Spec>): Resolution {
@@ -44,7 +46,10 @@ function resolutionOf(spec: Record<string, Spec>): Resolution {
       realm: placement === 'server' ? 'server' : 'shared',
       placement,
       dependencies: new Map(Object.entries(pkg.deps ?? {})),
-      requestedBy: [{ from: 'root', range: '*', placement }],
+      requestedBy: (pkg.requestedBy ?? [{ from: 'root', range: '*' }]).map((c) => ({
+        ...c,
+        placement,
+      })),
       dev: pkg.dev ?? false,
       forcedBy: undefined,
     })
@@ -100,6 +105,72 @@ describe('buildLockfile', () => {
       'a/a': {},
     })
     expect(Object.keys(lock.packages['@a/one@1.0.0']?.dependencies ?? {})).toEqual(['Alpha', 'Zed'])
+  })
+
+  // The `packages` map was already sorted by code unit and the maps inside it were not,
+  // so one file followed two rules. Measured on a 619-package warm cache: of the 152
+  // packages with two or more dependencies, vocksel/import@2.1.0 is the one where the
+  // rules disagree, over `t` and `TestEZ`. An alias may also hold `-` and `_`, which
+  // the two rules order oppositely.
+  test('orders aliases by code unit, the rule the packages map already used', () => {
+    const lock = build({
+      'vocksel/import': {
+        version: '2.1.0',
+        deps: {
+          t: '@osyrisrblx/t@3.0.0',
+          Llama: '@freddylist/llama@1.1.1',
+          TestEZ: '@roblox/testez@0.4.1',
+        },
+      },
+      'a/one': { deps: { es7_types: '@a/x@1.0.0', 'es7-types': '@a/y@1.0.0' } },
+    })
+
+    expect(Object.keys(lock.packages['@vocksel/import@2.1.0']?.dependencies ?? {})).toEqual([
+      'Llama',
+      'TestEZ',
+      't',
+    ])
+    expect(Object.keys(lock.packages['@a/one@1.0.0']?.dependencies ?? {})).toEqual([
+      'es7-types',
+      'es7_types',
+    ])
+  })
+
+  // One requester, two ranges: a package declared in two manifest sections.
+  test('orders the ranges of one requester by code unit', () => {
+    const lock = build({
+      'a/one': {
+        requestedBy: [
+          { from: 'root', range: '^1.0.0' },
+          { from: 'root', range: '>=1.0.0 <2.0.0' },
+        ],
+      },
+    })
+    expect(lock.packages['@a/one@1.0.0']?.requestedBy?.map((c) => c.range)).toEqual([
+      '>=1.0.0 <2.0.0',
+      '^1.0.0',
+    ])
+  })
+
+  // With no locale argument the collation is the machine's, and locales disagree about
+  // plain ASCII: Czech sorts `ch` after `h`. The same install on a machine set to Czech
+  // wrote a different rarn.lock from CI's, and every commit from it was a diff.
+  test('writes the same bytes whatever the machine locale', async () => {
+    const spec: Record<string, Spec> = {
+      'acme/chalk': {},
+      'acme/dog': {},
+      'acme/shared': {
+        requestedBy: [
+          { from: '@acme/dog@1.0.0', range: '^1.0.0' },
+          { from: '@acme/chalk@1.0.0', range: '^1.0.0' },
+        ],
+      },
+    }
+    const manifest = { dependencies: { '@acme/dog': '^1.0.0', '@acme/chalk': '^1.0.0' } }
+
+    const here = serializeLockfile(build(spec, manifest))
+    const there = await asIfLocale('cs', () => serializeLockfile(build(spec, manifest)))
+    expect(there).toBe(here)
   })
 
   test('ends with a newline so the file is a well-formed text file', () => {

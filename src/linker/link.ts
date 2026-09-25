@@ -12,6 +12,7 @@ import {
   mapWithConcurrency,
 } from '../util/concurrency.ts'
 import { RarnError } from '../util/errors.ts'
+import { byCodeUnit } from '../util/order.ts'
 import { deriveAlias, parsePackageName, toIndexDir, toWallyName } from '../util/package-name.ts'
 import {
   INDEX_DIR_NAME,
@@ -123,7 +124,7 @@ async function build(
 
   // Sorted so that a rerun writes in the same order and any failure reports the
   // same package first.
-  const packages = [...resolution.packages.entries()].sort(([a], [b]) => a.localeCompare(b))
+  const packages = [...resolution.packages.entries()].sort(([a], [b]) => byCodeUnit(a, b))
 
   // Copied a few at a time rather than one after another. Each package writes into its
   // own `_Index/{scope}_{name}@{version}` directory and two packages resolving to one
@@ -212,7 +213,7 @@ async function writeDependencyShims(
     const dir = entryDir(layout, pkg.placement, indexDirNameOf(pkg))
     const moduleName = moduleNameOf(pkg)
 
-    for (const [alias, depKey] of [...pkg.dependencies].sort(([a], [b]) => a.localeCompare(b))) {
+    for (const [alias, depKey] of [...pkg.dependencies].sort(([a], [b]) => byCodeUnit(a, b))) {
       const dep = resolution.packages.get(depKey)
       if (dep === undefined) {
         throw new RarnError({

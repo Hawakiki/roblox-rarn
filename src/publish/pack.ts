@@ -8,6 +8,7 @@ import { INDEX_DIR_NAME } from '../project/place.ts'
 import { Code } from '../util/codes.ts'
 import { RarnError } from '../util/errors.ts'
 import { listFiles } from '../util/fs.ts'
+import { byCodeUnit } from '../util/order.ts'
 import { renderWallyToml } from './wally-toml.ts'
 
 /** The registry refuses anything larger. Measured against the live service. */
@@ -64,7 +65,7 @@ export async function pack(projectDir: string, manifest: NormalizedManifest): Pr
   contents['wally.toml'] = generated
   const withoutGenerated = entries.filter((e) => e.path !== 'wally.toml')
   const all = [...withoutGenerated, { path: 'wally.toml', bytes: generated.byteLength }].sort(
-    (a, b) => a.path.localeCompare(b.path),
+    (a, b) => byCodeUnit(a.path, b.path),
   )
 
   // A fixed timestamp and a fixed level, so the same input produces the same bytes

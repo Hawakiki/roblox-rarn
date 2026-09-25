@@ -9,6 +9,7 @@ import { collect, matches, pack } from '../src/publish/pack.ts'
 import { renderWallyToml, toCargoRange } from '../src/publish/wally-toml.ts'
 import { Code } from '../src/util/codes.ts'
 import { RarnError } from '../src/util/errors.ts'
+import { asIfLocale } from './locale.ts'
 
 const manifestOf = (partial: Partial<Manifest> = {}) =>
   normalizeManifest({ name: '@me/thing', version: '1.0.0', ...partial })
@@ -91,6 +92,18 @@ describe('renderWallyToml', () => {
   test('quotes are escaped so the TOML stays parseable', () => {
     const toml = renderWallyToml(manifestOf({ description: 'a "quoted" thing' }))
     expect(toml).toContain('description = "a \\"quoted\\" thing"')
+  })
+
+  // `pack` promises the same input gives the same archive, and this file is inside it.
+  // Collated by the machine's locale, one rarn.json packed on a machine set to Czech
+  // listed `@acme/dog` before `@acme/chalk` — `ch` sorts after `h` there.
+  test('lists dependencies in the same order on every machine', async () => {
+    const manifest = manifestOf({
+      dependencies: { '@acme/dog': '^1.0.0', '@acme/chalk': '^1.0.0' },
+    })
+    const here = renderWallyToml(manifest)
+    expect(here.indexOf('Chalk =')).toBeLessThan(here.indexOf('Dog ='))
+    expect(await asIfLocale('cs', () => renderWallyToml(manifest))).toBe(here)
   })
 
   // A range that cannot be published must fail here, before an upload starts.
@@ -326,6 +339,16 @@ describe('pack', () => {
     const dir = await project({ 'b.luau': 'x', 'a.luau': 'y' })
     const result = await pack(dir, manifestOf())
     expect(result.entries.map((e) => e.path)).toEqual(['a.luau', 'b.luau', 'wally.toml'])
+  })
+
+  // What `pack --list` and `--json` print. `collect` already hands the archive its files
+  // in code-unit order, where `README.md` comes first; the list printed beside it
+  // collated by locale and put `init.luau` first.
+  test('entries are in code-unit order, the order collect gives the archive', async () => {
+    const dir = await project({ 'init.luau': 'x', 'README.md': 'y' })
+    const result = await pack(dir, manifestOf())
+    expect(result.entries.map((e) => e.path)).toEqual(['README.md', 'init.luau', 'wally.toml'])
+    expect(Object.keys(unzipSync(result.archive))).toEqual(['README.md', 'init.luau', 'wally.toml'])
   })
 })
 

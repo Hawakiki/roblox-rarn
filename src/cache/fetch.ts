@@ -1,6 +1,7 @@
 import type { RegistryClient } from '../registry/types.ts'
 import type { ResolvedPackage } from '../resolver/types.ts'
 import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '../util/concurrency.ts'
+import { byCodeUnit } from '../util/order.ts'
 import type { CacheStore, CachedPackage } from './store.ts'
 
 export interface FetchedPackage extends CachedPackage {
@@ -40,7 +41,7 @@ export async function fetchPackages(options: FetchOptions): Promise<FetchSummary
 
   // Sorted so progress output and any resulting error are in a stable order; the
   // work itself is order-independent.
-  const entries = [...packages.entries()].sort(([a], [b]) => a.localeCompare(b))
+  const entries = [...packages.entries()].sort(([a], [b]) => byCodeUnit(a, b))
   let done = 0
 
   const fetched = await mapWithConcurrency(entries, concurrency, async ([key, resolved]) => {

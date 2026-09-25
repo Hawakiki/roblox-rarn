@@ -50,6 +50,18 @@ rather than silently misread, and a `0.x` release may bump it.
   installs on Linux CI and shadows a package on the author's Mac is worse than one that
   is refused in both places.
 
+- **`rarn.lock` is now ordered the same way on every machine** (RN-17). The nested maps
+  (`dependencies`, `requestedBy`, the `root` sections) were collated by the operating
+  system's locale while the `packages` map beside them was not, so one file followed two
+  orders and the same install could write a different lockfile on, say, a Czech-locale
+  machine than on CI. Everything Rarn writes, packs or prints as `--json` now uses one
+  plain code-unit order, the generated `wally.toml` included.
+
+  Existing lockfiles stay valid and `--frozen-lockfile` accepts them. The first install
+  may rewrite one with its keys reordered, once — when two aliases differ only in case or
+  in `_`/`-`, or when one package is declared with two differently spelled ranges. A CI
+  job that checks for a clean tree after installing will see that diff one time.
+
 ### Changed
 
 - **The per-package copy out of the cache now runs eight at a time.** It was one package
