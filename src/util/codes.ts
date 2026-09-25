@@ -69,6 +69,7 @@ export const Code = {
   NotLoggedIn: 'RN0600',
   LoginFailed: 'RN0601',
   TokenStoreUnwritable: 'RN0602',
+  TokenStoreUnreadable: 'RN0603',
   PackTooLarge: 'RN0610',
   PackEmpty: 'RN0611',
   UnpublishableRange: 'RN0620',

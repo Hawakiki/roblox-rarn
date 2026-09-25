@@ -8,6 +8,20 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ## Unreleased
 
+### Security
+
+
+- **The login token file is created owner-only from the start** (RN-19). `~/.rarn/auth.json`
+  was written with the default mode and restricted to `0600` afterwards, so on macOS and
+  Linux the token Wally accepts for publishing could be read by another account on the
+  same machine for a moment, wherever the home directory lets others through. It is now
+  written to an owner-only temporary file and renamed into place, and a missing `~/.rarn`
+  is created as `0700`.
+
+  A token file that exists but cannot be read now fails with the new `RN0603`, naming the
+  file. It used to read as "not logged in", which let `rarn logout` report nothing to
+  remove while the token was still on disk.
+
 ### Fixed
 
 - **`rarn cache clean` no longer exits 0 having done nothing when stdin is not a
