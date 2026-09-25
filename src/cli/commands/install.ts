@@ -102,6 +102,22 @@ function report(outcome: InstallOutcome, projectDir: string): string {
     ),
   )
 
+  // Named, not just counted in "downloaded". Nothing is wrong with this install, but
+  // the bytes it threw out came from the cache every other project here installs from,
+  // and nothing else will ever mention them. The digest is what finds a rarn.lock
+  // elsewhere that recorded them, which disagrees with the cache from now on.
+  for (const { key, discarded } of outcome.repairedCache) {
+    lines.push(
+      `${chalk.yellow(WarnCode.CacheEntryReplaced)} ${key} was downloaded again: the cached archive did not match rarn.lock.`,
+      chalk.dim(`  discarded ${discarded}`),
+    )
+  }
+  if (outcome.repairedCache.length > 0) {
+    lines.push(
+      chalk.dim('  The new copy matches. The cache is shared by every project on this machine.'),
+    )
+  }
+
   for (const [name, version] of resolution.overrides) {
     lines.push(`${chalk.yellow('override')} ${name} pinned to ${version} by "resolutions"`)
   }

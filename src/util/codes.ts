@@ -98,6 +98,7 @@ export const WarnCode = {
   DuplicateMajorWarning: 'RN0212',
   CircularDependencyWarning: 'RN0231',
   CrossTreeDuplicate: 'RN0213',
+  CacheEntryReplaced: 'RN0302',
 } as const
 
 export type WarnCode = (typeof WarnCode)[keyof typeof WarnCode]

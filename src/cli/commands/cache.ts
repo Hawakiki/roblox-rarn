@@ -96,8 +96,12 @@ async function clean(root: string, options: CacheOptions): Promise<void> {
  * Two different questions. Without a project, all that can be asked is whether every
  * unpacked tree still has the archive it came from and vice versa — an orphan on
  * either side means an interrupted or hand-edited cache. Inside a project, the
- * lockfile supplies the digests, and *that* is the check worth having: it proves the
- * bytes on disk are the bytes the lockfile pinned.
+ * lockfile supplies the digests, and *that* is the check worth having: it proves each
+ * cached archive is the one the lockfile pinned.
+ *
+ * The archives, not the unpacked trees — the same boundary an install draws, for the
+ * reason `CacheStore.ensure` gives. A file edited inside `extracted/` passes here, so
+ * the output says "archives" rather than letting "verified" claim the whole cache.
  */
 async function verify(root: string, options: CacheOptions): Promise<void> {
   const downloads = join(root, 'downloads')
@@ -148,7 +152,7 @@ async function verify(root: string, options: CacheOptions): Promise<void> {
       chalk.dim('  to verify the cached bytes against the digests it records.'),
     )
   } else {
-    lines.push(`  ${chalk.green(`${verified.length} verified`)} against rarn.lock`)
+    lines.push(`  ${chalk.green(`${verified.length} archives verified`)} against rarn.lock`)
   }
 
   for (const key of orphanArchives) {

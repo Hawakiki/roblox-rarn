@@ -72,6 +72,12 @@ export interface InstallOutcome {
   readonly link: LinkResult
   readonly cached: number
   readonly downloaded: number
+  /**
+   * Packages whose cached archive disagreed with rarn.lock and was downloaded again,
+   * with the digest that was thrown out. Nothing is wrong with this install; it is for
+   * the person, since the cache is shared with every other project on the machine.
+   */
+  readonly repairedCache: readonly { readonly key: string; readonly discarded: string }[]
   readonly elapsedMs: number
   /** Whether the lockfile was reused instead of re-resolving. */
   readonly fromLockfile: boolean
@@ -171,6 +177,9 @@ export async function runInstall(request: InstallRequest): Promise<InstallOutcom
     link: linked,
     cached: summary.cached,
     downloaded: summary.downloaded,
+    repairedCache: summary.packages.flatMap((p) =>
+      p.discarded === undefined ? [] : [{ key: p.key, discarded: p.discarded }],
+    ),
     elapsedMs: performance.now() - started,
     fromLockfile: reuse,
     staleReasons: freshness.reasons,

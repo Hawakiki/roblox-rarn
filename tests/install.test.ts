@@ -3,17 +3,22 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { zipSync } from 'fflate'
+import { computeIntegrity } from '../src/cache/integrity.ts'
+import { cacheKey, downloadPath } from '../src/cache/paths.ts'
 import { createCacheStore } from '../src/cache/store.ts'
+import { install as installCommand } from '../src/cli/commands/install.ts'
 import { runInstall } from '../src/install/run.ts'
+import { createRegistryClient } from '../src/registry/client.ts'
 import type {
   PackageMetadata,
   PackageVersion,
   RegistryClient,
   SearchResult,
 } from '../src/registry/types.ts'
-import { Code } from '../src/util/codes.ts'
+import { Code, WarnCode } from '../src/util/codes.ts'
 import { RarnError } from '../src/util/errors.ts'
-import { type PackageName, toWallyName } from '../src/util/package-name.ts'
+import { blockNetwork, unblockNetwork } from '../src/util/network.ts'
+import { type PackageName, parseWallyName, toWallyName } from '../src/util/package-name.ts'
 
 /**
  * The pipeline, reached without a terminal.
@@ -265,5 +270,85 @@ describe('the install pipeline', () => {
     // caller uses. Every optional hook has to tolerate being absent.
     const outcome = await install()
     expect(outcome.link.shims).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * The store decides what a damaged cache entry means. These hold the pipeline to
+ * carrying that decision out to where a person will read it.
+ */
+describe('a damaged cache under a fresh lockfile', () => {
+  const cachedArchive = () => downloadPath(cacheDir, cacheKey(parseWallyName('a/one'), '1.0.0'))
+  const damage = new TextEncoder().encode('not the pinned bytes')
+
+  test('is downloaded again, and the repair is reported', async () => {
+    await manifest()
+    await install()
+    await writeFile(cachedArchive(), damage)
+
+    const outcome = await install()
+
+    expect(outcome.fromLockfile).toBe(true)
+    expect(outcome.downloaded).toBe(1)
+    expect(outcome.repairedCache).toEqual([
+      { key: '@a/one@1.0.0', discarded: computeIntegrity(damage) },
+    ])
+    expect(
+      await readFile(join(dir, 'RARN_MODULE', '_Index', 'a_one@1.0.0', 'one', 'init.luau'), 'utf8'),
+    ).toBe('return {}')
+  })
+
+  // The outcome carrying it is not the same as anyone seeing it: the summary is the
+  // only place a person learns the shared cache held bytes nobody pinned.
+  test('the repair reaches the printed summary, with its code', async () => {
+    await manifest()
+    await install()
+    await writeFile(cachedArchive(), damage)
+
+    const previousCacheDir = process.env.RARN_CACHE_DIR
+    process.env.RARN_CACHE_DIR = cacheDir
+    const written: string[] = []
+    const original = process.stdout.write.bind(process.stdout)
+    process.stdout.write = (chunk: unknown) => {
+      written.push(String(chunk))
+      return true
+    }
+    try {
+      await installCommand({ cwd: dir }, registryOf(SPEC))
+    } finally {
+      process.stdout.write = original
+      // `Reflect.deleteProperty`, for the reason `registry.test.ts` gives at its own
+      // restore: assigning undefined to an env var stores the string "undefined".
+      if (previousCacheDir === undefined) Reflect.deleteProperty(process.env, 'RARN_CACHE_DIR')
+      else process.env.RARN_CACHE_DIR = previousCacheDir
+    }
+
+    const ansi = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g')
+    const summary = written.join('').replaceAll(ansi, '')
+    expect(summary).toContain(`${WarnCode.CacheEntryReplaced} @a/one@1.0.0`)
+    // The one value that can find another rarn.lock that recorded those bytes.
+    expect(summary).toContain(`discarded ${computeIntegrity(damage)}`)
+  })
+
+  // The real client behind the real guard, because `--offline` is what someone with a
+  // damaged cache on a train actually runs — and it has to end at RN0130, not at a
+  // registry that was never asked.
+  test('offline, stops at RN0130 and says the cached copy disagreed with rarn.lock', async () => {
+    await manifest()
+    await install()
+    await writeFile(cachedArchive(), damage)
+
+    blockNetwork()
+    let error: unknown
+    try {
+      error = await install({ registry: createRegistryClient() }).catch((e: unknown) => e)
+    } finally {
+      unblockNetwork()
+    }
+
+    expect(error).toBeInstanceOf(RarnError)
+    expect((error as RarnError).code).toBe(Code.NetworkBlocked)
+    expect((error as RarnError).what).toContain('cached copy')
+    expect((error as RarnError).format()).not.toContain('registry served')
   })
 })

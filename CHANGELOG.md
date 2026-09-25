@@ -119,6 +119,22 @@ rather than silently misread, and a `0.x` release may bump it.
   host, a rejected TLS certificate — still says nothing was published, and names the
   certificate problem.
 
+- **A cached archive that disagrees with `rarn.lock` is now checked against the registry
+  instead of blamed on it** (RN-21). Install compared the cached zip with the lockfile
+  digest and stopped with `RN0300: The registry served different bytes than the lockfile
+  recorded` without downloading anything, and following its advice — delete `rarn.lock`
+  and reinstall — then recorded the damaged bytes as the pinned ones.
+
+  The cached copy is now a witness, not a verdict: the registry is asked, and the entry
+  is removed only when it holds bytes the registry does not serve. The cache is shared by
+  every project on the machine, so one lockfile's disagreement is not enough to delete an
+  entry another project's offline install may need. A repaired entry appears in the
+  install summary as `RN0302` with the discarded digest. `RN0300` now means the
+  registry's own bytes differ from the lockfile. Under `--offline`, a repair that needs the
+  network fails with `RN0130` and says why. Only archives are verified — the unpacked tree
+  in the cache is trusted as local state — and `rarn cache verify` now says "archives
+  verified" to match.
+
 ### Changed
 
 - **The per-package copy out of the cache now runs eight at a time.** It was one package
