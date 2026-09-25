@@ -1,14 +1,16 @@
 import { describe, expect, test } from 'bun:test'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import semver from 'semver'
+import lockSchema from '../schemas/rarn.lock.schema.json' with { type: 'json' }
 import { info } from '../src/cli/commands/info.ts'
 import { createRegistryClient } from '../src/registry/client.ts'
 import { parseMetadata } from '../src/registry/parse.ts'
-import { DEFAULT_API_URL } from '../src/registry/types.ts'
+import { DEFAULT_API_URL, type WireMetadata } from '../src/registry/types.ts'
 import { Code } from '../src/util/codes.ts'
 import { RarnError, RegistryError } from '../src/util/errors.ts'
 import { blockNetwork, networkBlocked, unblockNetwork } from '../src/util/network.ts'
-import { parseWallyName } from '../src/util/package-name.ts'
+import { isExactVersion, parseWallyName } from '../src/util/package-name.ts'
 
 const FIXTURES = join(import.meta.dir, 'fixtures', 'registry')
 
@@ -140,6 +142,165 @@ describe('parseMetadata', () => {
 
   test('rejects a response that is not shaped like metadata', () => {
     expect(() => parseMetadata(promise, { nope: true })).toThrow(RarnError)
+  })
+
+  // The registry does hold versions semver cannot read: kampfkarren/react-roblox-act
+  // publishes 0.0.0-001 beside five that are fine, and yesavnd/iris only 2.4.1-090425
+  // (wally-index, 2026-09-25). A version becomes a folder name, and one outside the
+  // rule would also be written into a lockfile that then refuses to load. Both halves
+  // of the rule refuse these; the two tests after this one take each half alone.
+  test('leaves out a version outside semver 2.0.0, and keeps the rest', async () => {
+    const body = await promiseAlsoPublishing('0.0.0-001', '4.0.0/../../../ESCAPED')
+    const versions = parseMetadata(promise, body).versions.map((v) => v.version)
+
+    expect(versions).not.toContain('0.0.0-001')
+    expect(versions).not.toContain('4.0.0/../../../ESCAPED')
+    expect(versions[0]).toBe('4.0.0')
+  })
+
+  // The grammar is not everything semver checks. It also refuses a component past
+  // Number.MAX_SAFE_INTEGER and a version longer than 256 characters, which the grammar
+  // admits and Wally's Rust semver (u64 components) can publish. It refuses them by
+  // throwing, from the sort in parseMetadata, so one such version would fail every
+  // command that reads the package with a bare TypeError.
+  test('leaves out a version the grammar admits and semver still cannot read', async () => {
+    const unreadable = ['9007199254740993.0.0', '1.9007199254740993.0', `4.0.1-${'a'.repeat(300)}`]
+    // Pinned so this stays a test of the second rule: were the grammar ever to refuse
+    // these, the case above would already cover them and this one would prove nothing.
+    expect(unreadable.filter((v) => !isExactVersion(v))).toEqual([])
+
+    const body = await promiseAlsoPublishing(...unreadable)
+    const versions = parseMetadata(promise, body).versions.map((v) => v.version)
+
+    expect(versions.filter((v) => unreadable.includes(v))).toEqual([])
+    expect(versions[0]).toBe('4.0.0')
+  })
+
+  // The grammar's half, as the case above is semver's. semver trims whitespace and takes
+  // a leading `v`, so each of these satisfies `^4.0.0` exactly as the 4.0.1 it spells
+  // does. Kept, one would be selected, and `toIndexDir`, which holds a version to the
+  // grammar, would then stop the install as a bug in Rarn.
+  test('leaves out a spelling semver reads leniently and the grammar refuses', async () => {
+    const lenient = ['v4.0.1', ' 4.0.1', '4.0.1 ']
+    // Pinned so this stays a test of the grammar: were semver ever to refuse these, its
+    // own half would already leave them out and this one would prove nothing.
+    expect(lenient.filter((v) => semver.valid(v) === null)).toEqual([])
+
+    const body = await promiseAlsoPublishing(...lenient)
+    const versions = parseMetadata(promise, body).versions.map((v) => v.version)
+
+    expect(versions.filter((v) => lenient.includes(v))).toEqual([])
+    expect(versions[0]).toBe('4.0.0')
+  })
+
+  test('keeps a version carrying build metadata', async () => {
+    const body = await promiseAlsoPublishing('4.0.1+89e7')
+    expect(parseMetadata(promise, body).versions[0]?.version).toBe('4.0.1+89e7')
+  })
+})
+
+/** The recorded promise metadata, plus a copy of its first entry under each `version`. */
+async function promiseAlsoPublishing(...versions: string[]): Promise<WireMetadata> {
+  const body = (await fixture('evaera-promise.metadata.json')) as WireMetadata
+  const [first] = body.versions
+  const pkg = first?.package
+  if (first === undefined || pkg === undefined) throw new Error('the promise fixture is empty')
+  for (const version of versions) body.versions.push({ ...first, package: { ...pkg, version } })
+  return body
+}
+
+type WireSection = 'dependencies' | 'server-dependencies' | 'dev-dependencies'
+
+/**
+ * The recorded knit metadata, with one more dependency declared under `alias`.
+ *
+ * Built from a recording rather than stored beside them: every file in fixtures/ came
+ * off the live registry, and a hand-written one there would pass for one that did. The
+ * registry does not check an alias at all — Wally's backend reads wally.toml's
+ * dependency keys as plain strings — so every alias below is one anybody can publish.
+ */
+async function knitDeclaring(alias: string, section: WireSection = 'dependencies') {
+  const body = (await fixture('sleitnick-knit.metadata.json')) as WireMetadata
+  const entry = body.versions.find((v) => v.package?.version === '1.7.0')
+  if (entry === undefined) throw new Error('the knit fixture no longer holds 1.7.0')
+  entry[section] = { ...entry[section], [alias]: 'evaera/promise@>=4.0.0, <5.0.0' }
+  return body
+}
+
+function parseError(body: unknown): RarnError | undefined {
+  try {
+    parseMetadata(knit, body)
+    return undefined
+  } catch (error) {
+    expect(error).toBeInstanceOf(RarnError)
+    return error as RarnError
+  }
+}
+
+describe('dependency aliases', () => {
+  // The alias becomes `<alias>.luau` inside the package's _Index entry. Each of these
+  // names somewhere else: a parent directory, a subdirectory, an NTFS alternate stream
+  // on a file beside the shim (`C:evil` is one too — `join` does not change drive), or
+  // a file the extension no longer describes.
+  test.each([
+    '../../../../src/Main',
+    '..',
+    '.',
+    '',
+    'a/b',
+    'a\\b',
+    '/etc/evil',
+    'C:evil',
+    'Promise:evil',
+    'Promise.server',
+    'Pro mise',
+    'Promise\n',
+    '-Promise',
+  ])('refuses %p, naming the package, the version and the alias', async (alias) => {
+    const error = parseError(await knitDeclaring(alias))
+
+    expect(error?.code).toBe(Code.UnsafeDependencyAlias)
+    expect(error?.where).toBe('sleitnick/knit@1.7.0')
+    // Quoted as JSON, so that a newline or a trailing space is visible in the message.
+    expect(error?.format()).toContain(JSON.stringify(alias))
+  })
+
+  test('refuses a server dependency the same way', async () => {
+    const error = parseError(await knitDeclaring('../../evil', 'server-dependencies'))
+    expect(error?.code).toBe(Code.UnsafeDependencyAlias)
+    expect(error?.detail).toContain('[server-dependencies]')
+  })
+
+  // A registry package's dev-dependencies are never resolved, linked or shown — Wally
+  // does not install them either — so no file is ever named after one. Refusing the
+  // package over one would fail an install for a file that was never going to exist.
+  test('leaves dev-dependencies alone, since none of them becomes a file', async () => {
+    const meta = parseMetadata(knit, await knitDeclaring('Test EZ', 'dev-dependencies'))
+    const entry = meta.versions.find((v) => v.version === '1.7.0')
+    expect(entry?.devDependencies.has('Test EZ')).toBe(true)
+  })
+
+  // The rule has to admit what the registry actually holds, and a Luau-identifier rule
+  // does not: in wally-index on 2026-09-25 it would have refused 777 versions of 214
+  // packages, every one of them over a hyphen. All of these are real aliases.
+  test.each(['luau-polyfill', 'es7-types', 'instance-of', 'symbol-luau', '_jest-roblox-shared'])(
+    'accepts %p',
+    async (alias) => {
+      const meta = parseMetadata(knit, await knitDeclaring(alias))
+      const entry = meta.versions.find((v) => v.version === '1.7.0')
+      expect(entry?.dependencies.has(alias)).toBe(true)
+    },
+  )
+
+  // Every alias parsed here is written into rarn.lock, and the lockfile schema is what
+  // reads it back. A parser wider than the schema is how install once wrote a lockfile
+  // it then refused to read.
+  test('admits exactly what the lockfile schema admits', async () => {
+    const pattern = new RegExp(lockSchema.$defs.alias.pattern)
+    for (const alias of ['luau-polyfill', 'Promise', '_', '-x', 'a.b', '../x', 'a b', 'a:b', '']) {
+      const admitted = parseError(await knitDeclaring(alias)) === undefined
+      expect({ alias, admitted }).toEqual({ alias, admitted: pattern.test(alias) })
+    }
   })
 })
 

@@ -27,6 +27,31 @@ rather than silently misread, and a `0.x` release may bump it.
   project, and over an exact `include`. A copy stranded by an interrupted login carries
   the `.rarn-tmp` suffix, which publishing already leaves out.
 
+- **An edited `rarn.lock` could make `rarn install` delete a directory outside the cache**
+  (RN-23). A locked package's `version` became a folder name in the cache and under
+  `_Index` unchecked, and reusing a lockfile skips both the registry and semver, so a
+  version such as `1.0.0/../../../../victim` named a directory beside the cache instead of
+  an entry in it. If that directory existed, the cache took it for an entry it could not
+  verify and deleted it recursively before anything was downloaded — whatever the download
+  then did. The path counts up from the cache, so it can reach a folder such as Documents
+  without knowing the user's name, and a version crafted to also name a real package could
+  unpack that package in its place and report success (reproduced against a stand-in
+  registry). A pull request that changes only `rarn.lock` is enough.
+
+  0.2.0 and 0.1.1 are affected. A locked `version` must now be an exact semver version, so
+  such a lockfile is refused with `RN0500` before anything is read or written, and the
+  folder name is checked again where it is built. Every lockfile Rarn has written still
+  reads: the rule admits build metadata, which the registry holds (`2.5.2+89e7`).
+
+- **A registry package could write a `.luau` file anywhere you can write, through the name
+  of one of its dependencies** (RN-22). The registry does not check the names a package
+  gives its dependencies, and Rarn wrote each as `<name>.luau` without checking it either,
+  so a dependency called `../../../../src/Main` replaced a project's `src/Main.luau` with a
+  shim — in this project or another — and the install reported success. Such a package is
+  now refused with the new `RN0112`, naming the package, the section and the dependency.
+  Every dependency name in the registry today still passes, hyphenated ones such as
+  `luau-polyfill` included. 0.2.0 contains the same code.
+
 ### Fixed
 
 - **`rarn cache clean` no longer exits 0 having done nothing when stdin is not a
@@ -134,6 +159,12 @@ rather than silently misread, and a `0.x` release may bump it.
   network fails with `RN0130` and says why. Only archives are verified — the unpacked tree
   in the cache is trusted as local state — and `rarn cache verify` now says "archives
   verified" to match.
+
+- **A registry version that semver cannot read no longer breaks every command for its
+  package** (RN-24). `kampfkarren/react-roblox-act` publishes `0.0.0-001` beside five valid
+  versions, and sorting them threw a bare `TypeError`, so any command reading that
+  package's versions failed. Such versions are now left out and the rest install. No range
+  could ever have selected one, so no install changes.
 
 ### Changed
 

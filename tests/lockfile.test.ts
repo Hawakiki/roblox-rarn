@@ -3,6 +3,8 @@ import * as fsp from 'node:fs/promises'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import lockSchema from '../schemas/rarn.lock.schema.json' with { type: 'json' }
+import manifestSchema from '../schemas/rarn.schema.json' with { type: 'json' }
 import { checkFreshness } from '../src/lockfile/freshness.ts'
 import { readLockfile, resolutionFromLockfile } from '../src/lockfile/read.ts'
 import { LOCKFILE_VERSION } from '../src/lockfile/types.ts'
@@ -334,6 +336,55 @@ describe('readLockfile', () => {
     const error = (await readLockfile(dir).catch((e: unknown) => e)) as RarnError
     expect(error.code).toBe(Code.LockfileTooNew)
     expect(error.how).toContain('Upgrade Rarn')
+  })
+
+  /** A lockfile Rarn wrote, with one package's `version` then edited to `version`. */
+  async function writeWithVersion(version: string): Promise<void> {
+    const lock = build({ 'a/one': {} }, { dependencies: { '@a/one': '^1.0.0' } })
+    const locked = lock.packages['@a/one@1.0.0']
+    if (locked === undefined) throw new Error('build() recorded no @a/one')
+    await writeFile(
+      join(dir, 'rarn.lock'),
+      JSON.stringify({ ...lock, packages: { '@a/one@1.0.0': { ...locked, version } } }),
+    )
+  }
+
+  // Reusing a lockfile goes around the registry and semver both, and `version` becomes
+  // a folder name under _Index and in the cache. Each of these names some other folder,
+  // or one semver would never have produced.
+  test.each([
+    '1.0.0/../../../../../ESCAPED',
+    '1.0.0\\..\\..\\ESCAPED',
+    '..',
+    'C:ESCAPED',
+    '1.0.0:stream',
+    'v1.0.0',
+    ' 1.0.0',
+    '1.0',
+    '0.0.0-001',
+  ])('refuses a version of %p before anything reads it', async (version) => {
+    await writeWithVersion(version)
+    const error = (await readLockfile(dir).catch((e: unknown) => e)) as RarnError
+    expect(error).toBeInstanceOf(RarnError)
+    expect(error.code).toBe(Code.LockfileInvalid)
+    expect(error.detail).toContain('/version')
+  })
+
+  // Build metadata is where a stricter rule would go wrong: `semver.valid` drops it, so
+  // comparing against that refuses tazmondo/iris, vide and jecs — seven registry
+  // versions (wally-index, 2026-09-25) that install today.
+  test.each(['4.0.0', '4.0.0-rc.2', '2.5.2+89e7', '0.4.1+horse.0.1'])(
+    'accepts %p',
+    async (version) => {
+      await writeWithVersion(version)
+      expect((await readLockfile(dir))?.packages['@a/one@1.0.0']?.version).toBe(version)
+    },
+  )
+
+  // Spelled out in both schemas so that each validates on its own. Every version a
+  // manifest may pin in `resolutions` has to be one a lockfile can then hold.
+  test('holds versions to the same rule as rarn.json', () => {
+    expect(lockSchema.$defs.semver.pattern).toBe(manifestSchema.$defs.semver.pattern)
   })
 })
 

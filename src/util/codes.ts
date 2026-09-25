@@ -36,6 +36,7 @@ export const Code = {
   NetworkTimeout: 'RN0102',
   PackageNotFound: 'RN0110',
   VersionNotFound: 'RN0111',
+  UnsafeDependencyAlias: 'RN0112',
   WallyVersionHeaderRejected: 'RN0120',
   RegistryAuthRequired: 'RN0121',
   NetworkBlocked: 'RN0130',

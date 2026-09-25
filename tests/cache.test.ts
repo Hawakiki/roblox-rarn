@@ -257,6 +257,24 @@ describe('cache store', () => {
     expect(other.dir).toContain('3.2.1')
   })
 
+  // The version is the cache key, and both the archive and the unpacked tree are named
+  // after it. A lockfile's version is refused on read; this holds for anything else.
+  test('will not key an entry by a version that names another folder', async () => {
+    const cache = join(root, 'a', 'b', 'cache')
+    let downloads = 0
+    const error = await expectRejection(() =>
+      createCacheStore(cache).ensure(promise, '4.0.0/../../../ESCAPED', () => {
+        downloads++
+        return Promise.resolve(zip())
+      }),
+    )
+
+    expect(error.code).toBe(Code.InternalError)
+    expect(downloads).toBe(0)
+    expect(await pathExists(join(root, 'a', 'b', 'ESCAPED'))).toBe(false)
+    expect(await pathExists(join(root, 'a', 'b', 'ESCAPED.zip'))).toBe(false)
+  })
+
   test('verifies against a recorded digest and refuses a mismatch', async () => {
     const store = createCacheStore(root)
     const error = await expectRejection(() =>

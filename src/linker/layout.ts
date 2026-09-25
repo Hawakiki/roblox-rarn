@@ -4,6 +4,7 @@ import { realmDirs } from '../manifest/types.ts'
 import type { Placement } from '../resolver/types.ts'
 import { Code } from '../util/codes.ts'
 import { RarnError } from '../util/errors.ts'
+import { isValidAlias } from '../util/package-name.ts'
 
 /** Folder that holds one entry per resolved package version. */
 export const INDEX_DIR_NAME = '_Index'
@@ -73,6 +74,28 @@ export function assertSafePackageDir(projectDir: string, packageDir: string): st
   }
 
   return packageDir
+}
+
+/**
+ * `<dir>/<alias>.luau`, for an alias that cannot name anything else.
+ *
+ * Nothing should arrive here unchecked: the registry layer refuses what a package
+ * declares and the manifest schema refuses what `aliases` says. This is the second
+ * gate, for the same reason `assertSafePackageDir` is: `link` takes a resolution as an
+ * argument, and whatever builds one next will not have read either of those checks.
+ */
+export function shimPath(dir: string, alias: string, owner: string): string {
+  if (!isValidAlias(alias)) {
+    // Not RN0112, which is the registry's refusal of a package. Reaching this means a
+    // check that should have run did not, and that is what RN0003 reports everywhere.
+    throw new RarnError({
+      code: Code.InternalError,
+      what: `${owner} would write a shim named ${JSON.stringify(alias)}, which is not a plain file name.`,
+      where: owner,
+      how: 'The install stopped before replacing anything. The name should have been refused when it was read, so this is a bug in Rarn: please report it.',
+    })
+  }
+  return join(dir, `${alias}${SHIM_EXTENSION}`)
 }
 
 /** `<realm>/_Index` */

@@ -72,8 +72,8 @@
       "additionalProperties": false,
       "properties": {
         "version": {
-          "type": "string",
-          "description": "Exact resolved version. Never a range."
+          "$ref": "#/$defs/semver",
+          "description": "Exact resolved version. Never a range. It becomes a folder name under _Index and in the cache, and reusing a lockfile goes around both the registry and semver, so this pattern is what keeps an edited rarn.lock from naming a directory outside either."
         },
 
         "resolved": {
@@ -152,6 +152,12 @@
           "description": "True when this package is reachable only through devDependencies. Skipped by 'rarn install --production'."
         }
       }
+    },
+
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$",
+      "description": "Exact semver 2.0.0 version, the same pattern rarn.schema.json uses. Build metadata is allowed because the registry holds it (tazmondo/iris publishes 2.5.2+89e7)."
     },
 
     "integrity": {

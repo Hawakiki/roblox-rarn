@@ -14,13 +14,7 @@ import {
 import { RarnError } from '../util/errors.ts'
 import { byCodeUnit } from '../util/order.ts'
 import { deriveAlias, parsePackageName, toIndexDir, toWallyName } from '../util/package-name.ts'
-import {
-  INDEX_DIR_NAME,
-  type InstallLayout,
-  SHIM_EXTENSION,
-  createLayout,
-  entryDir,
-} from './layout.ts'
+import { INDEX_DIR_NAME, type InstallLayout, createLayout, entryDir, shimPath } from './layout.ts'
 import { assertRealmsAreOurs } from './ownership.ts'
 import { assertCrossable, crossRealmShim, requirePlacePath, rootShim, siblingShim } from './shim.ts'
 import { STAGING_DIR, clearRetired, clearStaging, swapIn } from './swap.ts'
@@ -235,7 +229,7 @@ async function writeDependencyShims(
       }
 
       await writeFile(
-        join(dir, `${alias}${SHIM_EXTENSION}`),
+        shimPath(dir, alias, key),
         shimFor(pkg.placement, dep, manifest, key, typeExports.get(depKey) ?? []),
         'utf8',
       )
@@ -292,7 +286,11 @@ async function writeRootShims(
               types,
             )
 
-      await writeFile(join(layout.realms[placement], `${alias}${SHIM_EXTENSION}`), source, 'utf8')
+      await writeFile(
+        shimPath(layout.realms[placement], alias, `rarn.json (${section})`),
+        source,
+        'utf8',
+      )
       written += 1
     }
   }

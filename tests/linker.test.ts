@@ -423,6 +423,97 @@ describe('collisions', () => {
   })
 })
 
+/** The failure `fn` ended in, or undefined — so what it wrote can be checked first. */
+async function outcomeOf(fn: () => Promise<unknown>): Promise<unknown> {
+  return await fn().then(
+    () => undefined,
+    (error: unknown) => error,
+  )
+}
+
+describe('shim file names', () => {
+  // The registry layer refuses these as they arrive. This is the second gate, at the
+  // one place an alias turns into a path: a resolution does not have to come from the
+  // registry, and whatever builds one next will not have read that check.
+  test('a dependency alias cannot write outside its _Index entry', async () => {
+    // Up four from the staged entry: _Index, RARN_MODULE, .rarn-tmp, the project.
+    const main = join(dir, 'project', 'src', 'Main.luau')
+    await mkdir(join(dir, 'project', 'src'), { recursive: true })
+    await writeFile(main, '-- my code\n')
+
+    const error = await outcomeOf(() =>
+      run(
+        {
+          'sleitnick/knit': { deps: { '../../../../src/Main': '@evaera/promise@1.0.0' } },
+          'evaera/promise': {},
+        },
+        { dependencies: { '@sleitnick/knit': '^1.0.0' } },
+      ),
+    )
+
+    expect(await readFile(main, 'utf8')).toBe('-- my code\n')
+    expect(error).toBeInstanceOf(RarnError)
+    expect((error as RarnError).code).toBe(Code.InternalError)
+    expect((error as RarnError).format()).toContain('../../../../src/Main')
+    expect(await pathExists(join(dir, 'project', '.rarn-tmp'))).toBe(false)
+  })
+
+  test('neither can a top-level one', async () => {
+    const error = await outcomeOf(() =>
+      run(
+        { 'evaera/promise': {} },
+        {
+          dependencies: { '@evaera/promise': '^1.0.0' },
+          aliases: { '@evaera/promise': '../../escaped' },
+        },
+      ),
+    )
+
+    expect(await pathExists(join(dir, 'project', 'escaped.luau'))).toBe(false)
+    expect((error as RarnError | undefined)?.code).toBe(Code.InternalError)
+  })
+
+  // The same gate for the `_Index` entry itself. An edited rarn.lock is how a version
+  // like this one reached here, until the lockfile schema started refusing it on read.
+  test('a version cannot put an _Index entry outside the install', async () => {
+    const project = join(dir, 'project')
+    await mkdir(project, { recursive: true })
+    const { resolution, sources } = await scenario({ 'evaera/promise': {} })
+    // Up four from the staged entry: _Index, RARN_MODULE, .rarn-tmp, the project.
+    const packages = new Map(
+      [...resolution.packages].map(([key, pkg]) => [
+        key,
+        { ...pkg, version: '1.0.0/../../../../ESCAPED' },
+      ]),
+    )
+
+    const error = await outcomeOf(() =>
+      link({
+        projectDir: project,
+        manifest: normalizeManifest({
+          name: 'game',
+          version: '1.0.0',
+          dependencies: { '@evaera/promise': '^1.0.0' },
+        }),
+        resolution: { ...resolution, packages },
+        sources,
+      }),
+    )
+
+    expect((error as RarnError | undefined)?.code).toBe(Code.InternalError)
+    expect(await pathExists(join(dir, 'ESCAPED'))).toBe(false)
+    expect(await pathExists(join(project, '.rarn-tmp'))).toBe(false)
+  })
+
+  test('a hyphenated alias is still an ordinary file', async () => {
+    await run(
+      { 'a/one': { deps: { 'luau-polyfill': '@a/two@1.0.0' } }, 'a/two': {} },
+      { dependencies: { '@a/one': '^1.0.0' } },
+    )
+    expect(await pathExists(shared('_Index/a_one@1.0.0/luau-polyfill.luau'))).toBe(true)
+  })
+})
+
 describe('reporting', () => {
   test('counts what pruning saved', async () => {
     const { result } = await run(

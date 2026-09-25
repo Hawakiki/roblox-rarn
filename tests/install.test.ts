@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { zipSync } from 'fflate'
 import { computeIntegrity } from '../src/cache/integrity.ts'
 import { cacheKey, downloadPath } from '../src/cache/paths.ts'
@@ -14,9 +14,11 @@ import type {
   PackageVersion,
   RegistryClient,
   SearchResult,
+  WireVersion,
 } from '../src/registry/types.ts'
 import { Code, WarnCode } from '../src/util/codes.ts'
 import { RarnError } from '../src/util/errors.ts'
+import { pathExists } from '../src/util/fs.ts'
 import { blockNetwork, unblockNetwork } from '../src/util/network.ts'
 import { type PackageName, parseWallyName, toWallyName } from '../src/util/package-name.ts'
 
@@ -350,5 +352,143 @@ describe('a damaged cache under a fresh lockfile', () => {
     expect((error as RarnError).code).toBe(Code.NetworkBlocked)
     expect((error as RarnError).what).toContain('cached copy')
     expect((error as RarnError).format()).not.toContain('registry served')
+  })
+})
+
+/**
+ * A registry reached over the wire, so metadata goes through the real parser.
+ *
+ * `registryOf` above hands the resolver parsed metadata directly, which skips the one
+ * layer that decides whether a published document can be trusted.
+ */
+function wireRegistry(packages: Record<string, WireVersion[]>): RegistryClient {
+  const handler = (input: string | URL | Request): Promise<Response> => {
+    const path = new URL(input instanceof Request ? input.url : String(input)).pathname
+    const metadata = /^\/v1\/package-metadata\/(.+)$/.exec(path)?.[1]
+    const versions = metadata === undefined ? undefined : packages[metadata]
+    if (versions !== undefined) return Promise.resolve(Response.json({ versions }))
+
+    const contents = /^\/v1\/package-contents\/[^/]+\/([^/]+)\//.exec(path)?.[1]
+    if (contents !== undefined) return Promise.resolve(new Response(archiveOf(contents)))
+    return Promise.resolve(new Response('not found', { status: 404 }))
+  }
+  return createRegistryClient({
+    apiUrl: 'https://api.example/',
+    attempts: 1,
+    fetch: handler as unknown as typeof globalThis.fetch,
+  })
+}
+
+function wireVersion(name: string, dependencies: Record<string, string> = {}): WireVersion {
+  return { package: { name, version: '1.0.0', realm: 'shared' }, dependencies }
+}
+
+describe('a dependency alias from the registry', () => {
+  // Wally's registry stores whatever key a published wally.toml gave a dependency, and
+  // the linker names a file after it. Four levels up from the staged _Index entry is
+  // the project itself, so this one lands on the user's own source.
+  test('cannot name a file outside the install', async () => {
+    const main = join(dir, 'src', 'Main.luau')
+    await mkdir(join(dir, 'src'), { recursive: true })
+    await writeFile(main, '-- my code\n')
+    await manifest({ dependencies: { '@evil/pkg': '^1.0.0' } })
+
+    const registry = wireRegistry({
+      'evil/pkg': [wireVersion('evil/pkg', { '../../../../src/Main': 'a/one@>=1.0.0, <2.0.0' })],
+      'a/one': [wireVersion('a/one')],
+    })
+    const error = await install({ registry }).then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+
+    expect(await readFile(main, 'utf8')).toBe('-- my code\n')
+    expect(error).toBeInstanceOf(RarnError)
+    expect((error as RarnError).code).toBe(Code.UnsafeDependencyAlias)
+    expect((error as RarnError).where).toBe('evil/pkg@1.0.0')
+    // Refused while reading metadata, so nothing was downloaded or staged either.
+    expect(await pathExists(join(dir, 'RARN_MODULE'))).toBe(false)
+    expect(await pathExists(join(dir, 'rarn.lock'))).toBe(false)
+  })
+})
+
+/** Every file under `root`, relative to it and with forward slashes. */
+async function filesUnder(root: string): Promise<string[]> {
+  const entries = await readdir(root, { recursive: true, withFileTypes: true })
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => relative(root, join(entry.parentPath, entry.name)).replaceAll('\\', '/'))
+    .sort()
+}
+
+describe('a version from rarn.lock', () => {
+  // A committed rarn.lock is repository content, and reusing one skips both the registry
+  // and semver. Its `version` becomes a folder name under _Index and in the cache, and
+  // five levels up from either is somewhere neither owns. The lockfile's own `integrity`
+  // can hold the real archive's digest, so a pull request touching rarn.lock alone is
+  // enough.
+  //
+  // Writing there is the lesser harm. When that directory already exists and has no
+  // `.zip` beside it, the cache takes it for an entry it cannot verify and deletes it
+  // recursively before downloading anything, then unpacks the package in its place.
+  test('cannot name a directory outside the project or the cache', async () => {
+    const project = join(dir, 'p1', 'p2', 'p3', 'project')
+    const cache = join(dir, 'c1', 'c2', 'c3', 'c4', 'cache')
+    await mkdir(project, { recursive: true })
+    await writeFile(
+      join(project, 'rarn.json'),
+      JSON.stringify({ name: '@me/game', version: '1.0.0', dependencies: { '@a/one': '^1.0.0' } }),
+    )
+    const installHere = () =>
+      runInstall({
+        projectDir: project,
+        registry: registryOf(SPEC),
+        store: createCacheStore(cache),
+      })
+    await installHere()
+
+    const lockPath = join(project, 'rarn.lock')
+    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as {
+      packages: Record<string, { version: string }>
+    }
+    const locked = lock.packages['@a/one@1.0.0']
+    if (locked === undefined) throw new Error('the first install recorded no @a/one')
+    locked.version = '1.0.0/../../../../../ESCAPED'
+    await writeFile(lockPath, JSON.stringify(lock, null, 2))
+    // Where that version lands, counting up from cache/extracted/a_one@….
+    await mkdir(join(dir, 'c1', 'c2', 'ESCAPED'))
+    await writeFile(join(dir, 'c1', 'c2', 'ESCAPED', 'precious.txt'), 'not the cache')
+
+    const error = await installHere().then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+
+    const outside = (await filesUnder(dir)).filter(
+      (path) => !path.startsWith('p1/p2/p3/project/') && !path.startsWith('c1/c2/c3/c4/cache/'),
+    )
+    expect(outside).toEqual(['c1/c2/ESCAPED/precious.txt'])
+    expect(error).toBeInstanceOf(RarnError)
+    expect((error as RarnError).code).toBe(Code.LockfileInvalid)
+    expect((error as RarnError).detail).toContain('/version')
+  })
+
+  // The rule is the registry parser's as much as the schema's. If the parser admitted a
+  // version the schema refused, install would write a lockfile it could not read back —
+  // which is how a too-narrow alias pattern once broke every react-lua install. Build
+  // metadata is the case a tighter rule would lose: tazmondo/iris publishes 2.5.2+89e7.
+  test('carrying build metadata, still reads back', async () => {
+    await manifest()
+    const registry = wireRegistry({
+      'a/one': [{ package: { name: 'a/one', version: '1.0.0+89e7', realm: 'shared' } }],
+    })
+    await install({ registry })
+    const again = await install({ registry })
+
+    expect(again.fromLockfile).toBe(true)
+    expect([...again.resolution.packages.keys()]).toEqual(['@a/one@1.0.0+89e7'])
+    expect(await pathExists(join(dir, 'RARN_MODULE', '_Index', 'a_one@1.0.0+89e7', 'one'))).toBe(
+      true,
+    )
   })
 })
