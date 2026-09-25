@@ -43,7 +43,7 @@ installed 5 packages into RARN_MODULE
 나머지는 문서, 테스트, CI 설정 같은 것들이고, Wally 는 그걸 전부 플레이스에 복사한 다음
 동기화할 때 Rojo 더러 걸러내라고 한다.
 
-> **상태: 0.2.0.** 설치 경로는 완성됐다. 실제 Studio, 실제 `wally install`, 그리고 Roblox 의
+> **상태: 0.3.0.** 설치 경로는 완성됐다. 실제 Studio, 실제 `wally install`, 그리고 Roblox 의
 > 인스턴스 단위 캐시를 흉내 낸 require 하니스까지 셋으로 검증했다. 패키지 하나를 라이브
 > 레지스트리에 직접 발행해서 Rarn 과 Wally 양쪽으로 다시 설치되는 것도 확인했다.
 > **매니페스트와 락파일 포맷은 1.0 전까지 안정하지 않다.** 1.0 이 뜻하는 게 바로 그거다.
@@ -89,7 +89,7 @@ rokit install
 ```toml
 # 실행 후 rokit.toml
 [tools]
-rarn = "Hawakiki/roblox-rarn@0.2.0"
+rarn = "Hawakiki/roblox-rarn@0.3.0"
 ```
 
 **alias 를 꼭 붙이자.** Rokit 은 따로 말 안 하면 도구 이름을 저장소 이름에서 가져온다.
