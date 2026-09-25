@@ -1,5 +1,5 @@
 import { readFile, stat } from 'node:fs/promises'
-import { join, posix, relative, sep } from 'node:path'
+import { join, posix, relative, resolve as resolvePath, sep } from 'node:path'
 import { zipSync } from 'fflate'
 import { RETIRED_PREFIX, STAGING_DIR } from '../linker/swap.ts'
 import type { NormalizedManifest } from '../manifest/types.ts'
@@ -10,6 +10,7 @@ import { Code } from '../util/codes.ts'
 import { RarnError } from '../util/errors.ts'
 import { listFiles } from '../util/fs.ts'
 import { byCodeUnit } from '../util/order.ts'
+import { authFilePath } from './auth.ts'
 import { renderWallyToml } from './wally-toml.ts'
 
 /** The registry refuses anything larger. Measured against the live service. */
@@ -28,6 +29,8 @@ export interface PackResult {
   readonly archive: Uint8Array
   readonly entries: readonly PackEntry[]
   readonly totalBytes: number
+  /** Project files left out because they are the login token file; see `tokenFilesIn`. */
+  readonly tokenFiles: readonly string[]
 }
 
 /**
@@ -39,7 +42,9 @@ export interface PackResult {
 export async function pack(projectDir: string, manifest: NormalizedManifest): Promise<PackResult> {
   requireScopedName(manifest)
 
-  const files = await collect(projectDir, manifest)
+  const collected = await collect(projectDir, manifest)
+  const tokenFiles = await tokenFilesIn(projectDir, collected)
+  const files = collected.filter((file) => !tokenFiles.includes(file))
 
   if (files.length === 0) {
     throw new RarnError({
@@ -85,7 +90,59 @@ export async function pack(projectDir: string, manifest: NormalizedManifest): Pr
     })
   }
 
-  return { archive, entries: all, totalBytes: archive.byteLength }
+  return { archive, entries: all, totalBytes: archive.byteLength, tokenFiles }
+}
+
+/**
+ * Which of `files` is the login token file.
+ *
+ * `RARN_AUTH_FILE` can put it anywhere, a project included, and a project can be the
+ * home directory the default lives under. What it holds is the GitHub token the
+ * registry accepts for publishing, so packing it publishes the credential for good.
+ * It is therefore left out unconditionally — over an exact `include` too, which every
+ * other default exclusion yields to, because nobody who names this file means to ship
+ * a token and no package needs one.
+ *
+ * Matched by identity rather than by path. The variable holds whatever someone typed:
+ * relative, cased differently on a case-insensitive volume, through a symlinked
+ * directory. A hard link is the same file under another name. Device and inode answer
+ * "is this that file" in every one of those cases, where comparing paths answers it
+ * only when both happen to be spelled alike. The path comparison stays as well, for a
+ * filesystem that reports no inode at all.
+ */
+async function tokenFilesIn(projectDir: string, files: readonly string[]): Promise<string[]> {
+  const tokenPath = resolvePath(authFilePath())
+  const token = await identity(tokenPath)
+  // A token file that does not exist cannot be packed.
+  if (token === undefined) return []
+
+  const found: string[] = []
+  for (const file of files) {
+    const full = resolvePath(projectDir, file)
+    if (full === tokenPath) {
+      found.push(file)
+      continue
+    }
+    const candidate = await identity(full)
+    if (
+      token.ino !== 0n &&
+      candidate !== undefined &&
+      candidate.dev === token.dev &&
+      candidate.ino === token.ino
+    ) {
+      found.push(file)
+    }
+  }
+  return found
+}
+
+async function identity(path: string): Promise<{ dev: bigint; ino: bigint } | undefined> {
+  try {
+    const { dev, ino } = await stat(path, { bigint: true })
+    return { dev, ino }
+  } catch {
+    return undefined
+  }
 }
 
 /**

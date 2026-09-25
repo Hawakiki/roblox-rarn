@@ -1,28 +1,50 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import * as fsp from 'node:fs/promises'
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { clearToken, readToken, requireToken, writeToken } from '../src/publish/auth.ts'
+import { describe, expect, test } from 'bun:test'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { login } from '../src/cli/commands/login.ts'
+import { whoami } from '../src/cli/commands/whoami.ts'
+import {
+  authFilePath,
+  awaitDeviceToken,
+  githubLogin,
+  startDeviceFlow,
+  writeToken,
+} from '../src/publish/auth.ts'
+import { createRegistryClient } from '../src/registry/client.ts'
+import { DEFAULT_API_URL } from '../src/registry/types.ts'
 import { Code } from '../src/util/codes.ts'
-import { RarnError } from '../src/util/errors.ts'
+import { RarnError, RegistryError } from '../src/util/errors.ts'
+import { blockNetwork, unblockNetwork } from '../src/util/network.ts'
 
-const API = 'https://api.wally.run'
+/**
+ * Stands in for the global fetch and records every call that reaches it.
+ *
+ * The auth calls take no injected fetch — they are the real network by definition —
+ * so the global is the only place to watch them from. It answers plausibly on
+ * purpose: a request that should have been refused then *succeeds*, rather than
+ * failing for some unrelated reason and passing the test by accident.
+ */
+async function withRecordedFetch<T>(run: (calls: string[]) => Promise<T>): Promise<T> {
+  const original = globalThis.fetch
+  const calls: string[] = []
+  globalThis.fetch = ((input: Parameters<typeof globalThis.fetch>[0]) => {
+    const url = input instanceof Request ? input.url : String(input)
+    calls.push(url)
+    if (url.includes('/device/code')) {
+      return Promise.resolve(Response.json({ device_code: 'd', user_code: 'ABCD-1234' }))
+    }
+    if (url.includes('/access_token')) return Promise.resolve(Response.json({ access_token: 't' }))
+    return Promise.resolve(Response.json({ login: 'someone' }))
+  }) as unknown as typeof globalThis.fetch
+  try {
+    return await run(calls)
+  } finally {
+    globalThis.fetch = original
+  }
+}
 
-let root: string
-let path: string
-
-beforeEach(async () => {
-  root = await mkdtemp(join(tmpdir(), 'rarn-auth-'))
-  // One level down, so the directory is one the code has to create.
-  path = join(root, '.rarn', 'auth.json')
-})
-
-afterEach(async () => {
-  await rm(root, { recursive: true, force: true })
-})
-
-async function expectRejection(fn: () => Promise<unknown>): Promise<RarnError> {
+async function rejectionOf(fn: () => Promise<unknown>): Promise<RarnError> {
   try {
     await fn()
   } catch (error) {
@@ -32,126 +54,223 @@ async function expectRejection(fn: () => Promise<unknown>): Promise<RarnError> {
   throw new Error('expected a rejection but the call succeeded')
 }
 
-async function writeRaw(text: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, text, 'utf8')
+const grant = {
+  deviceCode: 'd',
+  userCode: 'ABCD-1234',
+  verificationUri: 'https://github.com/login/device',
+  intervalMs: 0,
+  expiresAt: Date.now() + 60_000,
 }
 
-describe('token file', () => {
-  test('round-trips a token and leaves nothing beside it', async () => {
-    await writeToken(API, 'gho_first', path)
-    await writeToken(`${API}/`, 'gho_second', path)
-
-    expect(await readToken(API, path)).toBe('gho_second')
-    expect(await readdir(dirname(path))).toEqual(['auth.json'])
-  })
-
-  test('a token for another registry survives a login and a logout', async () => {
-    await writeToken('https://other.example', 'gho_other', path)
-    await writeToken(API, 'gho_wally', path)
-    expect(await clearToken(API, path)).toBe(true)
-
-    expect(await readToken('https://other.example', path)).toBe('gho_other')
-    expect(await readToken(API, path)).toBeUndefined()
-  })
-})
-
-describe('a token file that is there but wrong', () => {
-  // What `publish` receives goes out as `Authorization: Bearer <token>`. An object
-  // that reached it would be sent as `Bearer [object Object]`, and the registry's
-  // answer would blame the account rather than the file.
-  test('a value that is not a string is never handed out as a token', async () => {
-    await writeRaw(
-      JSON.stringify({ tokens: { [API]: { token: 'gho_nested' }, 'https://other.example': 42 } }),
-    )
-
-    expect(await readToken(API, path)).toBeUndefined()
-    expect(await readToken('https://other.example', path)).toBeUndefined()
-    const error = await expectRejection(() => requireToken(API, path))
-    expect(error.code).toBe(Code.NotLoggedIn)
-  })
-
-  test('a string entry beside a damaged one is still read', async () => {
-    await writeRaw(JSON.stringify({ tokens: { [API]: 'gho_good', 'https://other.example': 42 } }))
-    expect(await readToken(API, path)).toBe('gho_good')
-  })
-
-  // Logged out rather than an error, because the advice for both is `rarn login`,
-  // and a login is what replaces the file.
-  test('invalid JSON reads as logged out, and a login repairs it', async () => {
-    await writeRaw('{ "tokens": { "https://api.wally.run": "gho_cut')
-
-    expect(await readToken(API, path)).toBeUndefined()
-    await writeToken(API, 'gho_fresh', path)
-    expect(await readToken(API, path)).toBe('gho_fresh')
-    expect(JSON.parse(await readFile(path, 'utf8'))).toEqual({ tokens: { [API]: 'gho_fresh' } })
-  })
-
-  // A directory is the one unreadable file every platform can produce without
-  // privileges. The shapes more likely in the field — a file owned by another
-  // account, a Windows lock — fail the same read in the same place.
-  test('a file that cannot be read is an error, not a logged-out state', async () => {
-    await mkdir(path, { recursive: true })
-
-    const read = await expectRejection(() => readToken(API, path))
-    expect(read.code).toBe(Code.TokenStoreUnreadable)
-    expect(read.where).toBe(path)
-
-    // The one that matters: `logout` answering "not logged in" while the file it
-    // could not read may still hold the token.
-    await expectRejection(() => clearToken(API, path))
-  })
-})
-
-const posix = process.platform !== 'win32'
-if (!posix) {
-  console.warn(
-    '\n  토큰 파일 권한 검사는 Windows 에서 의미가 없어 건너뛴다. CI 의 ubuntu 잡이 실행한다.\n',
-  )
-}
-
-describe.skipIf(!posix)('token file mode', () => {
-  let previousUmask = 0
-  let restoreChmod = (): void => undefined
-
-  beforeEach(() => {
-    // Forced, so the mode measured is the code's and not the runner's. Under a umask
-    // of 0o077 even a file created with the default mode comes out owner-only, and
-    // the test would pass against exactly the defect it is here to catch.
-    previousUmask = process.umask(0o022)
-    // Neutered, so the mode measured is the one the file was created with. A file
-    // written under the default mode and tightened afterwards ends at 0600 all the
-    // same — the final mode alone cannot tell it from one that was never readable
-    // by anyone else, and the time in between is the whole defect.
-    const chmod = spyOn(fsp, 'chmod').mockResolvedValue(undefined)
-    restoreChmod = () => {
-      chmod.mockRestore()
+// These three called the global fetch directly, so `--offline` and RARN_NO_NETWORK
+// never saw them: `rarn login` and `rarn whoami` went out to GitHub regardless.
+describe('auth requests honour the offline guard', () => {
+  test.each([
+    ['startDeviceFlow', () => startDeviceFlow('client')],
+    ['awaitDeviceToken', () => awaitDeviceToken('client', grant)],
+    ['githubLogin', () => githubLogin('token')],
+  ] as const)('%s is refused without touching the network', async (_name, call) => {
+    blockNetwork()
+    try {
+      await withRecordedFetch(async (calls) => {
+        const error = await rejectionOf(call)
+        expect(error.code).toBe(Code.NetworkBlocked)
+        expect(calls).toEqual([])
+      })
+    } finally {
+      unblockNetwork()
     }
   })
 
-  afterEach(() => {
-    process.umask(previousUmask)
-    restoreChmod()
+  // `whoami` reads an undefined answer as "the token was revoked". Swallowing the
+  // refusal here would tell someone who typed `--offline` to log in again.
+  test('githubLogin does not turn a refusal into "no such user"', async () => {
+    const previous = process.env.RARN_NO_NETWORK
+    process.env.RARN_NO_NETWORK = '1'
+    try {
+      await withRecordedFetch(async (calls) => {
+        const error = await rejectionOf(() => githubLogin('token'))
+        expect(error.code).toBe(Code.NetworkBlocked)
+        expect(calls).toEqual([])
+      })
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(process.env, 'RARN_NO_NETWORK')
+      else process.env.RARN_NO_NETWORK = previous
+    }
   })
 
-  const mode = async (target: string): Promise<number> => (await stat(target)).mode & 0o777
+  test('with the network allowed, the same calls do go out', async () => {
+    const previous = process.env.RARN_NO_NETWORK
+    Reflect.deleteProperty(process.env, 'RARN_NO_NETWORK')
+    try {
+      await withRecordedFetch(async (calls) => {
+        expect(await githubLogin('token')).toBe('someone')
+        expect(calls).toEqual(['https://api.github.com/user'])
+      })
+    } finally {
+      if (previous !== undefined) process.env.RARN_NO_NETWORK = previous
+    }
+  })
+})
 
-  test('the token file is owner-only from the moment it exists', async () => {
-    await writeToken(API, 'gho_secret', path)
-    expect((await mode(path)).toString(8)).toBe('600')
+/**
+ * What Bun's fetch rejects with when nothing answers — measured on Bun 1.3.14 against a
+ * closed local port. Not a RarnError, which is the point: it is the failure
+ * `githubLogin` has to translate itself, and the one it used to swallow.
+ */
+function refused(): Error {
+  return Object.assign(new Error('Unable to connect. Is the computer able to access the url?'), {
+    code: 'ConnectionRefused',
+  })
+}
+
+/** Network allowed, with the global fetch answering every request through `answer`. */
+async function online<T>(answer: () => Promise<Response>, run: () => Promise<T>): Promise<T> {
+  const previous = process.env.RARN_NO_NETWORK
+  const original = globalThis.fetch
+  Reflect.deleteProperty(process.env, 'RARN_NO_NETWORK')
+  globalThis.fetch = answer as unknown as typeof globalThis.fetch
+  try {
+    return await run()
+  } finally {
+    globalThis.fetch = original
+    if (previous !== undefined) process.env.RARN_NO_NETWORK = previous
+  }
+}
+
+// `whoami` reads undefined as "the token was revoked", so undefined may only mean
+// that. A lookup that failed is not an answer, and reading it as one told a reader
+// with a dead connection — or a GitHub having a bad minute — to log in again.
+describe('githubLogin tells a failed lookup from an answer', () => {
+  test('a connection that could not be made rejects, rather than naming nobody', async () => {
+    const error = await online(
+      () => Promise.reject(refused()),
+      () => rejectionOf(() => githubLogin('token')),
+    )
+    expect(error).toBeInstanceOf(RegistryError)
+    expect(error.code).toBe(Code.RegistryUnreachable)
   })
 
-  test('a missing config directory is created owner-only', async () => {
-    await writeToken(API, 'gho_secret', path)
-    expect((await mode(dirname(path))).toString(8)).toBe('700')
+  test.each([
+    [500, 'Internal Server Error'],
+    [502, 'Bad Gateway'],
+    [503, 'Service Unavailable'],
+    [403, 'API rate limit exceeded'],
+    [429, 'API rate limit exceeded'],
+  ])('GitHub answering %d is a failure, not a revoked token', async (status, message) => {
+    const error = await online(
+      () => Promise.resolve(Response.json({ message }, { status })),
+      () => rejectionOf(() => githubLogin('token')),
+    )
+    expect(error).toBeInstanceOf(RegistryError)
+    expect(error.code).toBe(Code.RegistryBadResponse)
+    expect(error.what).toContain(String(status))
   })
 
-  test('an existing file with a wider mode is replaced, not written into', async () => {
-    await mkdir(dirname(path), { recursive: true })
-    await writeFile(path, JSON.stringify({ tokens: {} }), { mode: 0o644 })
-    expect((await mode(path)).toString(8)).toBe('644')
+  // Measured against api.github.com: a token it does not recognise gets 401
+  // `Bad credentials`, and that is the one status read as a verdict on the token.
+  test('401 is the one answer that means the token is no good', async () => {
+    const who = await online(
+      () => Promise.resolve(Response.json({ message: 'Bad credentials' }, { status: 401 })),
+      () => githubLogin('token'),
+    )
+    expect(who).toBeUndefined()
+  })
+})
 
-    await writeToken(API, 'gho_secret', path)
-    expect((await mode(path)).toString(8)).toBe('600')
+/**
+ * The commands read the token from disk, so the file is moved somewhere disposable —
+ * by `RARN_AUTH_FILE`, for the reason `authFilePath` gives. Moving HOME and USERPROFILE
+ * instead would redirect nothing outside Windows: on Linux and macOS the suite would
+ * replace the real `~/.rarn/auth.json` on every run, and still pass, because it would
+ * read back the file it had just written.
+ *
+ * The path is asserted before anything is written, so a redirect that stops reaching
+ * `authFilePath` fails here instead of logging whoever runs the suite out.
+ */
+async function withAuthFile<T>(run: () => Promise<T>): Promise<T> {
+  const root = await mkdtemp(join(tmpdir(), 'rarn-auth-'))
+  // One level down, as `~/.rarn` is, so the directory is one the code has to create.
+  const file = join(root, '.rarn', 'auth.json')
+  const saved = process.env.RARN_AUTH_FILE
+  process.env.RARN_AUTH_FILE = file
+  try {
+    expect(authFilePath()).toBe(file)
+    await writeToken(DEFAULT_API_URL, 'stored-token')
+    expect(await readFile(file, 'utf8')).toContain('stored-token')
+    return await run()
+  } finally {
+    if (saved === undefined) Reflect.deleteProperty(process.env, 'RARN_AUTH_FILE')
+    else process.env.RARN_AUTH_FILE = saved
+    await rm(root, { recursive: true, force: true })
+  }
+}
+
+describe('where the token lives', () => {
+  test('RARN_AUTH_FILE wins, so the tests never touch a real login', () => {
+    expect(authFilePath({ RARN_AUTH_FILE: join('custom', 'auth.json') })).toBe(
+      join('custom', 'auth.json'),
+    )
+  })
+
+  test('without it, or with it empty, the token lives in the home directory', () => {
+    const home = join(homedir(), '.rarn', 'auth.json')
+    expect(authFilePath({})).toBe(home)
+    expect(authFilePath({ RARN_AUTH_FILE: '' })).toBe(home)
+  })
+})
+
+async function stdoutOf(run: () => Promise<void>): Promise<string> {
+  const written: string[] = []
+  const original = process.stdout.write.bind(process.stdout)
+  process.stdout.write = (chunk: unknown) => {
+    written.push(String(chunk))
+    return true
+  }
+  try {
+    await run()
+  } finally {
+    process.stdout.write = original
+  }
+  return written.join('')
+}
+
+const registry = createRegistryClient({ apiUrl: DEFAULT_API_URL })
+
+describe('whoami', () => {
+  test('an unreachable GitHub is reported as the network, not as a revoked token', async () => {
+    const error = await withAuthFile(() =>
+      online(
+        () => Promise.reject(refused()),
+        () => rejectionOf(() => whoami({ cwd: '.' }, registry)),
+      ),
+    )
+    expect(error.code).toBe(Code.RegistryUnreachable)
+    expect(error.how).not.toContain('rarn login')
+  })
+
+  test('a token GitHub refuses is reported as one that no longer works', async () => {
+    const error = await withAuthFile(() =>
+      online(
+        () => Promise.resolve(Response.json({ message: 'Bad credentials' }, { status: 401 })),
+        () => rejectionOf(() => whoami({ cwd: '.' }, registry)),
+      ),
+    )
+    expect(error.code).toBe(Code.NotLoggedIn)
+    expect(error.what).toContain('no longer valid')
+  })
+})
+
+describe('login', () => {
+  // Unlike `whoami`, the name is decoration here: the token is already saved, and a
+  // lookup that fails must not turn a login that worked into one that did not.
+  test('an existing login is still reported when the name cannot be looked up', async () => {
+    const printed = await withAuthFile(() =>
+      online(
+        () => Promise.reject(refused()),
+        () => stdoutOf(() => login({ cwd: '.' }, registry)),
+      ),
+    )
+    expect(printed).toContain('already logged in')
   })
 })

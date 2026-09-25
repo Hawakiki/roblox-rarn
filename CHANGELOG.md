@@ -10,7 +10,6 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ### Security
 
-
 - **The login token file is created owner-only from the start** (RN-19). `~/.rarn/auth.json`
   was written with the default mode and restricted to `0600` afterwards, so on macOS and
   Linux the token Wally accepts for publishing could be read by another account on the
@@ -21,6 +20,12 @@ rather than silently misread, and a `0.x` release may bump it.
   A token file that exists but cannot be read now fails with the new `RN0603`, naming the
   file. It used to read as "not logged in", which let `rarn logout` report nothing to
   remove while the token was still on disk.
+
+- **`rarn pack` and `rarn publish` never include the login token file** (RN-20), and say
+  so when they leave it out. It is matched by file identity rather than by name, so it is
+  caught when the project is your home directory, when `RARN_AUTH_FILE` points inside the
+  project, and over an exact `include`. A copy stranded by an interrupted login carries
+  the `.rarn-tmp` suffix, which publishing already leaves out.
 
 ### Fixed
 
@@ -88,6 +93,31 @@ rather than silently misread, and a `0.x` release may bump it.
   was. Windows refuses to replace a file that anything has open, even only for reading;
   the in-place write did not have that limit. An interrupted write can leave a
   `.rarn.json.<token>.rarn-tmp` beside the file, and `rarn publish` never includes one.
+
+- **A registry request that stops answering now fails instead of hanging** (RN-20).
+  Nothing bounded the wait but Bun's own 300-second limit per attempt, so a dead
+  connection sat silent for up to fifteen minutes behind the retries, and a download that
+  stalled partway was never retried and surfaced as an internal error (`RN0003`). A
+  request now gives up after 30 seconds without a response starting, or 30 seconds
+  without a byte of body arriving, with the new `RN0102` (exit 2), and a stalled download
+  is retried like any other failed request. A slow transfer that keeps arriving is never
+  cut off.
+
+- **`rarn login` and `rarn whoami` now honour `--offline` and `RARN_NO_NETWORK`**
+  (RN-20). Their requests to GitHub went out regardless of the guarantee that covers every
+  other request. With a token already stored, `login` still reports `already logged in`.
+  `whoami` also stopped reporting a failed lookup as a revoked token: only a `401` from
+  GitHub means that now, and anything else is reported as the network or server problem
+  it was.
+
+- **`rarn publish` no longer says "Nothing was published" when it cannot know that**
+  (RN-20). The registry commits a version before its slow index recrawl, so a publish can
+  go through and still time out. After a timeout, a `5xx`, a gateway timeout or a
+  connection dropped mid-upload, it now says the version may have been published and
+  prints the `rarn info @scope/name@version` command that settles it. It still never
+  retries. A connection that was provably never made — a refused port, an unresolvable
+  host, a rejected TLS certificate — still says nothing was published, and names the
+  certificate problem.
 
 ### Changed
 

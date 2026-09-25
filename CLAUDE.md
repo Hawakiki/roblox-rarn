@@ -848,6 +848,21 @@ timeout is a second publish), and the default exclude list covers `.env`, `*.key
 and `*.pem`. The two ways of being wrong are not symmetric — one file too few breaks
 an install and is fixed in minutes, one file too many cannot be undone at all.
 
+**The login token file is never packed**, wherever `RARN_AUTH_FILE` puts it. It is matched
+by file identity rather than by path, and wins over an exact `include` too: no package needs
+it, and nobody naming it means to publish the token Wally accepts for publishing.
+
+**A failed publish may still have published.** Read from the backend's `publish` handler:
+it stores the archive and commits the version to its index, and only then recrawls the
+whole index for search before answering. The slow step comes after the point of no return,
+so only a 4xx or a connection provably never made may say *nothing was published*. On Bun
+1.3.14 that is `ConnectionRefused` — a closed port, an unresolvable host, a peer that does
+not speak TLS — and a refused certificate, which carries its own code and fails before the
+request is sent (measured: the server saw the handshake and not one byte of the upload).
+Everything else says it *may* have been and names the `rarn info` command that settles it:
+a timeout, any 5xx, and `ECONNRESET`, which Bun reports alike for a peer that closed on
+accept and for one that read the whole upload first.
+
 **An installed dependency tree is excluded by shape, not by name.** Rarn derives its own
 realm directories from `packageDir`, but it cannot derive what another tool called its:
 Wally installs into `Packages/`, `ServerPackages/` and `DevPackages/`, and a migrated

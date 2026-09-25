@@ -1,12 +1,17 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { link, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { unzipSync } from 'fflate'
+import { pack as packCommand } from '../src/cli/commands/pack.ts'
+import { publish as publishCommand } from '../src/cli/commands/publish.ts'
 import { normalizeManifest } from '../src/manifest/read.ts'
 import type { Manifest } from '../src/manifest/types.ts'
+import { authFilePath, writeToken } from '../src/publish/auth.ts'
 import { collect, matches, pack } from '../src/publish/pack.ts'
 import { renderWallyToml, toCargoRange } from '../src/publish/wally-toml.ts'
+import { createRegistryClient } from '../src/registry/client.ts'
+import { DEFAULT_API_URL } from '../src/registry/types.ts'
 import { Code } from '../src/util/codes.ts'
 import { RarnError } from '../src/util/errors.ts'
 import { asIfLocale } from './locale.ts'
@@ -407,5 +412,185 @@ describe('secrets are never packed', () => {
       manifestOf({ include: ['init.luau', '.env'], exclude: ['.env'] }),
     )
     expect(files).toEqual(['init.luau'])
+  })
+})
+
+/**
+ * Points the login token file at `file` for the length of `run`, the way a user does.
+ * The path is asserted first, so a redirect that stops reaching `authFilePath` fails
+ * here rather than quietly testing whatever token the machine running the suite has.
+ */
+async function withTokenFile<T>(file: string, run: () => Promise<T>): Promise<T> {
+  const saved = process.env.RARN_AUTH_FILE
+  process.env.RARN_AUTH_FILE = file
+  try {
+    expect(authFilePath()).toBe(file)
+    return await run()
+  } finally {
+    if (saved === undefined) Reflect.deleteProperty(process.env, 'RARN_AUTH_FILE')
+    else process.env.RARN_AUTH_FILE = saved
+  }
+}
+
+async function stdoutOf(run: () => Promise<void>): Promise<string> {
+  const written: string[] = []
+  const original = process.stdout.write.bind(process.stdout)
+  process.stdout.write = (chunk: unknown) => {
+    written.push(String(chunk))
+    return true
+  }
+  try {
+    await run()
+  } finally {
+    process.stdout.write = original
+  }
+  return written.join('')
+}
+
+// `RARN_AUTH_FILE` can put the token anywhere, including inside the project, and the
+// token in it is the one the registry accepts for publishing. Packing it would publish
+// the credential permanently; none of the name-based exclusions would catch it.
+describe('the login token is never packed', () => {
+  const TOKEN = 'gho_the-real-token'
+
+  const project = async (files: Record<string, string>): Promise<string> => {
+    const dir = await mkdtemp(join(tmpdir(), 'rarn-token-'))
+    for (const [path, body] of Object.entries(files)) {
+      const full = join(dir, ...path.split('/'))
+      await mkdir(join(full, '..'), { recursive: true })
+      await writeFile(full, body)
+    }
+    return dir
+  }
+
+  const contentsOf = (archive: Uint8Array): string =>
+    Object.values(unzipSync(archive))
+      .map((bytes) => new TextDecoder().decode(bytes))
+      .join('\n')
+
+  test('a token file inside the project is left out, and reported', async () => {
+    const dir = await project({ 'init.luau': 'return 1' })
+    const file = join(dir, '.rarn', 'auth.json')
+
+    const result = await withTokenFile(file, async () => {
+      await writeToken(DEFAULT_API_URL, TOKEN)
+      return await pack(dir, manifestOf())
+    })
+
+    expect(result.entries.map((e) => e.path)).toEqual(['init.luau', 'wally.toml'])
+    expect(result.tokenFiles).toEqual(['.rarn/auth.json'])
+    expect(contentsOf(result.archive)).not.toContain(TOKEN)
+  })
+
+  // Every other default exclusion yields to an exact `include`, because naming a file
+  // can only be deliberate. Nobody names this one meaning to publish a token.
+  test('naming it exactly in include does not ship it', async () => {
+    const dir = await project({ 'init.luau': 'return 1' })
+    const file = join(dir, '.rarn', 'auth.json')
+
+    const result = await withTokenFile(file, async () => {
+      await writeToken(DEFAULT_API_URL, TOKEN)
+      return await pack(dir, manifestOf({ include: ['init.luau', '.rarn/auth.json'] }))
+    })
+
+    expect(result.entries.map((e) => e.path)).toEqual(['init.luau', 'wally.toml'])
+    expect(contentsOf(result.archive)).not.toContain(TOKEN)
+  })
+
+  // The path is whatever someone typed — relative, cased differently on a
+  // case-insensitive volume, through a symlinked directory — and a hard link is the
+  // same file under another name. Only identity catches all of them.
+  test('it is recognised as a file, not as a spelling of its path', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'rarn-token-home-'))
+    const dir = await project({ 'init.luau': 'return 1' })
+    const file = join(home, 'auth.json')
+
+    try {
+      const result = await withTokenFile(file, async () => {
+        await writeToken(DEFAULT_API_URL, TOKEN)
+        await mkdir(join(dir, 'config'))
+        await link(file, join(dir, 'config', 'settings.json'))
+        return await pack(dir, manifestOf())
+      })
+
+      expect(result.entries.map((e) => e.path)).toEqual(['init.luau', 'wally.toml'])
+      expect(result.tokenFiles).toEqual(['config/settings.json'])
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  test('a token file elsewhere changes nothing', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'rarn-token-home-'))
+    const dir = await project({ 'init.luau': 'return 1', 'config/settings.json': '{}' })
+
+    try {
+      const result = await withTokenFile(join(home, 'auth.json'), async () => {
+        await writeToken(DEFAULT_API_URL, TOKEN)
+        return await pack(dir, manifestOf())
+      })
+
+      expect(result.entries.map((e) => e.path)).toEqual([
+        'config/settings.json',
+        'init.luau',
+        'wally.toml',
+      ])
+      expect(result.tokenFiles).toEqual([])
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  // Left out silently, the token would still sit in the project — where `git add .`
+  // does not know to skip it.
+  test('`rarn pack` and `rarn publish --dry-run` say it was left out', async () => {
+    const dir = await project({
+      'rarn.json': JSON.stringify({ name: '@me/thing', version: '1.0.0' }),
+      'init.luau': 'return 1',
+    })
+    const file = join(dir, '.rarn', 'auth.json')
+
+    const [packed, dryRun] = await withTokenFile(file, async () => {
+      await writeToken(DEFAULT_API_URL, TOKEN)
+      return [
+        await stdoutOf(() => packCommand({ cwd: dir })),
+        await stdoutOf(() => publishCommand({ cwd: dir, dryRun: true })),
+      ]
+    })
+
+    for (const printed of [packed, dryRun]) {
+      expect(printed).toContain('left out')
+      expect(printed).toContain('.rarn/auth.json')
+    }
+  })
+})
+
+describe('rarn publish', () => {
+  // The advice after a publish of unknown outcome is a command to run, so it has to
+  // name the version this project is publishing rather than a template to fill in.
+  test('a publish of unknown outcome names the exact version to check for', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'rarn-token-home-'))
+    const dir = await mkdtemp(join(tmpdir(), 'rarn-publish-'))
+    await writeFile(join(dir, 'rarn.json'), JSON.stringify({ name: '@me/thing', version: '1.2.3' }))
+    await writeFile(join(dir, 'init.luau'), 'return 1')
+    const registry = createRegistryClient({
+      apiUrl: DEFAULT_API_URL,
+      fetch: () => Promise.resolve(new Response('upstream request timeout', { status: 504 })),
+    })
+
+    let thrown: unknown
+    try {
+      await withTokenFile(join(home, 'auth.json'), async () => {
+        await writeToken(DEFAULT_API_URL, 'token')
+        await publishCommand({ cwd: dir }, registry)
+      })
+    } catch (error) {
+      thrown = error
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+
+    expect(thrown).toBeInstanceOf(RarnError)
+    expect((thrown as RarnError).how).toContain('`rarn info @me/thing@1.2.3`')
   })
 })

@@ -33,6 +33,7 @@ export const Code = {
   // RN0100-RN0199 — registry and network
   RegistryUnreachable: 'RN0100',
   RegistryBadResponse: 'RN0101',
+  NetworkTimeout: 'RN0102',
   PackageNotFound: 'RN0110',
   VersionNotFound: 'RN0111',
   WallyVersionHeaderRejected: 'RN0120',

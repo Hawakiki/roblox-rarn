@@ -2,17 +2,28 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { ATOMIC_TEMP_SUFFIX } from '../util/atomic-write.ts'
 import { Code } from '../util/codes.ts'
 import { RarnError, RegistryError } from '../util/errors.ts'
 import { isNotFoundError } from '../util/fs.ts'
+import { createFetch } from '../util/network.ts'
 
 /**
  * Where tokens live.
  *
  * Beside the cache rather than in it: the cache is disposable by design and
  * `rarn cache clean` empties it, which must not log the user out.
+ *
+ * `RARN_AUTH_FILE` overrides it, which is what the tests use, and it has to be a
+ * variable read here rather than a moved HOME. Bun on Linux and macOS does not pass an
+ * assignment to `process.env` down to the C environment, and `homedir()` reads HOME
+ * from there — so moving HOME does not redirect `homedir()` on those platforms. On
+ * Windows `homedir()` reads USERPROFILE and ignores HOME, and an assignment to
+ * USERPROFILE does reach it. An explicit variable is the one seam that moves everywhere.
  */
-export function authFilePath(): string {
+export function authFilePath(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env.RARN_AUTH_FILE
+  if (override !== undefined && override !== '') return override
   return join(homedir(), '.rarn', 'auth.json')
 }
 
@@ -132,8 +143,9 @@ function asMap(value: unknown): Readonly<Record<string, unknown>> | undefined {
 /**
  * Written beside the target and renamed over it, never written in place.
  *
- * Writing the file and restricting it afterwards left the token readable by every
- * account on the machine in between: the file was created with the default mode
+ * Writing the file and restricting it afterwards left the token readable by other
+ * accounts on the machine in between, wherever the home directory lets them through:
+ * the file was created with the default mode
  * (0644 under the usual umask), and a `chmod` whose failure was swallowed could
  * leave it there for good. A file created owner-only has no such moment. The
  * rename also means an interrupted write leaves the previous file rather than a
@@ -143,9 +155,14 @@ function asMap(value: unknown): Readonly<Record<string, unknown>> | undefined {
  * new file in place of the old one rather than writing into it, so no earlier mode
  * survives to be corrected. Windows ignores the modes, and the ACL inherited from
  * the user profile is what restricts the file there, as it always was.
+ *
+ * The temporary name ends in the suffix `publish` leaves out by default. `RARN_AUTH_FILE`
+ * can put the token inside a project, and a copy stranded by a kill mid-write is the
+ * token too — one that the identity check in pack.ts cannot recognise, being a
+ * different file.
  */
 async function persist(path: string, file: AuthFile): Promise<void> {
-  const temp = `${path}.${randomUUID()}.tmp`
+  const temp = `${path}.${randomUUID()}${ATOMIC_TEMP_SUFFIX}`
   try {
     // Applies only to a directory created here. One that exists is left as it is.
     await mkdir(dirname(path), { recursive: true, mode: 0o700 })
@@ -184,6 +201,14 @@ export interface DeviceCodeGrant {
 
 const GITHUB_DEVICE_CODE_URL = 'https://github.com/login/device/code'
 const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token'
+const GITHUB_USER_URL = 'https://api.github.com/user'
+
+/**
+ * GitHub is reached through the same entry as the registry. These three requests
+ * called the global `fetch` directly, so `--offline` never saw them and nothing but
+ * Bun's own 300s limit bounded how long they could hang.
+ */
+const network = createFetch()
 
 /**
  * GitHub's device flow, which is how Wally authenticates and therefore how Rarn must.
@@ -197,7 +222,7 @@ const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token'
  * be a far larger credential than the job requires.
  */
 export async function startDeviceFlow(clientId: string): Promise<DeviceCodeGrant> {
-  const response = await fetch(GITHUB_DEVICE_CODE_URL, {
+  const response = await network(GITHUB_DEVICE_CODE_URL, {
     method: 'POST',
     headers: { accept: 'application/json', 'content-type': 'application/json' },
     body: JSON.stringify({ client_id: clientId, scope: 'read:user' }),
@@ -250,7 +275,7 @@ export async function awaitDeviceToken(
     await sleep(waitMs)
     onTick?.()
 
-    const response = await fetch(GITHUB_TOKEN_URL, {
+    const response = await network(GITHUB_TOKEN_URL, {
       method: 'POST',
       headers: { accept: 'application/json', 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -296,17 +321,43 @@ export async function awaitDeviceToken(
   })
 }
 
-/** Who a token belongs to. Used by `whoami`, which is otherwise unverifiable. */
+/**
+ * Who a token belongs to. Used by `whoami`, which is otherwise unverifiable.
+ *
+ * Undefined means GitHub refused the token — 401, which is what it answers a token it
+ * does not recognise (measured: `Bad credentials`). `whoami` reads undefined as a revoked
+ * login, so nothing else may produce it: a request that could not be made or finished,
+ * and a status that is GitHub failing rather than judging (a 5xx, a rate-limit 403 or
+ * 429), all throw. Swallowing them told someone who typed `--offline`, or who met GitHub
+ * on a bad minute, to log in again.
+ */
 export async function githubLogin(token: string): Promise<string | undefined> {
   try {
-    const response = await fetch('https://api.github.com/user', {
+    const response = await network(GITHUB_USER_URL, {
       headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json' },
     })
-    if (!response.ok) return undefined
+    if (response.status === 401) return undefined
+    if (!response.ok) {
+      const text = (await response.text().catch(() => '')).trim()
+      throw new RegistryError({
+        code: Code.RegistryBadResponse,
+        what: `GitHub answered ${response.status} when asked who the stored token belongs to.`,
+        where: GITHUB_USER_URL,
+        detail: text === '' ? undefined : `  ${text.slice(0, 300)}`,
+        how: 'This is usually temporary. Try again in a moment. The token itself was not changed.',
+      })
+    }
     const body = (await response.json()) as { login?: string }
     return body.login
-  } catch {
-    return undefined
+  } catch (cause) {
+    if (cause instanceof RarnError) throw cause
+    throw new RegistryError({
+      code: Code.RegistryUnreachable,
+      what: 'Could not ask GitHub who the stored token belongs to.',
+      where: GITHUB_USER_URL,
+      how: 'Check your network connection and try again. The token itself was not changed.',
+      cause,
+    })
   }
 }
 
