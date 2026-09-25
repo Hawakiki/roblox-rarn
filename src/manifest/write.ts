@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises'
+import { writeFileAtomic } from '../util/atomic-write.ts'
 import { Code } from '../util/codes.ts'
 import { RarnError } from '../util/errors.ts'
 import { parsePackageName, toRarnName } from '../util/package-name.ts'
@@ -58,13 +58,14 @@ export function serializeManifest(manifest: Manifest): string {
 export async function writeManifest(dir: string, manifest: Manifest): Promise<void> {
   const path = manifestPath(dir)
   try {
-    await writeFile(path, serializeManifest(manifest), 'utf8')
+    await writeFileAtomic(path, serializeManifest(manifest))
   } catch (cause) {
     throw new RarnError({
       code: Code.ManifestUnreadable,
       what: 'Could not write rarn.json.',
       where: path,
-      how: 'Check that the file is not read-only and the directory is writable.',
+      detail: '  rarn.json was left as it was.',
+      how: 'Check that the file is not read-only and the directory is writable, and close anything holding the file open.',
       cause,
     })
   }

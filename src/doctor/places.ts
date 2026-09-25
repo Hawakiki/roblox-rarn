@@ -2,6 +2,7 @@ import { readFile, readdir, stat } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import semver from 'semver'
 import { INDEX_DIR_NAME, findProjectFiles } from '../project/place.ts'
+import { byCodeUnit } from '../util/order.ts'
 import { toRarnName } from '../util/package-name.ts'
 import { areCompatible } from '../util/version-range.ts'
 
@@ -258,7 +259,7 @@ function compare(
   }
 
   return duplicates.sort(
-    (a, b) => Number(b.compatible) - Number(a.compatible) || a.name.localeCompare(b.name),
+    (a, b) => Number(b.compatible) - Number(a.compatible) || byCodeUnit(a.name, b.name),
   )
 }
 
@@ -266,7 +267,7 @@ function compare(
 function byVersionDescending(a: TreeVersion, b: TreeVersion): number {
   const left = semver.parse(a.version)
   const right = semver.parse(b.version)
-  if (left === null || right === null) return a.version.localeCompare(b.version, 'en')
+  if (left === null || right === null) return byCodeUnit(a.version, b.version)
   return right.compare(left)
 }
 

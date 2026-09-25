@@ -13,6 +13,7 @@ import { METADATA_CONCURRENCY } from '../src/util/concurrency.ts'
 import { RarnError } from '../src/util/errors.ts'
 import { type PackageName, parseWallyName, toWallyName } from '../src/util/package-name.ts'
 import { parsePackageReq } from '../src/util/version-range.ts'
+import { asIfLocale } from './locale.ts'
 
 /**
  * Builds a fake registry from a compact literal.
@@ -512,6 +513,31 @@ describe('reproducibility', () => {
     )
     expect(result.packages.get('@a/one@1.0.0')?.requestedBy[0]?.from).toBe('root')
     expect(result.packages.get('@a/two@1.0.0')?.requestedBy[0]?.from).toBe('@a/one@1.0.0')
+  })
+
+  // `requestedBy` is what the lockfile records and `rarn why` prints. Collated by the
+  // machine's locale, a Czech one listed `@a/dog` before `@a/chalk` — `ch` sorts after
+  // `h` there — and even English puts `^` before `>=`, the opposite of `.sort()`.
+  test('orders requesters by code unit on every machine', async () => {
+    const spec: Spec = {
+      'a/chalk': { '1.0.0': { Shared: 'a/shared@^1.0.0' } },
+      'a/dog': { '1.0.0': { Shared: 'a/shared@^1.0.0' } },
+      'a/shared': { '1.0.0': {} },
+    }
+    const manifest = {
+      dependencies: { '@a/dog': '^1.0.0', '@a/chalk': '^1.0.0', '@a/shared': '^1.0.0' },
+      serverDependencies: { '@a/shared': '>=1.0.0 <2.0.0' },
+    }
+
+    const { result } = await asIfLocale('cs', () => run(spec, manifest))
+    expect(
+      result.packages.get('@a/shared@1.0.0')?.requestedBy.map((c) => `${c.from} ${c.range}`),
+    ).toEqual([
+      '@a/chalk@1.0.0 ^1.0.0',
+      '@a/dog@1.0.0 ^1.0.0',
+      'root >=1.0.0 <2.0.0',
+      'root ^1.0.0',
+    ])
   })
 })
 

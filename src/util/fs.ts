@@ -1,5 +1,6 @@
 import { access, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { byCodeUnit } from './order.ts'
 
 /**
  * Whether a rejected filesystem call means "not there" rather than a real failure.
@@ -36,7 +37,7 @@ export async function listFiles(root: string): Promise<string[]> {
 
   const walk = async (dir: string): Promise<void> => {
     const entries = await readdir(dir, { withFileTypes: true })
-    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of entries.sort((a, b) => byCodeUnit(a.name, b.name))) {
       const full = join(dir, entry.name)
       if (entry.isDirectory()) await walk(full)
       else if (entry.isFile()) found.push(full)

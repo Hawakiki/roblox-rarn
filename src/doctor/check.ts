@@ -5,6 +5,7 @@ import { INDEX_DIR_NAME } from '../linker/layout.ts'
 import type { NormalizedManifest } from '../manifest/types.ts'
 import type { Resolution } from '../resolver/types.ts'
 import { pathExists } from '../util/fs.ts'
+import { byCodeUnit } from '../util/order.ts'
 import { toIndexDir } from '../util/package-name.ts'
 import { scanSource } from './scan.ts'
 
@@ -54,7 +55,7 @@ export async function runDoctor(
   let filesScanned = 0
   let dynamicTotal = 0
 
-  for (const [key, pkg] of [...resolution.packages].sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [key, pkg] of [...resolution.packages].sort(([a], [b]) => byCodeUnit(a, b))) {
     const entry = join(
       layout.realms[pkg.placement],
       INDEX_DIR_NAME,
@@ -91,7 +92,7 @@ export async function runDoctor(
     const missing = [...required.entries()]
       .filter(([alias]) => !declared.has(alias))
       .map(([alias, where]) => ({ alias, ...where }))
-      .sort((a, b) => a.alias.localeCompare(b.alias))
+      .sort((a, b) => byCodeUnit(a.alias, b.alias))
 
     const unused = [...declared].filter((alias) => !required.has(alias)).sort()
 

@@ -1,7 +1,10 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import * as fsp from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import lockSchema from '../schemas/rarn.lock.schema.json' with { type: 'json' }
+import manifestSchema from '../schemas/rarn.schema.json' with { type: 'json' }
 import { checkFreshness } from '../src/lockfile/freshness.ts'
 import { readLockfile, resolutionFromLockfile } from '../src/lockfile/read.ts'
 import { LOCKFILE_VERSION } from '../src/lockfile/types.ts'
@@ -13,6 +16,7 @@ import type { Placement, Resolution, ResolvedPackage } from '../src/resolver/typ
 import { Code } from '../src/util/codes.ts'
 import { RarnError } from '../src/util/errors.ts'
 import { parseWallyName } from '../src/util/package-name.ts'
+import { asIfLocale } from './locale.ts'
 
 let dir: string
 
@@ -28,6 +32,7 @@ interface Spec {
   placement?: Placement
   deps?: Record<string, string>
   dev?: boolean
+  requestedBy?: { from: string; range: string }[]
 }
 
 function resolutionOf(spec: Record<string, Spec>): Resolution {
@@ -44,7 +49,10 @@ function resolutionOf(spec: Record<string, Spec>): Resolution {
       realm: placement === 'server' ? 'server' : 'shared',
       placement,
       dependencies: new Map(Object.entries(pkg.deps ?? {})),
-      requestedBy: [{ from: 'root', range: '*', placement }],
+      requestedBy: (pkg.requestedBy ?? [{ from: 'root', range: '*' }]).map((c) => ({
+        ...c,
+        placement,
+      })),
       dev: pkg.dev ?? false,
       forcedBy: undefined,
     })
@@ -100,6 +108,72 @@ describe('buildLockfile', () => {
       'a/a': {},
     })
     expect(Object.keys(lock.packages['@a/one@1.0.0']?.dependencies ?? {})).toEqual(['Alpha', 'Zed'])
+  })
+
+  // The `packages` map was already sorted by code unit and the maps inside it were not,
+  // so one file followed two rules. Measured on a 619-package warm cache: of the 152
+  // packages with two or more dependencies, vocksel/import@2.1.0 is the one where the
+  // rules disagree, over `t` and `TestEZ`. An alias may also hold `-` and `_`, which
+  // the two rules order oppositely.
+  test('orders aliases by code unit, the rule the packages map already used', () => {
+    const lock = build({
+      'vocksel/import': {
+        version: '2.1.0',
+        deps: {
+          t: '@osyrisrblx/t@3.0.0',
+          Llama: '@freddylist/llama@1.1.1',
+          TestEZ: '@roblox/testez@0.4.1',
+        },
+      },
+      'a/one': { deps: { es7_types: '@a/x@1.0.0', 'es7-types': '@a/y@1.0.0' } },
+    })
+
+    expect(Object.keys(lock.packages['@vocksel/import@2.1.0']?.dependencies ?? {})).toEqual([
+      'Llama',
+      'TestEZ',
+      't',
+    ])
+    expect(Object.keys(lock.packages['@a/one@1.0.0']?.dependencies ?? {})).toEqual([
+      'es7-types',
+      'es7_types',
+    ])
+  })
+
+  // One requester, two ranges: a package declared in two manifest sections.
+  test('orders the ranges of one requester by code unit', () => {
+    const lock = build({
+      'a/one': {
+        requestedBy: [
+          { from: 'root', range: '^1.0.0' },
+          { from: 'root', range: '>=1.0.0 <2.0.0' },
+        ],
+      },
+    })
+    expect(lock.packages['@a/one@1.0.0']?.requestedBy?.map((c) => c.range)).toEqual([
+      '>=1.0.0 <2.0.0',
+      '^1.0.0',
+    ])
+  })
+
+  // With no locale argument the collation is the machine's, and locales disagree about
+  // plain ASCII: Czech sorts `ch` after `h`. The same install on a machine set to Czech
+  // wrote a different rarn.lock from CI's, and every commit from it was a diff.
+  test('writes the same bytes whatever the machine locale', async () => {
+    const spec: Record<string, Spec> = {
+      'acme/chalk': {},
+      'acme/dog': {},
+      'acme/shared': {
+        requestedBy: [
+          { from: '@acme/dog@1.0.0', range: '^1.0.0' },
+          { from: '@acme/chalk@1.0.0', range: '^1.0.0' },
+        ],
+      },
+    }
+    const manifest = { dependencies: { '@acme/dog': '^1.0.0', '@acme/chalk': '^1.0.0' } }
+
+    const here = serializeLockfile(build(spec, manifest))
+    const there = await asIfLocale('cs', () => serializeLockfile(build(spec, manifest)))
+    expect(there).toBe(here)
   })
 
   test('ends with a newline so the file is a well-formed text file', () => {
@@ -263,6 +337,55 @@ describe('readLockfile', () => {
     expect(error.code).toBe(Code.LockfileTooNew)
     expect(error.how).toContain('Upgrade Rarn')
   })
+
+  /** A lockfile Rarn wrote, with one package's `version` then edited to `version`. */
+  async function writeWithVersion(version: string): Promise<void> {
+    const lock = build({ 'a/one': {} }, { dependencies: { '@a/one': '^1.0.0' } })
+    const locked = lock.packages['@a/one@1.0.0']
+    if (locked === undefined) throw new Error('build() recorded no @a/one')
+    await writeFile(
+      join(dir, 'rarn.lock'),
+      JSON.stringify({ ...lock, packages: { '@a/one@1.0.0': { ...locked, version } } }),
+    )
+  }
+
+  // Reusing a lockfile goes around the registry and semver both, and `version` becomes
+  // a folder name under _Index and in the cache. Each of these names some other folder,
+  // or one semver would never have produced.
+  test.each([
+    '1.0.0/../../../../../ESCAPED',
+    '1.0.0\\..\\..\\ESCAPED',
+    '..',
+    'C:ESCAPED',
+    '1.0.0:stream',
+    'v1.0.0',
+    ' 1.0.0',
+    '1.0',
+    '0.0.0-001',
+  ])('refuses a version of %p before anything reads it', async (version) => {
+    await writeWithVersion(version)
+    const error = (await readLockfile(dir).catch((e: unknown) => e)) as RarnError
+    expect(error).toBeInstanceOf(RarnError)
+    expect(error.code).toBe(Code.LockfileInvalid)
+    expect(error.detail).toContain('/version')
+  })
+
+  // Build metadata is where a stricter rule would go wrong: `semver.valid` drops it, so
+  // comparing against that refuses tazmondo/iris, vide and jecs — seven registry
+  // versions (wally-index, 2026-09-25) that install today.
+  test.each(['4.0.0', '4.0.0-rc.2', '2.5.2+89e7', '0.4.1+horse.0.1'])(
+    'accepts %p',
+    async (version) => {
+      await writeWithVersion(version)
+      expect((await readLockfile(dir))?.packages['@a/one@1.0.0']?.version).toBe(version)
+    },
+  )
+
+  // Spelled out in both schemas so that each validates on its own. Every version a
+  // manifest may pin in `resolutions` has to be one a lockfile can then hold.
+  test('holds versions to the same rule as rarn.json', () => {
+    expect(lockSchema.$defs.semver.pattern).toBe(manifestSchema.$defs.semver.pattern)
+  })
 })
 
 describe('checkFreshness', () => {
@@ -379,5 +502,33 @@ describe('file output', () => {
     const text = await readFile(join(dir, 'rarn.lock'), 'utf8')
     expect(text).toContain('\n  "lockfileVersion": 1')
     expect(text.split('\n').length).toBeGreaterThan(5)
+  })
+
+  // A full disk mid-write. The lockfile is regenerable, but a torn one does not
+  // regenerate itself: every install stops on a parse error until someone deletes it.
+  test('a write that fails partway leaves the previous lockfile whole', async () => {
+    await writeLockfile(dir, build({ 'a/one': {} }, { dependencies: { '@a/one': '^1.0.0' } }))
+    const original = await readFile(join(dir, 'rarn.lock'), 'utf8')
+
+    const real = fsp.writeFile
+    const full = spyOn(fsp, 'writeFile').mockImplementation(
+      async (...[target, data]: Parameters<typeof fsp.writeFile>) => {
+        await real(target, (data as string).slice(0, 16), 'utf8')
+        throw Object.assign(new Error('ENOSPC: no space left on device, write'), {
+          code: 'ENOSPC',
+        })
+      },
+    )
+    try {
+      const next = build({ 'a/one': {}, 'a/two': {} }, { dependencies: { '@a/one': '^1.0.0' } })
+      const error = await writeLockfile(dir, next).catch((e: unknown) => e)
+      expect((error as RarnError).code).toBe(Code.LockfileInvalid)
+      expect(full).toHaveBeenCalled()
+    } finally {
+      full.mockRestore()
+    }
+
+    expect(await readFile(join(dir, 'rarn.lock'), 'utf8')).toBe(original)
+    expect(await readdir(dir)).toEqual(['rarn.lock'])
   })
 })

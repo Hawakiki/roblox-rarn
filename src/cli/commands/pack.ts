@@ -2,7 +2,12 @@ import { writeFile } from 'node:fs/promises'
 import { resolve as resolvePath } from 'node:path'
 import chalk from 'chalk'
 import { readManifest } from '../../manifest/read.ts'
-import { MAX_ARCHIVE_BYTES, pack as buildArchive, kib } from '../../publish/pack.ts'
+import {
+  MAX_ARCHIVE_BYTES,
+  type PackResult,
+  pack as buildArchive,
+  kib,
+} from '../../publish/pack.ts'
 import { renderWallyToml } from '../../publish/wally-toml.ts'
 import { writeJson } from '../project.ts'
 
@@ -54,6 +59,8 @@ export async function pack(options: PackOptions): Promise<void> {
     lines.push(`${chalk.green('wrote')} ${target}`)
   }
 
+  lines.push(...tokenFileLines(result))
+
   const share = Math.round((result.totalBytes / MAX_ARCHIVE_BYTES) * 100)
   lines.push(
     `${chalk.green('packed')} ${result.entries.length} files, ${kib(result.totalBytes)} ${chalk.dim(`(${share}% of the ${kib(MAX_ARCHIVE_BYTES)} limit)`)}`,
@@ -64,4 +71,18 @@ export async function pack(options: PackOptions): Promise<void> {
   }
 
   process.stdout.write(`${lines.join('\n')}\n`)
+}
+
+/**
+ * Names the files left out for being the login token file.
+ *
+ * Leaving it out keeps the token out of the archive and does nothing about the file
+ * itself, which still sits in the project where version control has no reason to
+ * skip it. Saying so is how the person who put it there finds out.
+ */
+export function tokenFileLines(result: PackResult): string[] {
+  return result.tokenFiles.map(
+    (file) =>
+      `${chalk.yellow('left out')} ${file} ${chalk.dim('— it holds your login token: move it out of the project, where git can pick it up')}`,
+  )
 }

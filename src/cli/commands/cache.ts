@@ -8,6 +8,7 @@ import { readLockfile } from '../../lockfile/read.ts'
 import { Code } from '../../util/codes.ts'
 import { RarnError } from '../../util/errors.ts'
 import { pathExists } from '../../util/fs.ts'
+import { isInteractive } from '../output.ts'
 import { writeJson } from '../project.ts'
 
 export interface CacheOptions {
@@ -64,6 +65,22 @@ async function clean(root: string, options: CacheOptions): Promise<void> {
     ].join('\n'),
   )
 
+  // Nobody is there to answer when stdin is not a terminal. `init` fills in its
+  // defaults in that case; here the two directions are not symmetric, so this one
+  // refuses instead. Guessing wrong at `init` writes a file the person can edit;
+  // guessing wrong here sends every project on the machine back to the network.
+  //
+  // What it replaces is worth naming: this used to print the question, delete
+  // nothing, print nothing else, and exit 0 — the same shape RN-8 had at `init`,
+  // in the one other command that asks a question.
+  if (options.yes !== true && !isInteractive(process.stdin)) {
+    throw new RarnError({
+      code: Code.PromptAborted,
+      what: 'Nothing was deleted: stdin is not a terminal, so the confirmation could not be asked.',
+      how: 'Run `rarn cache clean --yes` to delete it without being asked.',
+    })
+  }
+
   if (options.yes !== true && !(await confirm('Delete all of it?'))) {
     process.stdout.write(`${chalk.dim('nothing was deleted')}\n`)
     return
@@ -79,8 +96,12 @@ async function clean(root: string, options: CacheOptions): Promise<void> {
  * Two different questions. Without a project, all that can be asked is whether every
  * unpacked tree still has the archive it came from and vice versa — an orphan on
  * either side means an interrupted or hand-edited cache. Inside a project, the
- * lockfile supplies the digests, and *that* is the check worth having: it proves the
- * bytes on disk are the bytes the lockfile pinned.
+ * lockfile supplies the digests, and *that* is the check worth having: it proves each
+ * cached archive is the one the lockfile pinned.
+ *
+ * The archives, not the unpacked trees — the same boundary an install draws, for the
+ * reason `CacheStore.ensure` gives. A file edited inside `extracted/` passes here, so
+ * the output says "archives" rather than letting "verified" claim the whole cache.
  */
 async function verify(root: string, options: CacheOptions): Promise<void> {
   const downloads = join(root, 'downloads')
@@ -108,8 +129,17 @@ async function verify(root: string, options: CacheOptions): Promise<void> {
     }
   }
 
+  // A mismatch means the bytes on disk are not the bytes the lockfile pinned. That is
+  // worth an exit code, because it is the one finding here that could be an attack.
+  //
+  // Set on both paths. `--json` is the form a script reads, and a script reads the
+  // exit code rather than the body — reporting the mismatch only in JSON that exits 0
+  // is louder to a person and silent to the caller that was built to catch it.
+  const failed = mismatched.length > 0
+
   if (options.json === true) {
     writeJson({ root, orphanArchives, orphanTrees, verified, mismatched })
+    if (failed) process.exitCode = 1
     return
   }
 
@@ -122,7 +152,7 @@ async function verify(root: string, options: CacheOptions): Promise<void> {
       chalk.dim('  to verify the cached bytes against the digests it records.'),
     )
   } else {
-    lines.push(`  ${chalk.green(`${verified.length} verified`)} against rarn.lock`)
+    lines.push(`  ${chalk.green(`${verified.length} archives verified`)} against rarn.lock`)
   }
 
   for (const key of orphanArchives) {
@@ -143,9 +173,7 @@ async function verify(root: string, options: CacheOptions): Promise<void> {
 
   process.stdout.write(`${lines.join('\n')}\n`)
 
-  // A mismatch means the bytes on disk are not the bytes the lockfile pinned. That is
-  // worth an exit code, because it is the one finding here that could be an attack.
-  if (mismatched.length > 0) process.exitCode = 1
+  if (failed) process.exitCode = 1
 }
 
 async function listDir(path: string): Promise<string[]> {
@@ -178,9 +206,24 @@ async function measure(root: string): Promise<{ packages: number; files: number;
 
 async function confirm(question: string): Promise<boolean> {
   const rl = createInterface({ input: process.stdin, output: process.stdout })
+
+  // Ctrl+D closes the input without answering, and a question whose input ended
+  // never settles — the event loop drains and the process exits 0 having asked
+  // and done nothing. Declining is the right reading of it anyway: the one thing
+  // certain about an unanswered destructive question is that nobody said yes.
+  const ended = new AbortController()
+  rl.once('close', () => {
+    ended.abort()
+  })
+
   try {
-    const answer = await rl.question(`${question} ${chalk.dim('(y/N)')} `)
+    const answer = await rl.question(`${question} ${chalk.dim('(y/N)')} `, {
+      signal: ended.signal,
+    })
     return answer.trim().toLowerCase().startsWith('y')
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') return false
+    throw error
   } finally {
     rl.close()
   }

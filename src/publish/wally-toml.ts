@@ -2,6 +2,7 @@ import semver from 'semver'
 import type { DependencyMap, NormalizedManifest } from '../manifest/types.ts'
 import { Code } from '../util/codes.ts'
 import { RarnError } from '../util/errors.ts'
+import { byCodeUnit } from '../util/order.ts'
 import { parsePackageName, toWallyName } from '../util/package-name.ts'
 
 /**
@@ -42,7 +43,7 @@ function section(header: string, deps: DependencyMap): string[] {
   if (entries.length === 0) return []
 
   const lines = [`[${header}]`]
-  for (const [name, range] of entries.sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [name, range] of entries.sort(([a], [b]) => byCodeUnit(a, b))) {
     const wally = toWallyName(parsePackageName(name))
     lines.push(`${aliasFor(name)} = "${wally}@${toCargoRange(range, name)}"`)
   }

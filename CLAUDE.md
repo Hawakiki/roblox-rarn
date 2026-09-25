@@ -27,6 +27,7 @@ bun run lint                         # eslint, type-aware rules
 bun run check                        # format + lint + typecheck + test, in that order
 bun run build                        # bun build --compile -> dist/rarn(.exe)
 bash scripts/smoke.sh dist/rarn.exe  # prove a compiled binary actually starts
+bash scripts/signals.sh             # the signals the 1.0 gate is waiting on
 ```
 
 `bun run check` is what the pre-commit hook runs, and what CI runs. Run it before
@@ -194,6 +195,15 @@ variable set it fails immediately with `RN0130`. Only the global fetch is wrappe
 one is a stand-in by definition, so the guard never touches the suite.
 
 `scripts/smoke.sh <binary>` runs anywhere, not just in CI.
+
+`scripts/signals.sh` answers a different kind of question — whether anyone outside this
+repository is using Rarn, which is what the 1.0 gate waits on. Five numbers, ranked by
+what each actually measures, and two more marked as noise so they stop being quoted:
+clone counts are mostly CI cloning per job, and release downloads mix rokit, CI and
+curiosity into one counter. The ranking and the caveats live in PLAN.md §3; the script
+exists so the answer is a command rather than something to re-derive each time it comes
+up. It needs `gh` and skips loudly without it. **It excludes the owner** — the first
+version read `open_issues_count`, and the guestbook issue alone made it report a signal.
 
 ## Hard constraints — read before designing anything
 
@@ -424,14 +434,59 @@ Nothing new is broken; the same require was already unresolvable.
 ### 2b. Install by rebuilding, then swapping
 
 Rebuild the realm directories from the lockfile every time. No incremental updates, no
-orphan tracking — a half-updated tree is far worse than a slightly slower install, and the
-copy is cheap once the cache is warm. Scope deletion strictly to Rarn's own directories.
+orphan tracking — a half-updated tree is far worse than a slightly slower install. Scope
+deletion strictly to Rarn's own directories.
+
+**The copy is not cheap, and this file used to say it was.** Measured (R3, 2026-08-23) on a
+repeat install of the 506-package graph: 6,517ms total, 95.2% of it with a filesystem call
+in flight, and half of *that* is two call types — the prune copy at 32.8% and the delete of
+the previous tree at 31.4%. The cost is per *file*, not per byte, and a scanned NTFS volume
+prices it at 0.74ms each. Rebuilding every time is still the right trade, but it is a trade,
+and the argument for it is the half-updated tree rather than the price.
+
+**So the copy runs `PRUNE_CONCURRENCY` packages at a time.** Each package writes into its
+own `_Index/{scope}_{name}@{version}` directory, and two packages resolving to one version
+share that entry *by key*, so no two workers ever target the same path — that is what makes
+it safe against constraint 1 rather than merely fast. Measured: with the shipped binary,
+5,133 → 4,024ms (21.6%, on/off/on); in TypeScript 4,297 → 2,848ms (33.7%). The same
+binary-versus-TypeScript gap as the deferred delete, and still unexplained.
+
+**The two savings are independent, and that was measured rather than assumed.** Full 2×2 on
+the 506 graph, in TypeScript: neither 6,374ms, delete-only 4,297, copy-only 4,873, both
+2,847. The deferred delete is worth 2,077ms alone and 2,025ms alongside the concurrent copy,
+so making the build faster did not stop it hiding — which is the thing that would have made
+the retired directory a cost paid for nothing.
 
 **Build into `.rarn-tmp/`, then rename into place.** Deleting the old tree first and writing
 over the top is identical work right up until something interrupts it, and then the
 difference is everything the user had: with staging they keep the previous install, without
-it they keep neither. The previous tree moves to `.rarn-old-<token>/` and is deleted only
-once every realm is in place.
+it they keep neither. The previous tree moves to `.rarn-old-<token>/` once every realm is in
+place.
+
+**The install that retires a tree does not delete it; the next one does, while it builds.**
+The delete was the last thing in the install and nothing overlapped it — 2,049ms of a
+6,517ms repeat install of 506 packages, spent after the tree on disk was already correct.
+Started before the build and awaited after, it hides inside work that was happening anyway:
+measured 6,352 → 5,057ms with the shipped binary (20.4%, arms bracketed on/off/on) and
+6,299 → 4,293ms in TypeScript (31.9%). **The gap between those two is not explained**, and
+the binary is the one a user runs, so 20.4% is the number to quote.
+
+Three things this rests on, and the second is the one to preserve:
+
+- **The staging directory is cleared eagerly and the retired trees are not.** `clearStaging`
+  must finish before the build, because the build writes into what it removes;
+  `clearRetired` is an input to nothing, which is the whole reason it can overlap.
+- **`clearRetired` reads the directory once, at the start.** The tree `swapIn` retires later
+  is therefore not in its list and cannot be deleted out from under a rollback.
+- **Its failures are swallowed.** A retired tree used to mean an interrupted run, so throwing
+  was informative; now one exists after every install, and on Windows a file held open by
+  Studio refuses deletion. Failing a correct install over garbage nobody is waiting on would
+  be the wrong trade — the next run tries again, which is what `clearRetired` has always
+  been for.
+
+The cost is one directory: between installs the project holds the previous tree as well as
+the current one, 43MB at 506 packages. `rarn init` already gitignores both scratch names,
+and `publish` excludes them by name rather than relying on `_Index` shape-detection.
 
 **Never replace a directory Rarn did not create.** `linker/ownership.ts` runs before any
 work and refuses unless the realm directory holds `_Index/`, holds only Rarn-generated
@@ -452,6 +507,13 @@ Three properties that are easy to lose when touching `linker/swap.ts`:
   Studio or a Rojo serve will refuse a rename, and the reverse rename can fail for the same
   reason. Reporting `RN0420` with the directory name is the difference between a bad moment
   and lost work.
+- **`mapWithConcurrency` waits for in-flight work before a failure propagates.** Not
+  politeness: the caller's cleanup runs in a `finally`, so returning early would delete a
+  directory that then fills up behind it. `link` left its staging tree behind exactly that
+  way the day the prune loop became concurrent, and the existing atomicity test caught it.
+  The failure it reports is the **lowest-indexed** one rather than the fastest, which is
+  well defined — indices are handed out in order, so anything before a failure either
+  finished or failed itself — and it is what lets a caller keep the property it sorted for.
 
 It is **not** atomic across the three realms, and nothing can make it so. The claim is only
 that the window is two renames on one filesystem with all the slow work already done.
@@ -579,7 +641,36 @@ Measured against the live registry, 150 packages, best of two runs:
 Unbounded is twelve times slower than the best, which matters because resolution walks the
 graph breadth-first: one round is every package at one depth, so a project with 506 direct
 dependencies opened 506 sockets at the same instant and spent 44.8s where 8.9s was
-available. Metadata runs 32 at a time and downloads 8 — different numbers because the
+available. **This curve is a property of the network it was measured on, and the file did
+not say so.** On one uplink (R3, 2026-08-23) width 32 *stalls*: the 9th concurrent SYN goes
+unanswered and the client climbs a 1/3/7s retransmit ladder. It is the path rather than the
+machine — the same PC over a phone's mobile data has no ceiling at all. Two networks,
+`test/benchmark/syn-sweep.ts`, same machine and same hour:
+
+| width | home broadband | phone (mobile data) |
+|---:|---:|---:|
+| 8 | 34ms, 8/8 first-try | 69ms, 8/8 first-try |
+| 16 | 1,042ms, **9**/16 | 76ms, 16/16 |
+| 32 | 7,059ms, **10**/32 | 73ms, 32/32 |
+| 48 | 21,054ms, **12**/48 | 78ms, 48/48 |
+| 48 with a 5ms stagger | **279ms** | **319ms** |
+
+**The last row is why no fix ships from one measurement.** Staggering is a 75x win on the
+limited network and a 4x *loss* on the clean one, where the deliberate delay is the whole
+cost. Lowering `METADATA_CONCURRENCY` is wrong in both directions too: 10, 12 and 16 are
+indistinguishable on the limited path and all of them merely lose width on the clean one.
+
+Note also what the first-try column does: it saturates around 9–12 no matter how wide the
+wave gets, which is a budget on new connections rather than a limit on parallelism, and it
+is shared across destinations (8 connections to two hosts behaves like 16 to one). A home
+router's connection tracking fits that shape; so does an ISP appliance. Nothing in Rarn
+does.
+
+So the ceiling is right and the *number* is local. Anyone moving these constants has to
+run the sweep on their own network first, and anything conditional has to stay conditional
+— the only shape left standing is starting narrow and widening once connections are
+established, which costs nothing where there is no limiter. **That has not been measured.**
+Metadata runs 32 at a time and downloads 8 — different numbers because the
 bodies are different sizes, and both chosen by measuring rather than by taste.
 
 ### 5. Dedupe policy: one version per major, resolved order-independently
@@ -646,6 +737,29 @@ other project sharing the cache. A `--linked` opt-in may come later.
 - The Luau shim filename (the alias) is derived by PascalCasing the name part:
   `@evaera/promise` becomes `Promise.luau`. Collisions are a hard error, overridable via the
   manifest's `aliases` map.
+- **Two aliases collide when they name one file, which means the comparison is
+  case-insensitive.** It used to be case-sensitive, and that is RN-16: `EnumList.luau` and
+  `Enumlist.luau` are one file on Windows and on a default macOS volume, so one package's
+  shim overwrote the other's while the install reported success and the lockfile stayed
+  correct. Both spellings there are what `deriveAlias` produces on its own, so declaring no
+  `aliases` entry was not a way to avoid it — of the 506 most-depended-upon packages, 5
+  pairs collide this way and `deriveAlias` alone puts 62 groups into case-insensitive
+  collision. The rule is deliberately stricter than a case-sensitive filesystem needs: a
+  manifest that installs on Linux CI and shadows a package on the author's Mac is worse
+  than one refused in both places.
+
+  Two things follow for the error itself. It has to print **both spellings**, since two
+  visibly different names colliding reads as a bug in Rarn unless the message says why.
+  And the replacement it suggests has to be checked against the aliases already in the
+  section — advice that sends the reader straight back to the same error is worse than no
+  example.
+
+  The comparison inside an `_Index` entry stays **case-sensitive**, and that is not an
+  oversight: a module folder `promise` and a dependency shim `Promise.luau` are distinct
+  on disk (one carries the extension) and distinct in the DataModel (Roblox instance names
+  are case-sensitive). Measured across 4,492 registry versions: 0 packages declare two
+  dependency aliases that differ only in case, and the 19 that alias a dependency to their
+  own module name's other casing are all legal.
 - **An alias has to be unique within one manifest section, and nowhere wider.** Root shims
   are written per section — `dependencies` into the shared realm directory,
   `serverDependencies` into the server one, `devDependencies` into dev — so two aliases
@@ -734,6 +848,21 @@ timeout is a second publish), and the default exclude list covers `.env`, `*.key
 and `*.pem`. The two ways of being wrong are not symmetric — one file too few breaks
 an install and is fixed in minutes, one file too many cannot be undone at all.
 
+**The login token file is never packed**, wherever `RARN_AUTH_FILE` puts it. It is matched
+by file identity rather than by path, and wins over an exact `include` too: no package needs
+it, and nobody naming it means to publish the token Wally accepts for publishing.
+
+**A failed publish may still have published.** Read from the backend's `publish` handler:
+it stores the archive and commits the version to its index, and only then recrawls the
+whole index for search before answering. The slow step comes after the point of no return,
+so only a 4xx or a connection provably never made may say *nothing was published*. On Bun
+1.3.14 that is `ConnectionRefused` — a closed port, an unresolvable host, a peer that does
+not speak TLS — and a refused certificate, which carries its own code and fails before the
+request is sent (measured: the server saw the handshake and not one byte of the upload).
+Everything else says it *may* have been and names the `rarn info` command that settles it:
+a timeout, any 5xx, and `ECONNRESET`, which Bun reports alike for a peer that closed on
+accept and for one that read the whole upload first.
+
 **An installed dependency tree is excluded by shape, not by name.** Rarn derives its own
 realm directories from `packageDir`, but it cannot derive what another tool called its:
 Wally installs into `Packages/`, `ServerPackages/` and `DevPackages/`, and a migrated
@@ -802,6 +931,11 @@ is one that eventually contradicts it.
 
 ## Where documents live
 
+- `docs/README.md` — the index, organised by the question rather than by the filename.
+  There are 44 documents and about 6,800 lines between them, and a list of paths is not
+  navigation. It carries **no content of its own**: a fact written in two places is a fact
+  that will diverge, and then there is no way to tell which copy is right. It also records
+  which document owns which kind of fact, which is the rule that keeps them from drifting.
 - `PLAN.md` — decisions, the milestones, and the gates. Deliberately thin: every
   completed milestone's full record (with its measurements) moves to `docs/milestones/`
   at completion and is **frozen** there — link fixes only, never content edits.
@@ -821,8 +955,16 @@ is one that eventually contradicts it.
   state. Reached for once, over the archived index summarising M17 as shipping RN-6 when
   the fix commit is after the tag.
 - `docs/research/` — investigations whose conclusion is fixed (R1 PnP, R2 workspaces,
-  the Wally internals read-through). Never edited after their conclusion; research that
-  supersedes one gets a new file, it does not rewrite the old one.
+  R3 performance, the Wally internals read-through). Never edited after their conclusion;
+  research that supersedes one gets a new file, it does not rewrite the old one.
+
+  **A `C<n>` belongs to one report, so outside it write `R3-C2`.** R3 numbered its
+  optimization candidates C1…C12, which reads fine inside a document that is entirely
+  about R3 and not at all outside one — R4 will number its own candidates from C1 and then
+  `C2` means two things. This is the collision the milestone numbers already solved by
+  qualifying with a path, and the same answer applies: name what the number belongs to.
+  Unlike `RN` and `RN####`, these are **not** stable identifiers — a candidate that gets
+  rejected stops existing, and nothing outside its report should have to know it did.
 - `docs/known-issues.md` — the living record of **reproduced** defects, RN-numbered.
   When one is fixed, its detail collapses to a one-line stub under "해결됨" and the
   RN number is never reused — the same rule `codes.ts` applies to error codes.
@@ -868,13 +1010,60 @@ is one that eventually contradicts it.
   `feat/*` → `develop`. RN-1 qualified, and the choice made then — withdrawing the
   release rather than patching it — remains available and is often better.
 
-  Merge into `develop` with `--no-ff`. **Never commit directly to `master`**; commits
-  appear there only as merges from `release/*` or `hotfix/*`.
+  **Squash-merge into `develop`.** One branch becomes one commit there, so `develop` reads
+  as a list of finished work rather than of everything it took to finish it. **Never commit
+  directly to `master`**; commits appear there only as merges from `release/*` or
+  `hotfix/*`, and those stay `--no-ff` — a release is not one change and flattening it
+  would throw away which changes shipped together.
+
+  **A branch has a lifetime, and the rules above only described its birth.** Nothing said
+  when one ends, so nothing ever did: **79 branches accumulated** — 41 local and 38 remote,
+  every one of them already merged — before anyone noticed, and by then the list was long
+  enough that a branch that mattered would have been invisible in it.
+
+  | | delete when |
+  |---|---|
+  | `feat/*` | its work reached `develop` and nothing more is planned on it |
+  | `release/*` | the version is tagged and merged into **both** `master` and `develop` |
+  | `hotfix/*` | merged into **both**, same as a release |
+  | `master`, `develop` | never |
+
+  **Not every `feat/*` is finished when it merges.** A long-running effort, work split
+  across several merges, or something not ready for `develop` all keep their branch. The
+  rule is about branches with nothing left to do, not about branches in general.
+
+  **Deleting a merged branch deletes a name, not history** — the commits are in `develop`.
+  Verify that rather than assuming it: `git merge-base --is-ancestor <branch> origin/develop`
+  answers exactly the question, and it is the whole safety check. Local and remote are
+  separate states and both need asking. A squash-merged branch will *not* be an ancestor —
+  compare its tree against the squash commit instead (`git diff <branch> <commit>` empty),
+  which is the same guarantee reached the other way.
+
+  **A tag is not what keeps a commit alive.** `v0.2.0` points at the merge commit on
+  `master`, not at the tip of `release/0.2.0`; what made that tip safe to delete was being
+  an ancestor of `origin/master`. Check reachability, not the tag.
 
   Two things the guard cannot check, so they are on us: that a branch was cut from the
   right place, and that a stacked PR's parent merged first. **Both have gone wrong
   here** — a stacked PR merged out of order once and RN-3 did not reach `develop` until
   a recovery PR put it there.
+
+  A third was covered rather than left to us. The husky guard sees the *branch name at
+  commit time* and cannot see a PR's base, so aiming a `feat/*` at `master` was always
+  one click away; what actually prevented it was that GitHub's default branch is
+  `develop`, which makes that the base a PR opens with. That is an accident protecting a
+  rule, and it disappears the moment the default changes. The `base` job in `ci.yml`
+  fails a PR into `master` from anything but `release/*` or `hotfix/*`, so the rule now
+  holds on its own. It reports; making it *block* means marking it required in `master`'s
+  branch protection, which is a repository setting.
+
+  **The default branch is `master`, since 0.3.0.** The repository's front page is
+  whatever the default branch says, and `develop` runs ahead of what anyone can install —
+  which is precisely the failure that put M7 in the README days before it shipped, and
+  recorded RN-6 as fixed in a release that did not contain it. It waited for a release
+  because `LICENSE` lived only on `develop` until then. The cost is that a PR now opens
+  against `master` unless told otherwise: **`gh pr create --base develop`** for every
+  `feat/*`, with the `base` job as the backstop.
 - Biome formats and catches syntax; ESLint carries **only** type-aware rules that Biome
   structurally cannot express (`no-floating-promises` above all — an unawaited download
   leaves a half-written cache and no error). Do not duplicate a rule across both.
@@ -885,5 +1074,14 @@ is one that eventually contradicts it.
   given an `mtime`, so any fixture archive fixes it — a digest comparison against a
   rebuilt archive otherwise fails only when the two calls straddle a timestamp tick,
   which is to say rarely, remotely, and never while you are looking.
+- **A test asserting on `process.exitCode` has to reset it with `0`.** Measured on Bun
+  1.3.14: `process.exitCode = undefined` leaves the previous value in place, so a test
+  that set 1 hands 1 to the next one. This is not a slow leak — it made a new test pass
+  against the very defect it was written to catch, and only the control run said so.
+  The same shape reaches the suite as a whole: a leaked 1 fails a green run.
+- **A defect in a hand-rolled prompt, an exit code, or a `--json` branch belongs to a
+  *place*, not a file.** RN-8 was fixed in `init.ts` and the identical defect sat in
+  `cache.ts` for two releases, because the fix looked at the file rather than at
+  `grep -rn "createInterface" src/`. Before closing one of these, count the sites.
 - Every Wally API claim in this file was verified against the live service. If behavior looks
   different, re-verify with `curl` and **update this file in the same commit** as the fix.

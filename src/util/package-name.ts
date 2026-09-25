@@ -1,3 +1,4 @@
+import lockSchema from '../../schemas/rarn.lock.schema.json' with { type: 'json' }
 import { Code } from './codes.ts'
 import { RarnError } from './errors.ts'
 
@@ -77,11 +78,25 @@ export function toPackageKey(pkg: PackageName, version: string): string {
 }
 
 /**
- * `evaera_promise@4.0.0` — the folder name under `_Index`.
+ * `evaera_promise@4.0.0` — the folder name under `_Index`, and the cache's key.
  *
  * Matches Wally's own layout so the tree stays legible to anyone who knows Wally.
+ *
+ * The one place a version becomes a path, so it refuses what is not one. Both ways a
+ * version arrives check it first — the registry parser, and the lockfile schema for a
+ * reused lockfile, which goes around the registry and semver both — and this is the
+ * second gate for the same reason `shimPath` is one: whatever supplies a version next
+ * will not have read either check.
  */
 export function toIndexDir(pkg: PackageName, version: string): string {
+  if (!isExactVersion(version)) {
+    throw new RarnError({
+      code: Code.InternalError,
+      what: `${toWallyName(pkg)} arrived with the version ${JSON.stringify(version)}, which is not a plain folder name.`,
+      where: toWallyName(pkg),
+      how: 'Nothing was written under that name. It should have been refused when it was read, so this is a bug in Rarn: please report it.',
+    })
+  }
   return `${pkg.scope}_${pkg.name}@${version}`
 }
 
@@ -104,4 +119,41 @@ export function deriveAlias(pkg: PackageName): string {
 
   // A name may legally start with a digit, which cannot begin a Luau identifier.
   return /^[0-9]/.test(alias) ? `_${alias}` : alias
+}
+
+/**
+ * Taken from the lockfile schema rather than restated, because every alias admitted
+ * here is written into `rarn.lock` and that schema is what reads it back. A copy that
+ * drifted wider would have `install` write a lockfile it then refuses to read, which
+ * has happened here once already.
+ */
+const ALIAS = new RegExp(lockSchema.$defs.alias.pattern)
+
+/**
+ * Whether an alias can become a shim's file name and nothing more.
+ *
+ * The alias is joined onto a directory as `<alias>.luau`, so anything that is not a
+ * single plain segment names some other file: `..` and a separator climb out of the
+ * `_Index` entry, and `C:` and `a:b` both open an NTFS stream on a file beside the shim.
+ * Letters, digits, `_` and `-` admit every one of the 45,794 aliases in the registry
+ * (wally-index, 2026-09-25), hyphenated `jsdotlua` names included.
+ */
+export function isValidAlias(alias: string): boolean {
+  return ALIAS.test(alias)
+}
+
+/** From the lockfile schema, for the same reason `ALIAS` is. */
+const EXACT_VERSION = new RegExp(lockSchema.$defs.semver.pattern)
+
+/**
+ * Whether a version is exact semver 2.0.0 and therefore a single plain path segment.
+ *
+ * Not `semver.valid(v) === v`, which reads like the same rule and is not: `valid`
+ * returns the version without its build metadata, so the comparison refuses the seven
+ * registry versions that carry some (tazmondo/iris 2.5.2+89e7 among them, wally-index
+ * 2026-09-25). And `semver` alone is too lenient to stand in for this — it trims
+ * whitespace and takes a leading `v`, so `satisfies` happily selects `' 1.0.0'`.
+ */
+export function isExactVersion(version: string): boolean {
+  return EXACT_VERSION.test(version)
 }

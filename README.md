@@ -44,13 +44,14 @@ installed 5 packages into RARN_MODULE
 the modules, and the rest are docs, tests and CI config that Wally would copy into your
 place and leave for Rojo to sort out at sync time.
 
-> **Status: 0.2.0.** The install path is complete and verified — against a real Studio, a
+> **Status: 0.3.0.** The install path is complete and verified — against a real Studio, a
 > real `wally install`, and a require harness that models Roblox's instance-cached
 > `require`. One package has been published to the live registry end to end and installed
 > back from both Rarn and Wally. **The manifest and lockfile formats are not stable until
 > 1.0**, which is what 1.0 will mean — a format freeze, not a feature list.
 >
 > [CHANGELOG.md](CHANGELOG.md) is what changed · [PLAN.md](PLAN.md) is where it is going ·
+> [docs/](docs/README.md) indexes everything else by the question it answers ·
 > [CLAUDE.md](CLAUDE.md) is every platform constraint the design is built around, with the
 > measurements behind each one.
 
@@ -66,6 +67,7 @@ place and leave for Rojo to sort out at sync time.
 | [Speed](#speed) | and [the 506-package comparison](#against-wally-on-506-real-packages) against Wally |
 | [`rarn doctor`](#rarn-doctor) | what the installed source actually requires |
 | [Publishing](#publishing) | and what is excluded by default |
+| [Using it?](#using-it) | leave a line so we can tell silence from absence |
 | [Development](#development) | building, testing, the Roblox-side checks |
 
 New here? [Why not just Wally?](#why-not-just-wally) is the two-minute version, and
@@ -86,7 +88,7 @@ rokit install
 ```toml
 # rokit.toml, afterwards
 [tools]
-rarn = "Hawakiki/roblox-rarn@0.2.0"
+rarn = "Hawakiki/roblox-rarn@0.3.0"
 ```
 
 **Give it the alias.** Rokit names a tool after its repository unless told otherwise, so
@@ -384,19 +386,25 @@ The method, the other set sizes, and how the set was chosen are in
 
 | | rarn | wally |
 |---|---:|---:|
-| install, warm cache | **5.6 s** — no network at all | 9.8 s — re-downloads all 575 |
-| install, cold cache | 37.3 s | 9.8 s |
-| first run on a machine | 37.3 s | 9.8 s **+ 12 s** index clone (46 MB, needs `git`) |
-| files written | **7,045** | 12,956 |
-| bytes written | **43.3 MB** | 107.9 MB |
+| install, warm cache | **4.0 s** — no network at all | 10.0 s — re-downloads all 575 |
+| install, cold cache | 38.0 s | 10.0 s |
+| first run on a machine | 38.0 s | 10.0 s **+ 12 s** index clone (46 MB, needs `git`) |
+| files written | **7,050** | 12,961 |
+| bytes written | **43.6 MB** | 107.9 MB |
 | module roots that resolve without Rojo | **548 / 556 (98.6%)** | 148 / 575 (25.7%) |
 | a package's types reachable through the link | **yes** | no — `Unknown type` at every call site |
+
+Warm is a median of five and cold is a single run — the full table carries the spread and
+the sample count for every cell, and the raw data is committed beside it. **Do not compare
+a cold number against one measured on another day**: over half of a cold install is time
+spent waiting on the registry, so the difference is usually the network rather than the
+tool.
 
 Three things that table is not hiding:
 
 - **Wally wins the cold install.** It clones the registry index, so resolving costs it no
-  network; Rarn asks over HTTP and spends 8.9 s of those 37.3 s doing it. That is the
-  price of not needing `git` and not keeping a 46 MB clone.
+  network; Rarn asks over HTTP. That is the price of not needing `git` and not keeping a
+  46 MB clone.
 - **Wally has no package cache.** Only the index is cached, so every install downloads
   every archive again. That is why its column has one number and not two, and why CI is
   where the difference shows.
@@ -475,6 +483,16 @@ A published version is permanent and public, with no unpublish, so shipping one 
 few breaks an install and gets fixed in minutes while shipping one too many cannot be
 undone at all. Naming a file exactly in `include` overrides that; a glob does not.
 
+## Using it?
+
+**[Leave a line here](https://github.com/Hawakiki/roblox-rarn/issues/47)** — ten seconds,
+no link required, private projects very much included. From the outside, *nobody has tried
+this* and *people use it and never say anything* look identical, and the manifest and
+lockfile formats freeze at 1.0. Freezing a format nobody has used is guesswork, so that
+thread is what says whether the moment has come.
+
+Bugs and ideas go in their own issue; that one is a roll call.
+
 ## Development
 
 ```bash
@@ -518,4 +536,4 @@ every stub added widens the area in which a *passing* harness can be silently wr
 
 ## License
 
-MIT
+MIT. The full text is in [LICENSE](LICENSE).

@@ -72,8 +72,12 @@ export interface RegistryClient {
   search(query: string): Promise<readonly SearchResult[]>
   /** The API base these calls resolve against. Tokens are stored per API URL. */
   apiBase(): Promise<string>
-  /** Uploads an archive. The registry reads the package name from inside it. */
-  publish(archive: Uint8Array, token: string): Promise<PublishReceipt>
+  /**
+   * Uploads an archive. The registry reads the package name from inside it; `spec`
+   * (`@scope/name@version`) is only for the reader, since a publish whose outcome is
+   * unknown has to name the exact version to check for.
+   */
+  publish(archive: Uint8Array, token: string, spec: string): Promise<PublishReceipt>
 }
 
 export interface PublishReceipt {

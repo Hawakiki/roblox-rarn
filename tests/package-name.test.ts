@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { Code } from '../src/util/codes.ts'
 import { RarnError } from '../src/util/errors.ts'
 import {
   deriveAlias,
@@ -43,6 +44,28 @@ describe('rendering', () => {
 
   test('round-trips through the registry form', () => {
     expect(parseWallyName(toWallyName(promise))).toEqual(promise)
+  })
+
+  // The `_Index` entry and both cache paths are built from this, so it is the one place a
+  // version turns into a path. Both ways in check first — the lockfile schema and the
+  // registry parser — and this is what holds when a third way does not.
+  test.each(['4.0.0/../../../ESCAPED', '..', 'C:ESCAPED', 'v4.0.0', '4.0.0 ', '0.0.0-001'])(
+    'will not make a folder name of %p',
+    (version) => {
+      let error: unknown
+      try {
+        toIndexDir(promise, version)
+      } catch (caught) {
+        error = caught
+      }
+      expect(error).toBeInstanceOf(RarnError)
+      expect((error as RarnError).code).toBe(Code.InternalError)
+      expect((error as RarnError).format()).toContain(JSON.stringify(version))
+    },
+  )
+
+  test('keeps build metadata, which the registry holds and semver.valid would drop', () => {
+    expect(toIndexDir(promise, '2.5.2+89e7')).toBe('evaera_promise@2.5.2+89e7')
   })
 })
 

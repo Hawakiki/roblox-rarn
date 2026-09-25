@@ -7,9 +7,12 @@ import { extractZip, isZip } from '../src/cache/archive.ts'
 import { computeIntegrity, verifyIntegrity } from '../src/cache/integrity.ts'
 import { cacheKey, cacheRoot, downloadPath, extractedPath } from '../src/cache/paths.ts'
 import { createCacheStore } from '../src/cache/store.ts'
+import { exitCodeFor } from '../src/cli/render.ts'
 import { Code } from '../src/util/codes.ts'
 import { mapWithConcurrency } from '../src/util/concurrency.ts'
-import { RarnError } from '../src/util/errors.ts'
+import { ExitCode, RarnError, RegistryError } from '../src/util/errors.ts'
+import { pathExists } from '../src/util/fs.ts'
+import { networkBlockedError } from '../src/util/network.ts'
 import { parseWallyName } from '../src/util/package-name.ts'
 
 const promise = parseWallyName('evaera/promise')
@@ -254,6 +257,24 @@ describe('cache store', () => {
     expect(other.dir).toContain('3.2.1')
   })
 
+  // The version is the cache key, and both the archive and the unpacked tree are named
+  // after it. A lockfile's version is refused on read; this holds for anything else.
+  test('will not key an entry by a version that names another folder', async () => {
+    const cache = join(root, 'a', 'b', 'cache')
+    let downloads = 0
+    const error = await expectRejection(() =>
+      createCacheStore(cache).ensure(promise, '4.0.0/../../../ESCAPED', () => {
+        downloads++
+        return Promise.resolve(zip())
+      }),
+    )
+
+    expect(error.code).toBe(Code.InternalError)
+    expect(downloads).toBe(0)
+    expect(await pathExists(join(root, 'a', 'b', 'ESCAPED'))).toBe(false)
+    expect(await pathExists(join(root, 'a', 'b', 'ESCAPED.zip'))).toBe(false)
+  })
+
   test('verifies against a recorded digest and refuses a mismatch', async () => {
     const store = createCacheStore(root)
     const error = await expectRejection(() =>
@@ -262,7 +283,7 @@ describe('cache store', () => {
     expect(error.code).toBe(Code.IntegrityMismatch)
   })
 
-  test('verifies a cached entry too, so a tampered cache cannot slip through', async () => {
+  test('verifies a cached archive too, and never serves one rarn.lock disagrees with', async () => {
     const store = createCacheStore(root)
     await store.ensure(promise, '4.0.0', () => Promise.resolve(zip()))
 
@@ -294,7 +315,6 @@ describe('cache store', () => {
       store.ensure(promise, '4.0.0', () => Promise.resolve(new Uint8Array([1, 2, 3, 4]))),
     )
     // A failed install must not leave a directory that later looks like a valid entry.
-    const { pathExists } = await import('../src/util/fs.ts')
     expect(await pathExists(extractedPath(root, cacheKey(promise, '4.0.0')))).toBe(false)
   })
 
@@ -323,6 +343,402 @@ describe('cache store', () => {
       return Promise.resolve(zip())
     })
     expect(downloads).toBe(1)
+  })
+})
+
+/**
+ * A cached archive that disagrees with rarn.lock has two possible culprits, and only
+ * one of them has been asked. The registry is not consulted by reading the cache, so
+ * blaming it there names a party that said nothing — and the advice that came with
+ * the blame, delete rarn.lock, then records the damaged bytes as the pinned ones.
+ */
+describe('cache store, when the cache disagrees with rarn.lock', () => {
+  let root: string
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'rarn-cache-damage-'))
+  })
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true })
+  })
+
+  const zip = () => makeZip({ 'init.luau': 'return 1' })
+  const damaged = () => makeZip({ 'init.luau': 'return "not what was pinned"' })
+  const archive = () => downloadPath(root, cacheKey(promise, '4.0.0'))
+
+  function counting(bytes: () => Uint8Array) {
+    const fetcher = {
+      calls: 0,
+      fetch: () => {
+        fetcher.calls++
+        return Promise.resolve(bytes())
+      },
+    }
+    return fetcher
+  }
+
+  test('a damaged cached archive is discarded and downloaded again', async () => {
+    const store = createCacheStore(root)
+    const pinned = (await store.ensure(promise, '4.0.0', () => Promise.resolve(zip()))).integrity
+    await writeFile(archive(), damaged())
+
+    const registry = counting(zip)
+    const repaired = await store.ensure(promise, '4.0.0', registry.fetch, pinned)
+
+    expect(registry.calls).toBe(1)
+    expect(repaired.fromCache).toBe(false)
+    expect(repaired.integrity).toBe(pinned)
+    // Reported rather than healed in silence: the cache held bytes nobody pinned.
+    expect(repaired.discarded).toBe(computeIntegrity(damaged()))
+    expect(await readFile(join(repaired.dir, 'init.luau'), 'utf8')).toBe('return 1')
+
+    // And the repair sticks: the next run is warm again.
+    const next = await store.ensure(promise, '4.0.0', registry.fetch, pinned)
+    expect(next.fromCache).toBe(true)
+    expect(next.discarded).toBeUndefined()
+    expect(registry.calls).toBe(1)
+  })
+
+  test('blames the registry only once it has served the wrong bytes itself', async () => {
+    const store = createCacheStore(root)
+    await store.ensure(promise, '4.0.0', () => Promise.resolve(zip()))
+    const pinned = computeIntegrity(damaged())
+
+    const registry = counting(zip)
+    const error = await expectRejection(() =>
+      store.ensure(promise, '4.0.0', registry.fetch, pinned),
+    )
+
+    expect(error.code).toBe(Code.IntegrityMismatch)
+    expect(error.how).toContain('registry served')
+    expect(registry.calls).toBe(1)
+  })
+
+  const offline = () => Promise.reject(networkBlockedError('https://api.wally.run/'))
+
+  // One cache, two projects. B's lockfile agrees with the cache and the registry; A's
+  // pins bytes the registry never served. A has to fail, and B, offline, must not
+  // notice that it did: A's lockfile says nothing about an entry the registry itself
+  // just vouched for, and deleting it on A's word turns B's offline install into RN0130.
+  test('a lockfile the registry disagrees with costs no other project its cached copy', async () => {
+    const store = createCacheStore(root)
+    const pinnedByB = (await store.ensure(promise, '4.0.0', () => Promise.resolve(zip()))).integrity
+
+    const error = await expectRejection(() =>
+      store.ensure(promise, '4.0.0', counting(zip).fetch, computeIntegrity(damaged())),
+    )
+    expect(error.code).toBe(Code.IntegrityMismatch)
+
+    const b = await store.ensure(promise, '4.0.0', offline, pinnedByB)
+    expect(b.fromCache).toBe(true)
+
+    // The registry and the cache agree, so the message can say which of the three is
+    // the odd one out rather than leave the reader to work it out.
+    expect(error.detail).toContain('rarn.lock is the one that differs')
+  })
+
+  // The same rule with the registry out of reach: two records disagree and nothing can
+  // say which is wrong, so the shared copy is left exactly as it was.
+  test('a repair that cannot download leaves the cached copy where it was', async () => {
+    const store = createCacheStore(root)
+    const pinnedByB = (await store.ensure(promise, '4.0.0', () => Promise.resolve(zip()))).integrity
+
+    const error = await expectRejection(() =>
+      store.ensure(promise, '4.0.0', offline, computeIntegrity(damaged())),
+    )
+    expect(error.code).toBe(Code.NetworkBlocked)
+
+    const b = await store.ensure(promise, '4.0.0', offline, pinnedByB)
+    expect(b.fromCache).toBe(true)
+  })
+
+  // Two installs meet the same unusable entry and both download. The first repairs it
+  // and hands the tree to its linker; the second, finishing later, still holds a
+  // verdict read before its download and must not act on it — the entry it would
+  // remove is now correct and being copied from. The marker stands in for that copy:
+  // a tree removed and extracted again comes back without it.
+  test.each([
+    ['disagrees with rarn.lock', () => writeFile(archive(), damaged())],
+    ['has lost its archive', () => rm(archive(), { force: true })],
+  ])('a late repair of an entry that %s leaves the finished one alone', async (_, spoil) => {
+    const pinned = (
+      await createCacheStore(root).ensure(promise, '4.0.0', () => Promise.resolve(zip()))
+    ).integrity
+    await spoil()
+
+    let open = () => {}
+    const gate = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    let arrived = () => {}
+    const waiting = new Promise<void>((resolve) => {
+      arrived = resolve
+    })
+    const late = createCacheStore(root).ensure(
+      promise,
+      '4.0.0',
+      async () => {
+        arrived()
+        await gate
+        return zip()
+      },
+      pinned,
+    )
+    await waiting
+
+    const first = await createCacheStore(root).ensure(
+      promise,
+      '4.0.0',
+      () => Promise.resolve(zip()),
+      pinned,
+    )
+    const inUse = join(first.dir, 'in-use')
+    await writeFile(inUse, '')
+
+    open()
+    const second = await late
+
+    expect(await pathExists(inUse)).toBe(true)
+    expect(second.dir).toBe(first.dir)
+    expect(second.integrity).toBe(pinned)
+    // Whatever was thrown out, the first run threw out and reported.
+    expect(second.discarded).toBeUndefined()
+    expect(await readFile(join(second.dir, 'init.luau'), 'utf8')).toBe('return 1')
+  })
+
+  // The same race, with the late run's download returning while the other repair is
+  // still partway: it has removed the damaged entry, or written its archive and not yet
+  // its tree. Either way there is no finished tree to return, so the late run writes one
+  // — but the damaged bytes were gone before it looked again, and the run that removed
+  // them is the one that reports them. Named here as well, one discard is counted twice.
+  test.each([
+    ['removed the damaged entry', () => rm(archive(), { force: true })],
+    ['written its archive but not its tree', () => writeFile(archive(), zip())],
+  ])('a late repair does not report bytes another run has %s', async (_, other) => {
+    const pinned = (
+      await createCacheStore(root).ensure(promise, '4.0.0', () => Promise.resolve(zip()))
+    ).integrity
+    await writeFile(archive(), damaged())
+
+    let open = () => {}
+    const gate = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    let arrived = () => {}
+    const waiting = new Promise<void>((resolve) => {
+      arrived = resolve
+    })
+    const late = createCacheStore(root).ensure(
+      promise,
+      '4.0.0',
+      async () => {
+        arrived()
+        await gate
+        return zip()
+      },
+      pinned,
+    )
+    await waiting
+
+    await rm(extractedPath(root, cacheKey(promise, '4.0.0')), { recursive: true, force: true })
+    await other()
+
+    open()
+    const repaired = await late
+
+    expect(repaired.discarded).toBeUndefined()
+    expect(await readFile(join(repaired.dir, 'init.luau'), 'utf8')).toBe('return 1')
+    expect(await readFile(archive())).toEqual(Buffer.from(zip()))
+  })
+
+  // The other side of it: once the registry has answered and disowns the cached bytes
+  // too, they go, even though this run fails. RN0300 advises deleting rarn.lock and
+  // reinstalling, and a run with no lockfile takes the cache at its word — so what it
+  // records has to be what the registry serves, not what the cache held.
+  test('bytes the registry disowns do not outlive the run that asked it', async () => {
+    const store = createCacheStore(root)
+    await store.ensure(promise, '4.0.0', () => Promise.resolve(damaged()))
+    const served = () => makeZip({ 'init.luau': 'return "what the registry serves"' })
+
+    const error = await expectRejection(() =>
+      store.ensure(promise, '4.0.0', () => Promise.resolve(served()), computeIntegrity(zip())),
+    )
+    expect(error.code).toBe(Code.IntegrityMismatch)
+    expect(error.detail).toContain(computeIntegrity(damaged()))
+    // Gone whole. An archive left without its tree is never read by an install, but
+    // `rarn cache verify` would go on reporting bytes nothing holds any more.
+    expect(await pathExists(archive())).toBe(false)
+    expect(await pathExists(extractedPath(root, cacheKey(promise, '4.0.0')))).toBe(false)
+
+    const unpinned = await store.ensure(promise, '4.0.0', () => Promise.resolve(served()))
+    expect(unpinned.integrity).toBe(computeIntegrity(served()))
+  })
+
+  // Every fixture above damages the archive and leaves the tree alone, so a repair that
+  // replaced only the archive would pass them all and install the old tree. Here the
+  // two agree with each other and not with rarn.lock — what a cache holds when the same
+  // version reached it from somewhere else first.
+  test('a repaired entry installs the new bytes, not the tree they replace', async () => {
+    const store = createCacheStore(root)
+    const older = () => makeZip({ 'init.luau': 'return "old"' })
+    const newer = () => makeZip({ 'init.luau': 'return "new"' })
+    await store.ensure(promise, '4.0.0', () => Promise.resolve(older()))
+
+    const repaired = await store.ensure(
+      promise,
+      '4.0.0',
+      () => Promise.resolve(newer()),
+      computeIntegrity(newer()),
+    )
+
+    expect(repaired.discarded).toBe(computeIntegrity(older()))
+    expect(await readFile(join(repaired.dir, 'init.luau'), 'utf8')).toBe('return "new"')
+    expect(await readFile(archive())).toEqual(Buffer.from(newer()))
+  })
+
+  // The same property for a tree that lost its archive, which is what a repair leaves
+  // when it stops after removing the archive — between the two, or partway through the
+  // tree, as a Windows `rm` refused by an open file does. Refetching the same bytes
+  // cannot tell the old tree from a new one, so these serve different bytes.
+  test.each([
+    ['whole, and rarn.lock pins the new bytes', false, true],
+    ['whole, with no rarn.lock', false, false],
+    ['half removed', true, true],
+  ])('a tree without its archive (%s) is replaced, not vouched for', async (_, half, pinned) => {
+    const store = createCacheStore(root)
+    const older = () => makeZip({ 'init.luau': 'return "old"', 'b.luau': 'return "old"' })
+    const newer = () => makeZip({ 'init.luau': 'return "new"', 'b.luau': 'return "new"' })
+    const first = await store.ensure(promise, '4.0.0', () => Promise.resolve(older()))
+    await rm(archive(), { force: true })
+    if (half) await rm(join(first.dir, 'b.luau'))
+
+    const repaired = await store.ensure(
+      promise,
+      '4.0.0',
+      () => Promise.resolve(newer()),
+      pinned ? computeIntegrity(newer()) : undefined,
+    )
+
+    expect(repaired.integrity).toBe(computeIntegrity(newer()))
+    expect(await readFile(join(repaired.dir, 'init.luau'), 'utf8')).toBe('return "new"')
+    expect(await readFile(join(repaired.dir, 'b.luau'), 'utf8')).toBe('return "new"')
+  })
+
+  // `refetch` rebuilds the error to add context, and the class is what picks the exit
+  // code: 2 tells a script the network flaked and a retry may help. Rebuilt as a plain
+  // RarnError, every flaky download during a repair would exit 1 and stop the retry.
+  test.each([
+    ['disagrees with rarn.lock', () => writeFile(archive(), damaged())],
+    ['has lost its archive', () => rm(archive(), { force: true })],
+  ])('a transport failure while the cached copy %s still exits as one', async (_, spoil) => {
+    const store = createCacheStore(root)
+    const pinned = (await store.ensure(promise, '4.0.0', () => Promise.resolve(zip()))).integrity
+    await spoil()
+
+    const error = await expectRejection(() =>
+      store.ensure(
+        promise,
+        '4.0.0',
+        () =>
+          Promise.reject(
+            new RegistryError({
+              code: Code.RegistryUnreachable,
+              what: 'Could not reach the registry.',
+            }),
+          ),
+        pinned,
+      ),
+    )
+
+    expect(error).toBeInstanceOf(RegistryError)
+    expect(error.code).toBe(Code.RegistryUnreachable)
+    expect(error.what).toContain('cached copy')
+    expect(exitCodeFor(error)).toBe(ExitCode.RegistryError)
+  })
+
+  // Constraint 2c: offline is a guarantee. The repair needs the network, so under
+  // `--offline` it has to stop with the offline code — and say why an install that
+  // looked fully cached needed the network at all.
+  test('offline, the repair fails with RN0130 and says the cached copy disagreed with rarn.lock', async () => {
+    const store = createCacheStore(root)
+    const pinned = (await store.ensure(promise, '4.0.0', () => Promise.resolve(zip()))).integrity
+    await writeFile(archive(), damaged())
+
+    const error = await expectRejection(() =>
+      store.ensure(
+        promise,
+        '4.0.0',
+        () => Promise.reject(networkBlockedError('https://api.wally.run/v1/package-contents')),
+        pinned,
+      ),
+    )
+
+    expect(error.code).toBe(Code.NetworkBlocked)
+    expect(error.what).toContain('cached copy')
+    expect(error.detail).toContain(computeIntegrity(damaged()))
+    expect(error.format()).not.toContain('registry served')
+    // Kept as the class it was, which for `--offline` is not a transport failure:
+    // retrying the same command cannot help.
+    expect(exitCodeFor(error)).toBe(ExitCode.UserError)
+  })
+
+  test('offline, a tree whose archive is gone says so too', async () => {
+    const store = createCacheStore(root)
+    const pinned = (await store.ensure(promise, '4.0.0', () => Promise.resolve(zip()))).integrity
+    await rm(archive(), { force: true })
+
+    const error = await expectRejection(() =>
+      store.ensure(
+        promise,
+        '4.0.0',
+        () => Promise.reject(networkBlockedError('https://api.wally.run/')),
+        pinned,
+      ),
+    )
+    expect(error.code).toBe(Code.NetworkBlocked)
+    expect(error.what).toContain('cached copy')
+  })
+
+  // A malformed digest is a lockfile problem. Read as a cache that disagrees with it, it
+  // would start a repair: online, a request that can only reach this same error; offline,
+  // RN0130 and a message blaming the cached copy for what is wrong with rarn.lock.
+  test('a malformed recorded digest is reported as itself, before the cache is touched', async () => {
+    const store = createCacheStore(root)
+    await store.ensure(promise, '4.0.0', () => Promise.resolve(zip()))
+
+    const registry = counting(zip)
+    const error = await expectRejection(() =>
+      store.ensure(promise, '4.0.0', registry.fetch, 'md5-abc'),
+    )
+    expect(error.code).toBe(Code.LockfileInvalid)
+    expect(registry.calls).toBe(0)
+    expect(await readFile(archive())).toEqual(Buffer.from(zip()))
+  })
+
+  // Where the order shows. Online the repair would only cost a request before reaching
+  // the same RN0500; offline it never gets there, and the reader is told the network was
+  // off and the cache was wrong when the only thing wrong is rarn.lock.
+  test('offline, a malformed recorded digest is still a lockfile problem, not RN0130', async () => {
+    const store = createCacheStore(root)
+    await store.ensure(promise, '4.0.0', () => Promise.resolve(zip()))
+
+    const error = await expectRejection(() => store.ensure(promise, '4.0.0', offline, 'md5-abc'))
+    expect(error.code).toBe(Code.LockfileInvalid)
+    expect(error.format()).not.toContain('cached copy')
+  })
+
+  // The boundary, pinned so the comment in `ensure` cannot drift from it again. Only
+  // the archive is hashed; `ensure` says what hashing every unpacked file would cost.
+  // Whoever adds that check changes this test, and the comment along with it.
+  test('only the archive is verified; the unpacked tree is trusted as local state', async () => {
+    const store = createCacheStore(root)
+    const first = await store.ensure(promise, '4.0.0', () => Promise.resolve(zip()))
+    await writeFile(join(first.dir, 'init.luau'), 'return "edited in the cache"')
+
+    const again = await store.ensure(promise, '4.0.0', counting(zip).fetch, first.integrity)
+    expect(again.fromCache).toBe(true)
+    expect(await readFile(join(again.dir, 'init.luau'), 'utf8')).toBe(
+      'return "edited in the cache"',
+    )
   })
 })
 
@@ -376,6 +792,69 @@ describe('mapWithConcurrency', () => {
     }
     expect((caught as Error | undefined)?.message).toBe('boom')
     expect(started).toBeLessThan(50)
+  })
+
+  /**
+   * The caller's cleanup runs in a `finally`, so returning while workers are still
+   * writing means the cleanup deletes a directory that then fills up behind it. That is
+   * not hypothetical: it is what `link` did the day its prune loop became concurrent —
+   * the staging tree survived a failed install, which is the one thing that `finally`
+   * exists to prevent.
+   */
+  test('waits for work already in flight before the failure propagates', async () => {
+    let running = 0
+    let peakAfterFailure = 0
+    let failed = false
+
+    await mapWithConcurrency(
+      Array.from({ length: 8 }, (_, i) => i),
+      4,
+      async (i) => {
+        running++
+        // The first item fails immediately; the other three in flight linger.
+        if (i === 0) {
+          failed = true
+          running--
+          throw new Error('boom')
+        }
+        await new Promise((r) => setTimeout(r, 20))
+        if (failed) peakAfterFailure = Math.max(peakAfterFailure, running)
+        running--
+        return i
+      },
+    ).catch(() => undefined)
+
+    expect(peakAfterFailure).toBeGreaterThan(0)
+    expect(running).toBe(0)
+  })
+
+  /**
+   * Callers sort their input so that a rerun reports the same item first. Concurrency
+   * would take that away if the reported failure were whichever lost the race, so it is
+   * the lowest-indexed one instead — which is well defined, since indices are handed out
+   * in order and anything before a failure either finished or failed itself.
+   */
+  test('reports the lowest-indexed failure, not the fastest', async () => {
+    let caught: unknown
+    try {
+      await mapWithConcurrency(
+        Array.from({ length: 8 }, (_, i) => i),
+        4,
+        async (i) => {
+          // 3 fails late, 1 fails early. Racing would report 3; ordering reports 1.
+          if (i === 3) throw new Error('three')
+          if (i === 1) {
+            await new Promise((r) => setTimeout(r, 30))
+            throw new Error('one')
+          }
+          return i
+        },
+      )
+    } catch (error) {
+      caught = error
+    }
+
+    expect((caught as Error | undefined)?.message).toBe('one')
   })
 })
 

@@ -1,6 +1,12 @@
 import { Code } from '../util/codes.ts'
 import { RarnError, RegistryError } from '../util/errors.ts'
-import { isNetworkBlocked, networkBlocked, networkBlockedError } from '../util/network.ts'
+import {
+  type Fetch,
+  createFetch,
+  isNetworkBlocked,
+  isNetworkTimeout,
+  readFully,
+} from '../util/network.ts'
 import { type PackageName, toWallyName } from '../util/package-name.ts'
 import { parseMetadata, parseSearchName } from './parse.ts'
 import {
@@ -18,18 +24,45 @@ export interface RegistryClientOptions {
   indexUrl?: string
   /** Skips index lookup entirely. Useful for private registries and for tests. */
   apiUrl?: string
-  /** Injected for tests; defaults to global fetch. */
-  fetch?: typeof globalThis.fetch
+  /** Injected for tests; defaults to the real network, guarded. */
+  fetch?: Fetch
   /** Bearer token for private packages. Public ones need none. */
   token?: string | undefined
   /** Attempts for a retryable failure, including the first. */
   attempts?: number
   /** Base backoff delay; doubles per attempt. */
   retryDelayMs?: number
+  /** Overrides for tests; the defaults and their reasons live in `util/network.ts`. */
+  responseTimeoutMs?: number
+  idleTimeoutMs?: number
+  /** Override for tests; the default and its reason are `UPLOAD_TIMEOUT_MS` below. */
+  uploadTimeoutMs?: number
 }
 
+/**
+ * How long a publish may wait for the registry to answer.
+ *
+ * Far longer than an ordinary request, because this clock also covers the upload:
+ * fetch reports no upload progress, so a slow line still sending cannot be told from a
+ * dead one until the response starts. Four minutes carries the registry's 2 MiB ceiling
+ * at under 9 KB/s. Being cut off early is the expensive mistake here — it leaves the
+ * outcome unknown — so this errs long, but stays under Bun's own 300s limit: that one
+ * fails with a bare DOMException, which carries nothing to recognise it by and would
+ * reach the reader as a dropped connection rather than as the timeout it was.
+ */
+const UPLOAD_TIMEOUT_MS = 240_000
+
 export function createRegistryClient(options: RegistryClientOptions = {}): RegistryClient {
-  const doFetch = options.fetch ?? offlineGuard(globalThis.fetch)
+  const doFetch = createFetch({
+    fetch: options.fetch,
+    responseTimeoutMs: options.responseTimeoutMs,
+    idleTimeoutMs: options.idleTimeoutMs,
+  })
+  const uploadFetch = createFetch({
+    fetch: options.fetch,
+    responseTimeoutMs: options.uploadTimeoutMs ?? UPLOAD_TIMEOUT_MS,
+    idleTimeoutMs: options.idleTimeoutMs,
+  })
   const indexUrl = options.indexUrl ?? DEFAULT_INDEX_URL
   const attempts = options.attempts ?? 3
   const retryDelayMs = options.retryDelayMs ?? 250
@@ -56,10 +89,10 @@ export function createRegistryClient(options: RegistryClientOptions = {}): Regis
 
     return await withRetry(url, attempts, retryDelayMs, async () => {
       try {
-        return await doFetch(url, { headers: allHeaders })
+        return await readFully(await doFetch(url, { headers: allHeaders }))
       } catch (cause) {
-        // A structured failure already knows what went wrong — the offline guard
-        // below, or an injected fetch in a test. Wrapping it as "could not reach
+        // A structured failure already knows what went wrong — the offline guard,
+        // a timeout, or an injected fetch in a test. Wrapping it as "could not reach
         // the registry" would replace an accurate diagnosis with a guess.
         if (cause instanceof RarnError) throw cause
         throw new RegistryError({
@@ -138,13 +171,13 @@ export function createRegistryClient(options: RegistryClientOptions = {}): Regis
      * which is safe but reports a failure for something that worked — worse to
      * read than one clear error.
      */
-    async publish(archive: Uint8Array, token: string): Promise<PublishReceipt> {
+    async publish(archive: Uint8Array, token: string, spec: string): Promise<PublishReceipt> {
       const base = await apiUrl()
       const url = new URL('v1/publish', base).toString()
 
       let response: Response
       try {
-        response = await doFetch(url, {
+        response = await uploadFetch(url, {
           method: 'POST',
           headers: {
             'Wally-Version': WALLY_VERSION_HEADER,
@@ -155,44 +188,51 @@ export function createRegistryClient(options: RegistryClientOptions = {}): Regis
           body: archive,
         })
       } catch (cause) {
+        if (isNetworkTimeout(cause)) {
+          throw publishOutcomeUnknown({
+            code: Code.NetworkTimeout,
+            what: 'the registry stopped responding during the upload.',
+            url,
+            spec,
+            cause,
+          })
+        }
+        // The offline guard's refusal, made before anything is sent.
         if (cause instanceof RarnError) throw cause
-        throw new RegistryError({
+        if (neverConnected(cause)) {
+          // Bun's own wording is the only place a refused certificate is named, so it is
+          // passed through — minus the advice Bun appends for whoever wrote the request
+          // call, which someone running a binary has no way to follow.
+          const message =
+            cause instanceof Error ? cause.message.replace(BUN_FETCH_HINT, '').trim() : ''
+          throw new RegistryError({
+            code: Code.RegistryUnreachable,
+            what: 'Could not reach the registry to publish.',
+            where: url,
+            detail: message === '' ? undefined : `  ${message}`,
+            how: 'Nothing was published. Check your connection and try again.',
+            cause,
+          })
+        }
+        throw publishOutcomeUnknown({
           code: Code.RegistryUnreachable,
-          what: 'Could not reach the registry to publish.',
-          where: url,
-          how: 'Nothing was published. Check your connection and try again.',
+          what: 'the connection to the registry closed before it answered.',
+          url,
+          spec,
           cause,
         })
       }
 
-      const body = (await response.text()).trim()
+      // The status already says whether it was published; the body is only the
+      // registry's wording. Failing on it would report a publish that worked as one
+      // that did not.
+      const body = (await response.text().catch(() => '')).trim()
       if (response.ok) {
         return { status: response.status, message: body === '' ? undefined : body }
       }
-      throw publishFailure(response.status, body, url)
+      throw publishFailure(response.status, body, url, spec)
     },
   }
-}
-
-/**
- * Wraps the real fetch so `RARN_NO_NETWORK` can stop it.
- *
- * Wrapping instead of checking at each call site is the whole point: a request
- * added later is covered without anyone remembering that the guard exists.
- *
- * Only the global fetch is wrapped. An injected one is a stand-in by definition,
- * and blocking those would turn the guard into something that fails the test suite
- * rather than something that keeps it off the network.
- */
-function offlineGuard(inner: typeof globalThis.fetch): typeof globalThis.fetch {
-  return (async (...args: Parameters<typeof globalThis.fetch>) => {
-    if (networkBlocked()) throw networkBlockedError(urlOf(args[0]))
-    return await inner(...args)
-  }) as typeof globalThis.fetch
-}
-
-function urlOf(input: Parameters<typeof globalThis.fetch>[0]): string {
-  return input instanceof Request ? input.url : String(input)
 }
 
 /**
@@ -207,7 +247,7 @@ function urlOf(input: Parameters<typeof globalThis.fetch>[0]): string {
 async function resolveApiUrl(
   indexUrl: string,
   override: string | undefined,
-  doFetch: typeof globalThis.fetch,
+  doFetch: Fetch,
 ): Promise<string> {
   if (override !== undefined) return override
   if (normalizeIndexUrl(indexUrl) === normalizeIndexUrl(DEFAULT_INDEX_URL)) return DEFAULT_API_URL
@@ -412,13 +452,101 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * A publish that may or may not have happened, and the message has to say so.
+ *
+ * "Nothing was published" is the natural wording and the wrong one: the registry
+ * (`wally-registry-backend`, its `publish` handler) stores the archive and commits the
+ * version to its index, and only then recrawls the whole index for search before it
+ * answers. That last step is the slow one, so a publish that runs long is usually past
+ * the point of no return when the answer fails to arrive — and a published version is
+ * permanent. A reader told nothing happened believes nothing is public, or publishes
+ * again and meets RN0622 over something that worked.
+ */
+function publishOutcomeUnknown(failure: {
+  code: Code
+  what: string
+  url: string
+  spec: string
+  body?: string
+  cause?: unknown
+}): RegistryError {
+  // A gateway's answer is often a whole HTML page; the first of it is enough to search.
+  const said =
+    failure.body === undefined || failure.body === '' ? [] : [`  ${failure.body.slice(0, 300)}`]
+  return new RegistryError({
+    code: failure.code,
+    what: failure.what,
+    where: failure.url,
+    detail: [
+      ...said,
+      '  The package may have been published anyway — there is no way to tell from here.',
+    ].join('\n'),
+    how: `Check before publishing again: \`rarn info ${failure.spec}\` lists the version if it went through. If it is not there, publish again — a repeat of one that did go through is refused (RN0622), never published twice.`,
+    cause: failure.cause,
+  })
+}
+
+/**
+ * The rejection codes that prove a request never reached the registry.
+ *
+ * Measured on Bun 1.3.14 against local servers counting what they received, 20 runs
+ * each with a 64 KiB upload. A closed port, a host name that does not resolve and a peer
+ * that does not speak TLS reject with `ConnectionRefused`. A certificate the client
+ * refuses rejects with a code of its own; the server saw the handshake complete and not
+ * one byte of the request, because Bun checks the certificate before it sends anything.
+ * `UNKNOWN_CERTIFICATE_VERIFICATION_ERROR` is a peer that closed after the ClientHello,
+ * so no session ever existed to send through.
+ *
+ * The first four certificate codes are the chains a TLS-intercepting proxy presents.
+ * Read as possibly delivered, they would send the reader to `rarn info`, which fails on
+ * the same certificate.
+ *
+ * Everything unlisted is read as possibly delivered — `ECONNRESET` above all, which Bun
+ * reports both for a peer that closed on accept and for one that read the whole upload
+ * and then dropped the connection. A failure after the upload arrived was measured too
+ * (reset, close, half a response, garbage): each gave `ECONNRESET` or
+ * `Malformed_HTTP_Response`, never a code listed here. A code missing here costs one
+ * needless `rarn info`; a code wrongly here tells someone nothing was published when it
+ * was.
+ */
+const NEVER_CONNECTED = new Set([
+  'ConnectionRefused',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'CERT_HAS_EXPIRED',
+  'CERT_NOT_YET_VALID',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+  'UNKNOWN_CERTIFICATE_VERIFICATION_ERROR',
+])
+
+/** Measured on Bun 1.3.14, appended to `ERR_TLS_CERT_ALTNAME_INVALID` and similar. */
+const BUN_FETCH_HINT =
+  /\.?\s*For more information, pass `verbose: true` in the second argument to fetch\(\)\.?\s*$/
+
+function neverConnected(cause: unknown): boolean {
+  if (typeof cause !== 'object' || cause === null) return false
+  const { code } = cause as { code?: unknown }
+  return typeof code === 'string' && NEVER_CONNECTED.has(code)
+}
+
+/**
  * Turns a publish rejection into something actionable.
  *
  * Every one of these has a different fix, and the raw status alone sends the reader
  * to the wrong one — 401 in particular reads as "log in again" when it usually means
  * the scope belongs to somebody else.
+ *
+ * The line between "nothing was published" and "it may have been" is 500. Every 4xx
+ * the registry sends is a refusal made before the archive is stored. A 5xx is not a
+ * judgement at all: the backend reports any failure it did not anticipate as 500,
+ * including one from the index recrawl that runs after the version is committed, and a
+ * gateway in front of it answers 502 or 504 when it gives up on a request the backend
+ * may still finish. 504 is the timeout the client would have hit itself, so it is
+ * reported as one.
  */
-function publishFailure(status: number, body: string, url: string): RarnError {
+function publishFailure(status: number, body: string, url: string, spec: string): RarnError {
   const detail = body === '' ? undefined : `  ${body}`
 
   if (status === 409) {
@@ -446,6 +574,24 @@ function publishFailure(status: number, body: string, url: string): RarnError {
       where: url,
       detail,
       how: 'Run `rarn pack --list` to see exactly what would be uploaded.',
+    })
+  }
+  if (status === 504) {
+    return publishOutcomeUnknown({
+      code: Code.NetworkTimeout,
+      what: 'the registry timed out before answering (504).',
+      url,
+      spec,
+      body,
+    })
+  }
+  if (status >= 500) {
+    return publishOutcomeUnknown({
+      code: Code.PublishRejected,
+      what: `the registry answered ${status}.`,
+      url,
+      spec,
+      body,
     })
   }
   return new RegistryError({

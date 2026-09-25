@@ -54,7 +54,24 @@ export async function pruneInto(
   }
 }
 
-/** Recursive file count, used only for reporting how much pruning saved. */
+/**
+ * Recursive file count, used only for reporting how much pruning saved.
+ *
+ * **Two full walks per package, for one line of output — and it stays.** R3 proposed
+ * dropping it and priced the pair at 482ms of a 506-package install, which was true of a
+ * serial prune loop. Once the loop became concurrent the walks overlap with the copies
+ * and with each other, and the same probe measures **109.6ms of 2,847ms (3.8%)** for
+ * removing both. Removing only the destination walk — countable from the archive side
+ * instead, which would keep the output — is **40.4ms, inside the noise**.
+ *
+ * That is the trade in full: a few percent against the only place a user sees that
+ * pruning happened at all, on a tool whose whole difference from Wally here is that it
+ * prunes (constraint 3). Not worth it in either direction.
+ *
+ * The general lesson is worth more than the number: **a ceiling is only valid against
+ * the baseline it was measured on.** This one lost 77% of its value to a change that
+ * never touched it.
+ */
 async function countFiles(path: string): Promise<number> {
   let total = 0
   const stack = [resolve(path)]

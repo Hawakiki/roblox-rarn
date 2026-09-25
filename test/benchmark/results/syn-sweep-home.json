@@ -1,0 +1,78 @@
+{
+  "label": "home",
+  "at": "2026-08-23T07:37:04.662Z",
+  "host": "api.wally.run",
+  "address": "142.250.21.121",
+  "port": 443,
+  "machine": "win32 10.0.26200 x64",
+  "runtime": "bun 1.3.14",
+  "network": {
+    "gateway": "211.224.205.1",
+    "initialRtoMs": "1000",
+    "maxSynRetransmissions": "4"
+  },
+  "firstTryThresholdMs": 700,
+  "reps": 1,
+  "largestStallFreeWidth": 8,
+  "stagger": {
+    "ms": 5,
+    "width": 32,
+    "straightMs": 7058,
+    "staggeredMs": 197.6
+  },
+  "rows": [
+    {
+      "width": 8,
+      "wallMedianMs": 36.3,
+      "firstTry": [
+        8
+      ],
+      "stallFree": true,
+      "failed": 0
+    },
+    {
+      "width": 32,
+      "wallMedianMs": 7058,
+      "firstTry": [
+        11
+      ],
+      "stallFree": false,
+      "failed": 0
+    }
+  ],
+  "rounds": {
+    "8": [
+      {
+        "width": 8,
+        "wallMs": 36.3,
+        "connected": 8,
+        "failed": 0,
+        "firstTry": 8,
+        "p50": 34,
+        "max": 34.4
+      }
+    ],
+    "32": [
+      {
+        "width": 32,
+        "wallMs": 7058,
+        "connected": 32,
+        "failed": 0,
+        "firstTry": 11,
+        "p50": 1042.4,
+        "max": 7057.5
+      }
+    ]
+  },
+  "staggered": [
+    {
+      "width": 32,
+      "wallMs": 197.6,
+      "connected": 32,
+      "failed": 0,
+      "firstTry": 32,
+      "p50": 32.8,
+      "max": 35.5
+    }
+  ]
+}

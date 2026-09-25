@@ -6,19 +6,18 @@ import { pruneInto } from '../project/prune.ts'
 import type { Placement, Resolution, ResolvedPackage } from '../resolver/types.ts'
 import { SECTION_PLACEMENT } from '../resolver/types.ts'
 import { Code } from '../util/codes.ts'
-import { FILE_READ_CONCURRENCY, mapWithConcurrency } from '../util/concurrency.ts'
-import { RarnError } from '../util/errors.ts'
-import { deriveAlias, parsePackageName, toIndexDir, toWallyName } from '../util/package-name.ts'
 import {
-  INDEX_DIR_NAME,
-  type InstallLayout,
-  SHIM_EXTENSION,
-  createLayout,
-  entryDir,
-} from './layout.ts'
+  FILE_READ_CONCURRENCY,
+  PRUNE_CONCURRENCY,
+  mapWithConcurrency,
+} from '../util/concurrency.ts'
+import { RarnError } from '../util/errors.ts'
+import { byCodeUnit } from '../util/order.ts'
+import { deriveAlias, parsePackageName, toIndexDir, toWallyName } from '../util/package-name.ts'
+import { INDEX_DIR_NAME, type InstallLayout, createLayout, entryDir, shimPath } from './layout.ts'
 import { assertRealmsAreOurs } from './ownership.ts'
 import { assertCrossable, crossRealmShim, requirePlacePath, rootShim, siblingShim } from './shim.ts'
-import { STAGING_DIR, clearLeftovers, swapIn } from './swap.ts'
+import { STAGING_DIR, clearRetired, clearStaging, swapIn } from './swap.ts'
 import { type TypeExport, readTypeExports } from './type-exports.ts'
 
 export interface LinkOptions {
@@ -68,7 +67,14 @@ export async function link(options: LinkOptions): Promise<LinkResult> {
   // they are Rarn's to replace.
   await assertRealmsAreOurs(final)
 
-  await clearLeftovers(final.projectDir)
+  // The build writes into the staging directory, so clearing it has to finish first.
+  await clearStaging(final.projectDir)
+
+  // Deleting the previous install's retired tree does not. Started here and awaited
+  // below, it runs while the new tree is being copied out of the cache instead of after
+  // it — on a repeat install of 506 packages that is 2,049ms of 6,517ms which nothing
+  // was overlapping, because the delete was the last thing in the install.
+  const retiring = clearRetired(final.projectDir)
 
   // The staged tree is built at a different root, which is only safe because no shim
   // ever names a filesystem path — they are `script.Parent…` walks or DataModel paths
@@ -86,6 +92,12 @@ export async function link(options: LinkOptions): Promise<LinkResult> {
     await rm(join(final.projectDir, STAGING_DIR), { recursive: true, force: true }).catch(
       () => undefined,
     )
+
+    // Awaited on both paths rather than left floating. It cannot reject — `clearRetired`
+    // swallows — so this only ever costs the remainder of a delete the build did not
+    // outlast, and it keeps the install from ending with filesystem work still in
+    // flight, which is a thing a caller has no way to see and no way to wait for.
+    await retiring
   }
 }
 
@@ -106,9 +118,18 @@ async function build(
 
   // Sorted so that a rerun writes in the same order and any failure reports the
   // same package first.
-  const packages = [...resolution.packages.entries()].sort(([a], [b]) => a.localeCompare(b))
+  const packages = [...resolution.packages.entries()].sort(([a], [b]) => byCodeUnit(a, b))
 
-  for (const [key, pkg] of packages) {
+  // Copied a few at a time rather than one after another. Each package writes into its
+  // own `_Index/{scope}_{name}@{version}` directory and two packages resolving to one
+  // version share that entry by key, so no two workers ever target the same path —
+  // which is what makes this safe against constraint 1 rather than merely fast.
+  //
+  // The results are consumed in input order, not completion order, so the lockfile, the
+  // shim contents and the reported counts are all identical to what the serial loop
+  // produced — and `mapWithConcurrency` reports the lowest-indexed failure rather than
+  // the fastest, so the sort above still buys what it was written to buy.
+  const pruned = await mapWithConcurrency(packages, PRUNE_CONCURRENCY, async ([key, pkg]) => {
     const source = sources.get(key)
     if (source === undefined) {
       throw new RarnError({
@@ -118,11 +139,17 @@ async function build(
       })
     }
 
-    used.add(pkg.placement)
     const dir = entryDir(layout, pkg.placement, indexDirNameOf(pkg))
     await mkdir(dir, { recursive: true })
 
-    const result = await pruneInto(source, join(dir, moduleNameOf(pkg)), key)
+    return await pruneInto(source, join(dir, moduleNameOf(pkg)), key)
+  })
+
+  for (const [index, [key, pkg]] of packages.entries()) {
+    const result = pruned[index]
+    if (result === undefined) continue
+
+    used.add(pkg.placement)
     archiveFiles += result.archiveFiles
     installedFiles += result.installedFiles
     moduleRoots.set(key, result.root.path)
@@ -180,7 +207,7 @@ async function writeDependencyShims(
     const dir = entryDir(layout, pkg.placement, indexDirNameOf(pkg))
     const moduleName = moduleNameOf(pkg)
 
-    for (const [alias, depKey] of [...pkg.dependencies].sort(([a], [b]) => a.localeCompare(b))) {
+    for (const [alias, depKey] of [...pkg.dependencies].sort(([a], [b]) => byCodeUnit(a, b))) {
       const dep = resolution.packages.get(depKey)
       if (dep === undefined) {
         throw new RarnError({
@@ -202,7 +229,7 @@ async function writeDependencyShims(
       }
 
       await writeFile(
-        join(dir, `${alias}${SHIM_EXTENSION}`),
+        shimPath(dir, alias, key),
         shimFor(pkg.placement, dep, manifest, key, typeExports.get(depKey) ?? []),
         'utf8',
       )
@@ -259,7 +286,11 @@ async function writeRootShims(
               types,
             )
 
-      await writeFile(join(layout.realms[placement], `${alias}${SHIM_EXTENSION}`), source, 'utf8')
+      await writeFile(
+        shimPath(layout.realms[placement], alias, `rarn.json (${section})`),
+        source,
+        'utf8',
+      )
       written += 1
     }
   }

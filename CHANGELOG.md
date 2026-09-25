@@ -10,6 +10,251 @@ rather than silently misread, and a `0.x` release may bump it.
 
 Nothing yet.
 
+## 0.3.0 — 2026-09-25
+
+**Upgrade if you install from lockfiles or packages you did not write yourself.** In 0.2.0
+and 0.1.1 an edited `rarn.lock` could make `rarn install` delete a directory outside the
+cache (RN-23), and a registry package could write a `.luau` file outside its install tree
+(RN-22). Both are fixed here, as is the login token being briefly readable by other
+accounts on the machine (RN-19).
+
+The lockfile schema is tighter: a locked `version` must now be an exact semver version.
+Every lockfile Rarn has written still loads, and `rarn.json` is unchanged. The first
+install may rewrite an existing lockfile once, with its keys reordered (RN-17).
+
+The minor bump is for behaviour that changes under you: `rarn up` keeps the operators you
+wrote (RN-25), two aliases that differ only in case are refused (RN-16), a request that
+stops answering times out after 30 seconds (RN-20), `rarn publish` says when a failure may
+still have published, and on Windows a program holding `rarn.json` or `rarn.lock` open for
+more than a second now makes the write fail, where it used to go through (RN-18).
+
+### Security
+
+- **The login token file is created owner-only from the start** (RN-19). `~/.rarn/auth.json`
+  was written with the default mode and restricted to `0600` afterwards, so on macOS and
+  Linux the token Wally accepts for publishing could be read by another account on the
+  same machine for a moment, wherever the home directory lets others through. It is now
+  written to an owner-only temporary file and renamed into place, and a missing `~/.rarn`
+  is created as `0700`.
+
+  A token file that exists but cannot be read now fails with the new `RN0603`, naming the
+  file. It used to read as "not logged in", which let `rarn logout` report nothing to
+  remove while the token was still on disk.
+
+- **`rarn pack` and `rarn publish` never include the login token file** (RN-20), and say
+  so when they leave it out. It is matched by file identity rather than by name, so it is
+  caught when the project is your home directory, when `RARN_AUTH_FILE` points inside the
+  project, and over an exact `include`. A copy stranded by an interrupted login carries
+  the `.rarn-tmp` suffix, which publishing already leaves out.
+
+- **An edited `rarn.lock` could make `rarn install` delete a directory outside the cache**
+  (RN-23). A locked package's `version` became a folder name in the cache and under
+  `_Index` unchecked, and reusing a lockfile skips both the registry and semver, so a
+  version such as `1.0.0/../../../../victim` named a directory beside the cache instead of
+  an entry in it. If that directory existed, the cache took it for an entry it could not
+  verify and deleted it recursively before anything was downloaded — whatever the download
+  then did. The path counts up from the cache, so it can reach a folder such as Documents
+  without knowing the user's name, and a version crafted to also name a real package could
+  unpack that package in its place and report success (reproduced against a stand-in
+  registry). A pull request that changes only `rarn.lock` is enough.
+
+  0.2.0 and 0.1.1 are affected. A locked `version` must now be an exact semver version, so
+  such a lockfile is refused with `RN0500` before anything is read or written, and the
+  folder name is checked again where it is built. Every lockfile Rarn has written still
+  reads: the rule admits build metadata, which the registry holds (`2.5.2+89e7`).
+
+- **A registry package could write a `.luau` file anywhere you can write, through the name
+  of one of its dependencies** (RN-22). The registry does not check the names a package
+  gives its dependencies, and Rarn wrote each as `<name>.luau` without checking it either,
+  so a dependency called `../../../../src/Main` replaced a project's `src/Main.luau` with a
+  shim — in this project or another — and the install reported success. Such a package is
+  now refused with the new `RN0112`, naming the package, the section and the dependency.
+  Every dependency name in the registry today still passes, hyphenated ones such as
+  `luau-polyfill` included. 0.2.0 and 0.1.1 are affected.
+
+### Fixed
+
+- **`rarn cache clean` no longer exits 0 having done nothing when stdin is not a
+  terminal** (RN-14). It printed the confirmation, waited on input that had already
+  ended, and exited successfully with the cache untouched — the same shape `rarn init`
+  had, in the one other command that asks a question. It now refuses with `RN0004` and
+  names `--yes`.
+
+  `init` fills in its defaults in this situation and this does not, because the two
+  directions do not cost the same. Guessing wrong at `init` writes a file that can be
+  edited; guessing wrong here sends every project on the machine back to the network
+  for its next install.
+
+  Pressing Ctrl+D at the question is now read as declining, rather than leaving the
+  same unanswered promise behind.
+
+- **`rarn cache verify --json` now fails when a digest does not match** (RN-15). It
+  listed the mismatch in the JSON body and exited 0, while the human output exited 1
+  on the same cache. `--json` is the form a script reads, and a script reads the exit
+  code — so the one finding here that could be an attack was reported loudly to a
+  person and silently to the caller built to catch it.
+
+- **Two packages whose aliases differ only in case are now refused** (RN-16). The
+  uniqueness rule compared alias strings case-sensitively and the filesystem does not:
+  `EnumList.luau` and `Enumlist.luau` are one file on Windows and on a default macOS
+  volume, so one package's shim overwrote the other's. The install reported success,
+  `rarn.lock` was correct, and `rarn doctor` could not see it — all that remained was
+  `require(Packages.EnumList)` returning whichever package was written last.
+
+  Both spellings in that example are what Rarn derives on its own, so writing no
+  `aliases` entry was not a way to avoid it. Found by counting during the R3 performance
+  research: `link` reported writing 1,136 shims and 1,131 files existed.
+
+  The message names both spellings rather than the folded form, because two names that
+  are visibly different colliding reads as a bug in Rarn unless it says why. The
+  replacement it suggests is now checked against the aliases already in the section, so
+  the JSON it prints can still be pasted.
+
+  This is stricter than a case-sensitive filesystem needs, deliberately: a manifest that
+  installs on Linux CI and shadows a package on the author's Mac is worse than one that
+  is refused in both places.
+
+- **`rarn.lock` is now ordered the same way on every machine** (RN-17). The nested maps
+  (`dependencies`, `requestedBy`, the `root` sections) were collated by the operating
+  system's locale while the `packages` map beside them was not, so one file followed two
+  orders and the same install could write a different lockfile on, say, a Czech-locale
+  machine than on CI. Everything Rarn writes, packs or prints as `--json` now uses one
+  plain code-unit order, the generated `wally.toml` included.
+
+  Existing lockfiles stay valid and `--frozen-lockfile` accepts them. The first install
+  may rewrite one with its keys reordered, once — when two aliases differ only in case or
+  in `_`/`-`, or when one package is declared with two differently spelled ranges. A CI
+  job that checks for a clean tree after installing will see that diff one time.
+
+- **`rarn.json` and `rarn.lock` are no longer left cut off when a write is interrupted**
+  (RN-18). Both were rewritten in place, and a write in place empties the file before the
+  first byte lands, so Ctrl+C or a full disk at the wrong moment left the hand-maintained
+  manifest truncated mid-object. Each file is now written beside itself and renamed into
+  place: it is either entirely the old content or entirely the new. A symlinked file is
+  still followed, a read-only one is still refused, and permission bits are kept.
+
+  **On Windows, a program holding either file open now delays the write, and one holding
+  it for longer than a second fails it** with `RN0011` or `RN0500`, leaving the file as it
+  was. Windows refuses to replace a file that anything has open, even only for reading;
+  the in-place write did not have that limit. An interrupted write can leave a
+  `.rarn.json.<token>.rarn-tmp` beside the file, and `rarn publish` never includes one.
+
+- **A registry request that stops answering now fails instead of hanging** (RN-20).
+  Nothing bounded the wait but Bun's own 300-second limit per attempt, so a dead
+  connection sat silent for up to fifteen minutes behind the retries, and a download that
+  stalled partway was never retried and surfaced as an internal error (`RN0003`). A
+  request now gives up after 30 seconds without a response starting, or 30 seconds
+  without a byte of body arriving, with the new `RN0102` (exit 2), and a stalled download
+  is retried like any other failed request. A slow transfer that keeps arriving is never
+  cut off.
+
+- **`rarn login` and `rarn whoami` now honour `--offline` and `RARN_NO_NETWORK`**
+  (RN-20). Their requests to GitHub went out regardless of the guarantee that covers every
+  other request. With a token already stored, `login` still reports `already logged in`.
+  `whoami` also stopped reporting a failed lookup as a revoked token: only a `401` from
+  GitHub means that now, and anything else is reported as the network or server problem
+  it was.
+
+- **`rarn publish` no longer says "Nothing was published" when it cannot know that**
+  (RN-20). The registry commits a version before its slow index recrawl, so a publish can
+  go through and still time out. After a timeout, a `5xx`, a gateway timeout or a
+  connection dropped mid-upload, it now says the version may have been published and
+  prints the `rarn info @scope/name@version` command that settles it. It still never
+  retries. A connection that was provably never made — a refused port, an unresolvable
+  host, a rejected TLS certificate — still says nothing was published, and names the
+  certificate problem.
+
+- **A cached archive that disagrees with `rarn.lock` is now checked against the registry
+  instead of blamed on it** (RN-21). Install compared the cached zip with the lockfile
+  digest and stopped with `RN0300: The registry served different bytes than the lockfile
+  recorded` without downloading anything, and following its advice — delete `rarn.lock`
+  and reinstall — then recorded the damaged bytes as the pinned ones.
+
+  The cached copy is now a witness, not a verdict: the registry is asked, and the entry
+  is removed only when it holds bytes the registry does not serve. The cache is shared by
+  every project on the machine, so one lockfile's disagreement is not enough to delete an
+  entry another project's offline install may need. A repaired entry appears in the
+  install summary as `RN0302` with the discarded digest. `RN0300` now means the
+  registry's own bytes differ from the lockfile. Under `--offline`, a repair that needs the
+  network fails with `RN0130` and says why. Only archives are verified — the unpacked tree
+  in the cache is trusted as local state — and `rarn cache verify` now says "archives
+  verified" to match.
+
+- **A registry version that semver cannot read no longer breaks every command for its
+  package** (RN-24). `kampfkarren/react-roblox-act` publishes `0.0.0-001` beside five valid
+  versions, and sorting them threw a bare `TypeError`, so any command reading that
+  package's versions failed. Such versions are now left out and the rest install. No range
+  could ever have selected one, so no install changes.
+
+- **`rarn up` no longer widens the ranges it raises** (RN-25). Without `--latest` it
+  promises the newest version the declared range already allows, but it wrote every range
+  back as a caret: `~1.2.0` came out as `^1.2.5`, `>=1.0.0 <1.5.0` as `^1.4.2`, and a
+  Cargo-style exact pin `=1.2.3` (which `rarn import` writes) as `^1.2.3`. The reinstall
+  that followed resolved the rewritten range, installing `1.3.0`, `1.5.0` and `1.2.4` past
+  the bounds the person wrote, and reported success. Now only the floor moves, in the
+  notation it was written in: `~1.2.0` becomes `~1.2.5`, `>=1.0.0 <1.5.0` becomes
+  `>=1.4.2 <1.5.0`, and a pin stays pinned. A range no single operator can express, such
+  as `^0` at `0.5.2`, is written out as `>=0.5.2 <1`.
+
+  A package declared in more than one section is raised as one package, to the version an
+  install gives all of its ranges, and `rarn outdated` reports that same version as
+  `wanted`. `--latest` still crosses the declared bound but keeps a `^`, a `~` or an exact
+  pin, as `yarn up` does; any other range becomes the caret `rarn add` writes.
+
+### Changed
+
+- **The per-package copy out of the cache now runs eight at a time.** It was one package
+  after another, and the cost of that copy is per *file* rather than per byte — on Windows
+  each one pays an open, a write, a close and an on-access scan, none of which the process
+  can overlap with anything while it waits.
+
+  Measured on the shipped binary, 506 packages, warm cache and lockfile: 5,133 → 4,024ms
+  (21.6%), arms run on/off/on. In TypeScript, 4,297 → 2,848ms (33.7%). At 49 and 52
+  packages it is 30.7% and 30.6%; at 6 packages the arms overlap, so nothing is claimed
+  there.
+
+  Combined with the deferred delete below, a repeat install of that graph went from
+  6,352 to 4,024ms with the binary — 36.6%. The two savings were measured as a full 2×2
+  and are independent to within 52ms, so making the build faster did not stop the delete
+  hiding behind it.
+
+  The install output is byte-identical, and results are consumed in input order rather
+  than completion order, so the lockfile and every shim are unchanged.
+
+- **`mapWithConcurrency` now waits for work already in flight before a failure
+  propagates, and reports the lowest-indexed failure rather than the fastest.** The first
+  half is a defect the concurrent copy would otherwise have introduced: a caller's
+  cleanup runs in a `finally`, and returning while workers were still writing left `link`
+  with a staging directory it had just deleted. The second half is what keeps a sorted
+  input meaningful — the same package is named first on every run.
+
+- **A repeat install is about 20% faster, because deleting the previous tree moved off
+  the critical path.** `swapIn` used to delete the tree it had just retired, as the last
+  thing in the install — 2,049ms of a 6,517ms repeat install of a 506-package graph,
+  every millisecond of it spent after the tree on disk was already correct. The install
+  that retires a tree now leaves it, and the next one deletes it *while it builds*, where
+  it hides inside work that was happening anyway.
+
+  Measured on the shipped binary, 506 packages, warm cache and lockfile: 6,352 → 5,057ms
+  (20.4%), with the arms run on/off/on to rule out drift. In TypeScript the same change
+  measures 31.9%, and the gap between the two is not explained; the binary is what you
+  run, so 20.4% is the number. Smaller graphs behave the same way: 6 packages 18.4%,
+  49 packages 29.6%, 52 packages 30.4%, all measured in-process and none overlapping.
+
+  **What this costs is one directory.** Between installs the project now holds the
+  previous tree as well as the current one — 43MB at 506 packages, proportionally less
+  below that. `rarn init` already lists both scratch names in `.gitignore`, and `rarn
+  publish` now excludes them by name.
+
+  The safety story does not change, except to improve: the tree you had survives longer,
+  not less. An interrupted install still leaves the previous install intact.
+
+### Added
+
+- Tests for `rarn cache`, which had none. It was the second command carrying its
+  behaviour in `cli/` rather than in a layer, and the second one to ship a defect
+  because of it.
+
 ## 0.2.0 — 2026-08-22
 
 **Everything below has been sitting unreleased, and one of it matters more than the rest:

@@ -20,3 +20,5 @@
 | M6 | [현장 보고 대응](m06-field-report.md) | 결함 4·메시지 2·문서 3. 제일 큰 둘은 보고서에 없었다 |
 | M6b | [하니스 보강](m06b-harness-selfcheck.md) | 결함 3. "얼마나 현실적이냐"에 답하려다 나왔다 |
 | M7 | [shim 이 타입을 전달하게](m07-shim-type-exports.md) | 현장 파사드가 필요 없어졌다. Wally 에 없는 것 |
+| M8 | [`cli/` 잔여 로직 감사](m08-cli-residue.md) | 결함 2. 새 테스트가 먼저 거짓으로 통과했다 |
+| M9 | [R3 대응](m09-r3-response.md) | 최적화 2 착지·1 기각, 결함 1. 상한은 baseline 에 매여 있다 |

@@ -33,7 +33,7 @@ export async function login(
 
   const existing = await readToken(apiUrl)
   if (existing !== undefined && options.force !== true) {
-    const who = await githubLogin(existing)
+    const who = await nameOf(existing)
     const as = who === undefined ? '' : ` as ${chalk.bold(who)}`
     process.stdout.write(
       [
@@ -67,7 +67,7 @@ export async function login(
     progress.stop()
 
     await writeToken(apiUrl, token)
-    const who = await githubLogin(token)
+    const who = await nameOf(token)
     process.stdout.write(
       `${chalk.green('logged in')} to ${chalk.cyan(apiUrl)}${who === undefined ? '' : ` as ${chalk.bold(who)}`}\n`,
     )
@@ -75,4 +75,14 @@ export async function login(
     progress.fail()
     throw error
   }
+}
+
+/**
+ * The name is decoration here, unlike in `whoami`: the token is what `login` is about,
+ * and by the second call it is already saved. A lookup that fails — offline, or a
+ * connection that stalls — drops the name rather than reporting a login that worked
+ * as one that did not.
+ */
+async function nameOf(token: string): Promise<string | undefined> {
+  return await githubLogin(token).catch(() => undefined)
 }

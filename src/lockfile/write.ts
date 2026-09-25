@@ -1,9 +1,10 @@
-import { writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { DEPENDENCY_SECTIONS, type NormalizedManifest } from '../manifest/types.ts'
 import type { Resolution } from '../resolver/types.ts'
+import { writeFileAtomic } from '../util/atomic-write.ts'
 import { Code } from '../util/codes.ts'
 import { RarnError } from '../util/errors.ts'
+import { byCodeUnit } from '../util/order.ts'
 import {
   LOCKFILE_NAME,
   LOCKFILE_VERSION,
@@ -61,7 +62,7 @@ export function buildLockfile(options: BuildLockfileOptions): Lockfile {
       dependencies: sortRecord(Object.fromEntries(pkg.dependencies)),
       requestedBy: [...pkg.requestedBy]
         .map((c) => ({ from: c.from, range: c.range }))
-        .sort((a, b) => a.from.localeCompare(b.from) || a.range.localeCompare(b.range)),
+        .sort((a, b) => byCodeUnit(a.from, b.from) || byCodeUnit(a.range, b.range)),
       dev: pkg.dev,
     }
   }
@@ -108,13 +109,14 @@ export function serializeLockfile(lockfile: Lockfile): string {
 export async function writeLockfile(dir: string, lockfile: Lockfile): Promise<void> {
   const path = join(resolve(dir), LOCKFILE_NAME)
   try {
-    await writeFile(path, serializeLockfile(lockfile), 'utf8')
+    await writeFileAtomic(path, serializeLockfile(lockfile))
   } catch (cause) {
     throw new RarnError({
       code: Code.LockfileInvalid,
       what: `Could not write ${LOCKFILE_NAME}.`,
       where: path,
-      how: 'Check that the file is not read-only and the directory is writable.',
+      detail: `  ${LOCKFILE_NAME} was left as it was.`,
+      how: 'Check that the file is not read-only and the directory is writable, and close anything holding the file open.',
       cause,
     })
   }
@@ -126,5 +128,5 @@ function contentsUrl(registry: string, scope: string, name: string, version: str
 }
 
 function sortRecord(record: Readonly<Record<string, string>>): Record<string, string> {
-  return Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b)))
+  return Object.fromEntries(Object.entries(record).sort(([a], [b]) => byCodeUnit(a, b)))
 }

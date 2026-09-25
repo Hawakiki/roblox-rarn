@@ -33,8 +33,10 @@ export const Code = {
   // RN0100-RN0199 — registry and network
   RegistryUnreachable: 'RN0100',
   RegistryBadResponse: 'RN0101',
+  NetworkTimeout: 'RN0102',
   PackageNotFound: 'RN0110',
   VersionNotFound: 'RN0111',
+  UnsafeDependencyAlias: 'RN0112',
   WallyVersionHeaderRejected: 'RN0120',
   RegistryAuthRequired: 'RN0121',
   NetworkBlocked: 'RN0130',
@@ -69,6 +71,7 @@ export const Code = {
   NotLoggedIn: 'RN0600',
   LoginFailed: 'RN0601',
   TokenStoreUnwritable: 'RN0602',
+  TokenStoreUnreadable: 'RN0603',
   PackTooLarge: 'RN0610',
   PackEmpty: 'RN0611',
   UnpublishableRange: 'RN0620',
@@ -96,6 +99,7 @@ export const WarnCode = {
   DuplicateMajorWarning: 'RN0212',
   CircularDependencyWarning: 'RN0231',
   CrossTreeDuplicate: 'RN0213',
+  CacheEntryReplaced: 'RN0302',
 } as const
 
 export type WarnCode = (typeof WarnCode)[keyof typeof WarnCode]

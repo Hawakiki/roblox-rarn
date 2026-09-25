@@ -3,9 +3,10 @@ import semver from 'semver'
 import { DEPENDENCY_SECTIONS } from '../../manifest/types.ts'
 import { createRegistryClient } from '../../registry/client.ts'
 import type { RegistryClient } from '../../registry/types.ts'
+import { upgradeTargets } from '../../resolver/upgrade.ts'
 import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '../../util/concurrency.ts'
+import { byCodeUnit } from '../../util/order.ts'
 import { parsePackageName, toWallyName } from '../../util/package-name.ts'
-import { normalizeRange } from '../../util/version-range.ts'
 import { loadInstalled, writeJson } from '../project.ts'
 
 export interface OutdatedOptions {
@@ -18,7 +19,10 @@ export interface OutdatedOptions {
 interface Row {
   readonly name: string
   readonly current: string
-  /** Newest release the declared range already allows — a plain `rarn up` gets this. */
+  /**
+   * What a plain `rarn up` gets: the newest release the declared range already allows,
+   * and every other range on the same package too.
+   */
   readonly wanted: string
   /** Newest release at all — reaching it may mean widening the range. */
   readonly latest: string
@@ -41,43 +45,49 @@ export async function outdated(
 ): Promise<void> {
   const { manifest, resolution } = await loadInstalled(options.cwd)
 
-  const declared: { name: string; range: string }[] = []
+  // By package, because `rarn up` raises one package's ranges together: what it gets
+  // for one section depends on the others.
+  const declared = new Map<string, { name: string; range: string }[]>()
   for (const section of DEPENDENCY_SECTIONS) {
     for (const [name, range] of Object.entries(manifest[section])) {
-      declared.push({ name, range })
+      const key = toWallyName(parsePackageName(name))
+      declared.set(key, [...(declared.get(key) ?? []), { name, range }])
     }
   }
 
   const rows = (
-    await mapWithConcurrency(declared, DEFAULT_CONCURRENCY, async (entry) => {
-      const name = parsePackageName(entry.name)
+    await mapWithConcurrency([...declared], DEFAULT_CONCURRENCY, async ([key, entries]) => {
       const installed = [...resolution.packages.values()].find(
-        (pkg) => toWallyName(pkg.name) === toWallyName(name),
+        (pkg) => toWallyName(pkg.name) === key,
       )
-      if (installed === undefined) return undefined
+      if (installed === undefined) return []
 
-      const metadata = await registry.getMetadata(name)
-      const stable = metadata.versions
-        .map((v) => v.version)
-        .filter((v) => semver.prerelease(v) === null)
+      const metadata = await registry.getMetadata(installed.name)
+      const published = metadata.versions.map((v) => v.version)
+      const latest = published.find((v) => semver.prerelease(v) === null)
+      const wanted = upgradeTargets(
+        entries.map((entry) => entry.range),
+        published,
+      )
 
-      const latest = stable[0]
-      const wanted = stable.find((v) => semver.satisfies(v, normalizeRange(entry.range)))
-      if (latest === undefined || wanted === undefined) return undefined
-
-      if (wanted === installed.version && latest === installed.version) return undefined
-
-      return {
-        name: entry.name,
-        current: installed.version,
-        wanted,
-        latest,
-        range: entry.range,
-      } satisfies Row
+      return entries.flatMap((entry, index): Row[] => {
+        const target = wanted[index]
+        if (latest === undefined || target === undefined) return []
+        if (target === installed.version && latest === installed.version) return []
+        return [
+          {
+            name: entry.name,
+            current: installed.version,
+            wanted: target,
+            latest,
+            range: entry.range,
+          },
+        ]
+      })
     })
-  ).filter((row): row is Row => row !== undefined)
+  ).flat()
 
-  rows.sort((a, b) => a.name.localeCompare(b.name))
+  rows.sort((a, b) => byCodeUnit(a.name, b.name))
 
   if (options.json === true) {
     writeJson(rows)

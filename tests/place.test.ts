@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { normalizeManifest } from '../src/manifest/read.ts'
 import type { Manifest } from '../src/manifest/types.ts'
 import { resolvePlace, scanPlaceProject, unmountedRealms } from '../src/project/place.ts'
+import { asIfLocale } from './locale.ts'
 
 let dir: string
 
@@ -301,6 +302,39 @@ describe('scanPlaceProject across project files', () => {
     expect(scan.notes.join('\n')).toContain(
       'default.project.json puts RARN_MODULE/ at game.ReplicatedStorage.Packages',
     )
+  })
+
+  async function dispute(first: string, second: string) {
+    await write(`places/${first}/default.project.json`, {
+      $className: 'DataModel',
+      ReplicatedStorage: { Packages: { $path: '../../RARN_MODULE' } },
+    })
+    await write(`places/${second}/default.project.json`, {
+      $className: 'DataModel',
+      ServerStorage: { Shared: { $path: '../../RARN_MODULE' } },
+    })
+  }
+
+  // The file read first is the one a dispute names as the owner, and the order was
+  // promised to be the same on every machine. Collated by locale, a machine set to
+  // Czech read `places/dog` first — `ch` sorts after `h` there.
+  test('reads project files in the same order on every machine', async () => {
+    await dispute('chalk', 'dog')
+    const manifest = await project(undefined)
+
+    const scan = await asIfLocale('cs', () => scanPlaceProject(dir, manifest))
+    expect(scan.notes.join('\n')).toContain('places/chalk/default.project.json puts RARN_MODULE/')
+  })
+
+  // Compared as the reader sees the path, not as the OS spells it. By code unit `\`
+  // sorts after the digits and `/` before them, so comparing raw paths would put
+  // `lobby2` first on Windows and `lobby` first everywhere else.
+  test('orders sibling places the same way on every OS', async () => {
+    await dispute('lobby', 'lobby2')
+    const manifest = await project(undefined)
+
+    const scan = await scanPlaceProject(dir, manifest)
+    expect(scan.notes.join('\n')).toContain('places/lobby/default.project.json puts RARN_MODULE/')
   })
 })
 

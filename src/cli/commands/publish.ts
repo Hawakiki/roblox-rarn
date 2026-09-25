@@ -10,6 +10,7 @@ import { Code } from '../../util/codes.ts'
 import { RarnError } from '../../util/errors.ts'
 import { parsePackageName, toWallyName } from '../../util/package-name.ts'
 import { createProgress } from '../progress.ts'
+import { tokenFileLines } from './pack.ts'
 
 export interface PublishOptions {
   cwd: string
@@ -57,6 +58,7 @@ export async function publish(
         `  ${chalk.bold(`${wally}@${manifest.version}`)}`,
         `  ${result.entries.length} files, ${kib(result.totalBytes)}`,
         '',
+        ...tokenFileLines(result),
         chalk.dim(indent(renderWallyToml(manifest))),
         chalk.dim('  `rarn pack --list` shows the file list'),
         '',
@@ -71,7 +73,7 @@ export async function publish(
   const progress = createProgress()
   progress.stage(`publishing ${wally}@${manifest.version}`)
   try {
-    await registry.publish(result.archive, token)
+    await registry.publish(result.archive, token, `@${wally}@${manifest.version}`)
     progress.stop()
   } catch (error) {
     progress.fail()
@@ -85,6 +87,7 @@ export async function publish(
       // Said plainly and only after it has happened. The registry treats versions as
       // immutable, so there is no unpublish to point the reader at.
       chalk.dim('  this version is now permanent — publish a new version to change it'),
+      ...tokenFileLines(result),
       '',
     ].join('\n'),
   )
