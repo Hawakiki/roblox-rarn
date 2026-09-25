@@ -44,7 +44,7 @@ installed 5 packages into RARN_MODULE
 the modules, and the rest are docs, tests and CI config that Wally would copy into your
 place and leave for Rojo to sort out at sync time.
 
-> **Status: 0.2.0.** The install path is complete and verified — against a real Studio, a
+> **Status: 0.3.0.** The install path is complete and verified — against a real Studio, a
 > real `wally install`, and a require harness that models Roblox's instance-cached
 > `require`. One package has been published to the live registry end to end and installed
 > back from both Rarn and Wally. **The manifest and lockfile formats are not stable until
@@ -88,7 +88,7 @@ rokit install
 ```toml
 # rokit.toml, afterwards
 [tools]
-rarn = "Hawakiki/roblox-rarn@0.2.0"
+rarn = "Hawakiki/roblox-rarn@0.3.0"
 ```
 
 **Give it the alias.** Rokit names a tool after its repository unless told otherwise, so

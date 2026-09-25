@@ -8,6 +8,26 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.3.0 — 2026-09-25
+
+**Upgrade if you install from lockfiles or packages you did not write yourself.** In 0.2.0
+and 0.1.1 an edited `rarn.lock` could make `rarn install` delete a directory outside the
+cache (RN-23), and a registry package could write a `.luau` file outside its install tree
+(RN-22). Both are fixed here, as is the login token being briefly readable by other
+accounts on the machine (RN-19).
+
+The lockfile schema is tighter: a locked `version` must now be an exact semver version.
+Every lockfile Rarn has written still loads, and `rarn.json` is unchanged. The first
+install may rewrite an existing lockfile once, with its keys reordered (RN-17).
+
+The minor bump is for behaviour that changes under you: `rarn up` keeps the operators you
+wrote (RN-25), two aliases that differ only in case are refused (RN-16), a request that
+stops answering times out after 30 seconds (RN-20), `rarn publish` says when a failure may
+still have published, and on Windows a program holding `rarn.json` or `rarn.lock` open for
+more than a second now makes the write fail, where it used to go through (RN-18).
+
 ### Security
 
 - **The login token file is created owner-only from the start** (RN-19). `~/.rarn/auth.json`
@@ -50,7 +70,7 @@ rather than silently misread, and a `0.x` release may bump it.
   shim — in this project or another — and the install reported success. Such a package is
   now refused with the new `RN0112`, naming the package, the section and the dependency.
   Every dependency name in the registry today still passes, hyphenated ones such as
-  `luau-polyfill` included. 0.2.0 contains the same code.
+  `luau-polyfill` included. 0.2.0 and 0.1.1 are affected.
 
 ### Fixed
 

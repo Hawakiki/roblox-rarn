@@ -1057,13 +1057,13 @@ is one that eventually contradicts it.
   holds on its own. It reports; making it *block* means marking it required in `master`'s
   branch protection, which is a repository setting.
 
-  **The default branch should become `master`, at the next release and not before.** The
-  repository's front page is whatever the default branch says, and `develop` runs ahead
-  of what anyone can install — which is precisely the failure that put M7 in the README
-  days before it shipped, and recorded RN-6 as fixed in a release that did not contain
-  it. Waiting for a release is not caution but arithmetic: `LICENSE` lives on `develop`
-  and reaches `master` with the next one, and switching sooner would make GitHub report
-  the project as unlicensed until then.
+  **The default branch is `master`, since 0.3.0.** The repository's front page is
+  whatever the default branch says, and `develop` runs ahead of what anyone can install —
+  which is precisely the failure that put M7 in the README days before it shipped, and
+  recorded RN-6 as fixed in a release that did not contain it. It waited for a release
+  because `LICENSE` lived only on `develop` until then. The cost is that a PR now opens
+  against `master` unless told otherwise: **`gh pr create --base develop`** for every
+  `feat/*`, with the `base` job as the backstop.
 - Biome formats and catches syntax; ESLint carries **only** type-aware rules that Biome
   structurally cannot express (`no-floating-promises` above all — an unawaited download
   leaves a half-written cache and no error). Do not duplicate a rule across both.
