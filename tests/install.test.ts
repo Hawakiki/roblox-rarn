@@ -356,6 +356,77 @@ describe('a damaged cache under a fresh lockfile', () => {
 })
 
 /**
+ * RN-28. Only an install that *reused* the lockfile checked the cache against it, so
+ * every install that re-resolves took a damaged cache at its word and, unless it was
+ * `--production`, wrote the damaged digest over the right one. RN-21 closed this for the
+ * reused lockfile and left the other half open.
+ */
+describe('a damaged cache under a lockfile that is not reused', () => {
+  const cachedArchive = () => downloadPath(cacheDir, cacheKey(parseWallyName('a/one'), '1.0.0'))
+  const damage = new TextEncoder().encode('not the pinned bytes')
+
+  async function lockedIntegrity(key: string): Promise<string | undefined> {
+    const lock = JSON.parse(await readFile(join(dir, 'rarn.lock'), 'utf8')) as {
+      packages: Record<string, { integrity: string }>
+    }
+    return lock.packages[key]?.integrity
+  }
+
+  // The reproduction from the review, step for step: install, damage the cache, add a
+  // dependency, install again.
+  test('is repaired by an install that re-resolves, and the pinned digest survives', async () => {
+    await manifest()
+    await install()
+    const pinned = await lockedIntegrity('@a/one@1.0.0')
+    await writeFile(cachedArchive(), damage)
+
+    await manifest({ dependencies: { '@a/one': '^1.0.0', '@a/two': '^2.0.0' } })
+    const outcome = await install()
+
+    expect(outcome.fromLockfile).toBe(false)
+    expect(outcome.repairedCache).toEqual([
+      { key: '@a/one@1.0.0', discarded: computeIntegrity(damage) },
+    ])
+    expect(await lockedIntegrity('@a/one@1.0.0')).toBe(pinned)
+  })
+
+  // `--production` never reuses the lockfile, fresh or not, so it never checked at all.
+  test('is repaired under --production too', async () => {
+    await manifest()
+    await install()
+    await writeFile(cachedArchive(), damage)
+
+    const outcome = await install({ production: true })
+
+    expect(outcome.repairedCache).toEqual([
+      { key: '@a/one@1.0.0', discarded: computeIntegrity(damage) },
+    ])
+  })
+
+  // The guard on the guard. Another index may publish a different package under the same
+  // name and version, and holding it to this index's digest would fail a correct install
+  // with RN0300.
+  test('from another index, the old digests are not applied', async () => {
+    await manifest()
+    await install()
+    await rm(cacheDir, { recursive: true, force: true })
+    await mkdir(cacheDir)
+
+    const elsewhere = zipSync(
+      { 'init.luau': new TextEncoder().encode('return "another index"') },
+      { mtime: new Date(2020, 0, 1).getTime() },
+    )
+    await manifest({ registry: 'https://github.com/example/another-index' })
+    const outcome = await install({
+      registry: { ...registryOf(SPEC), getContents: () => Promise.resolve(elsewhere) },
+    })
+
+    expect(outcome.downloaded).toBe(1)
+    expect(await lockedIntegrity('@a/one@1.0.0')).toBe(computeIntegrity(elsewhere))
+  })
+})
+
+/**
  * A registry reached over the wire, so metadata goes through the real parser.
  *
  * `registryOf` above hands the resolver parsed metadata directly, which skips the one

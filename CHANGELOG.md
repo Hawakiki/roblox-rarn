@@ -33,6 +33,17 @@ rather than silently misread, and a `0.x` release may bump it.
   before it they could announce a change that was then taken back. If the file cannot
   be put back, the command says so and shows the first error.
 
+- **An install that re-resolves now checks the cache against `rarn.lock` too** (RN-28).
+  0.3.0 made a damaged cache entry get downloaded again when the lockfile was reused
+  (RN-21), but only then. `rarn add`, `rarn remove`, `rarn up`, an install after editing
+  `rarn.json`, and every `--production` install resolve afresh, and they took the cached
+  archive as it was. Outside `--production` they also recorded its digest in
+  `rarn.lock`, over the one that matched the registry. They now hold every package whose
+  name and version are unchanged to the digest the lockfile recorded, so the damaged
+  entry is replaced and reported as it is under a reused lockfile. After a change of
+  `registry` in `rarn.json` the old digests are not applied, since another index can
+  publish a different package under the same name and version.
+
 ## 0.3.0 — 2026-09-25
 
 **Upgrade if you install from lockfiles or packages you did not write yourself.** In 0.2.0

@@ -126,6 +126,20 @@ export async function runInstall(request: InstallRequest): Promise<InstallOutcom
     })
   }
 
+  // A digest in the lockfile is a fact about one archive, and it stays true whether or
+  // not this install reuses the rest of the file. Registry versions are immutable, so
+  // the same `name@version` from the same index is the same bytes however the graph
+  // around it changed. Checked only when the lockfile was reused, a damaged cache got
+  // through every install that re-resolves (`add`, `remove`, `up`, a stale lockfile,
+  // `--production`): it was installed as it was, and outside `--production` its digest
+  // was written over the right one (RN-28). From
+  // another index the same name and version can be another package, so nothing carries
+  // over then. An undefined index is read as unchanged, as `checkFreshness` reads it.
+  const recorded =
+    lockfile !== undefined && (lockfile.root.registry ?? manifest.registry) === manifest.registry
+      ? integrityOf(lockfile)
+      : undefined
+
   const store = request.store ?? createCacheStore()
   const total = resolution.packages.size
   observer.stage?.(`fetching ${total} packages`)
@@ -133,7 +147,7 @@ export async function runInstall(request: InstallRequest): Promise<InstallOutcom
     packages: resolution.packages,
     registry: request.registry,
     store,
-    ...(reuse ? { expectedIntegrity: integrityOf(lockfile) } : {}),
+    ...(recorded === undefined ? {} : { expectedIntegrity: recorded }),
     onProgress: (pkg, done) => observer.fetched?.(pkg, done, total),
   })
 
