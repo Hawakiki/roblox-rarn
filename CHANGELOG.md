@@ -8,6 +8,18 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.3.1 — 2026-11-08
+
+**Upgrade before you publish.** Every release so far wrote an exact version from
+`rarn.json` into the published `wally.toml` in a form Wally reads as a caret (RN-26), and
+a published version cannot be replaced. The other three fixes keep a failed `add`, `up`
+or `remove` from leaving `rarn.json` changed (RN-27), keep a damaged cache out of
+installs that re-resolve (RN-28), and stop `--frozen-lockfile` from writing `rarn.lock`
+(RN-29). Neither file format changed. `rarn.json` and `rarn.lock` are read and written
+exactly as in 0.3.0.
+
 ### Fixed
 
 - **`rarn publish` no longer widens an exact version in the `wally.toml` it writes**
