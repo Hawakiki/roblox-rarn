@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { writeFileAtomic } from '../util/atomic-write.ts'
 import { Code } from '../util/codes.ts'
 import { RarnError } from '../util/errors.ts'
@@ -69,6 +70,64 @@ export async function writeManifest(dir: string, manifest: Manifest): Promise<vo
       cause,
     })
   }
+}
+
+/**
+ * Writes `rarn.json`, runs `work`, and puts the previous file back if `work` throws.
+ *
+ * `add`, `up` and `remove` change the manifest and then install. The install reads the
+ * manifest from disk, so the write has to come first, and an install that then fails
+ * left a manifest the lockfile no longer describes. When the failure was the new range
+ * itself (a version that was never published, say), every `rarn install` after it
+ * failed the same way until someone edited the file by hand (RN-27). yarn and npm leave
+ * `package.json` alone when `add` fails, and so does this.
+ *
+ * The previous file is put back as the text it was, not re-serialized from a parsed
+ * copy, so a failed command leaves no diff behind, not even a reordered one.
+ */
+export async function writeManifestThen<T>(
+  dir: string,
+  manifest: Manifest,
+  work: () => Promise<T>,
+): Promise<T> {
+  const path = manifestPath(dir)
+  const previous = await readFile(path, 'utf8')
+  await writeManifest(dir, manifest)
+
+  try {
+    return await work()
+  } catch (error) {
+    try {
+      await writeFileAtomic(path, previous)
+    } catch (cause) {
+      // The one outcome worse than the defect this exists for: the change is still in
+      // the file and the person believes it is not. So it is said, with what failed
+      // first, since that is still the thing to fix.
+      throw new RarnError({
+        code: Code.ManifestUnreadable,
+        what: 'The command failed, and rarn.json could not be put back the way it was.',
+        where: path,
+        detail: [indent(describe(error)), '', `  Restoring it failed: ${describe(cause)}`].join(
+          '\n',
+        ),
+        how: 'rarn.json still holds the change this command made. Undo it by hand, then fix the first error above.',
+        cause,
+      })
+    }
+    throw error
+  }
+}
+
+function describe(error: unknown): string {
+  if (error instanceof RarnError) return error.format()
+  return error instanceof Error ? error.message : String(error)
+}
+
+function indent(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => (line.length === 0 ? line : `  ${line}`))
+    .join('\n')
 }
 
 function isDependencySection(field: keyof Manifest): field is DependencySection {

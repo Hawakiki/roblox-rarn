@@ -4,6 +4,7 @@ import { Code } from '../util/codes.ts'
 import { RarnError } from '../util/errors.ts'
 import { byCodeUnit } from '../util/order.ts'
 import { parsePackageName, toWallyName } from '../util/package-name.ts'
+import { fromCargoRange } from '../util/version-range.ts'
 
 /**
  * Renders the `wally.toml` that goes inside the published archive.
@@ -69,15 +70,26 @@ function aliasFor(name: string): string {
 /**
  * npm range syntax to Cargo's.
  *
- * The two agree on `^`, `~`, `*`, and bare comparators, and differ on how a
- * conjunction is spelled: npm separates with a space, Cargo with a comma. Getting
- * that backwards does not throw — Cargo reads `>=1.0.0 <2.0.0` as one malformed
- * comparator — so the translation has to be explicit.
+ * The two agree on every comparator that carries an operator, and differ in two
+ * places that neither of them reports:
+ *
+ * - **The separator.** npm ANDs with a space, Cargo with a comma. Cargo reads
+ *   `>=1.0.0 <2.0.0` as one malformed comparator.
+ * - **A bare version.** npm reads `1.2.3` as exactly `1.2.3` and `1.2` as `<1.3.0`;
+ *   Cargo reads both as carets, `<2.0.0`. Copied across unchanged, a pin becomes a
+ *   major's worth of versions nobody tested, in a published version that can never
+ *   be withdrawn. So no comparator leaves here bare: `1.2.3` becomes `=1.2.3`, `1.2`
+ *   becomes `~1.2`, and `1` becomes `^1`, each of which means the same thing in both.
  *
  * Two npm forms have no Cargo equivalent at all and are refused rather than
  * approximated: `||` (there is no OR in a Cargo requirement) and the hyphen range
  * `1.0.0 - 2.0.0`. Silently widening either one would publish a package whose
  * declared dependencies are not the ones its author tested.
+ *
+ * The result is read back the way Rarn reads a published requirement and compared
+ * with the original, and anything that does not come back meaning the same is
+ * refused too. A form nobody thought of here should cost a publish, not a widened
+ * range in the registry.
  */
 export function toCargoRange(range: string, dependency: string): string {
   const trimmed = range.trim()
@@ -92,14 +104,71 @@ export function toCargoRange(range: string, dependency: string): string {
     throw unpublishable(dependency, trimmed, 'It is not a valid semver range.')
   }
 
-  // Space-separated comparators are an AND in npm and must become commas. Any
-  // internal space inside one comparator (`>= 1.0.0`) is closed up first, or it
+  // Any internal space inside one comparator (`>= 1.0.0`) is closed up first, or it
   // would be mistaken for the separator.
-  return trimmed
+  const comparators = trimmed
     .replace(/(>=|<=|>|<|=|\^|~)\s+/g, '$1')
     .split(/\s+/)
     .filter((part) => part.length > 0)
-    .join(', ')
+    .map((part) => cargoComparator(part, dependency, trimmed))
+    .filter((part) => part !== ANY)
+
+  // Cargo allows `*` only as the whole requirement, so it is dropped from a
+  // conjunction — where it constrained nothing anyway — and kept only when it is all
+  // there is.
+  const cargo = comparators.length === 0 ? '*' : comparators.join(', ')
+
+  const readBack = fromCargoRange(cargo)
+  if (!semver.subset(readBack, trimmed) || !semver.subset(trimmed, readBack)) {
+    throw unpublishable(
+      dependency,
+      trimmed,
+      `Written for Cargo it would read as \`${cargo}\`, which is not the same range.`,
+    )
+  }
+  return cargo
+}
+
+const ANY = '*'
+
+/**
+ * One npm comparator, spelled so Cargo reads what npm reads.
+ *
+ * npm treats `x`, `X` and `*` as "any" wherever they appear, and treats a missing
+ * part the same way, so `^1.x` is `^1` and `1.2.x` is `1.2`. Dropping them first
+ * leaves only plain partial versions, whose meaning Cargo documents for every
+ * operator. A leading `v`, or a `=` after another operator, is npm leniency Cargo
+ * does not share, and build metadata never affects which versions match.
+ */
+function cargoComparator(comparator: string, dependency: string, range: string): string {
+  const match = /^(<=|>=|<|>|=|\^|~)?[v=]*([^-+]*)(-[^+]*)?(\+.*)?$/.exec(comparator)
+  const op = match?.[1] ?? ''
+  const core = (match?.[2] ?? '').split('.')
+
+  const wildcard = core.findIndex((part) => part === '*' || part === 'x' || part === 'X')
+  const numbers = wildcard === -1 ? core : core.slice(0, wildcard)
+  if (match === null || numbers.some((part) => !/^\d+$/.test(part))) {
+    throw unpublishable(
+      dependency,
+      range,
+      `\`${comparator}\` is not a comparator Rarn can translate.`,
+    )
+  }
+
+  if (numbers.length === 0) {
+    if (op === '<' || op === '>') {
+      throw unpublishable(dependency, range, `\`${comparator}\` matches no version at all.`)
+    }
+    return ANY
+  }
+
+  // npm ignores a prerelease written after a wildcard (`1.2.x-rc` is `1.2.x`).
+  const version = numbers.join('.') + (wildcard === -1 ? (match[3] ?? '') : '')
+  if (numbers.length === 3) return `${op === '' ? '=' : op}${version}`
+  if (op !== '' && op !== '=') return `${op}${version}`
+  // A partial exact match (`1.2`, `=1.2`) is a range in npm. Cargo's tilde and caret
+  // say the same range in the spelling every Cargo reader agrees on.
+  return numbers.length === 2 ? `~${version}` : `^${version}`
 }
 
 function unpublishable(dependency: string, range: string, why: string): RarnError {

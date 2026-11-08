@@ -44,7 +44,7 @@ installed 5 packages into RARN_MODULE
 the modules, and the rest are docs, tests and CI config that Wally would copy into your
 place and leave for Rojo to sort out at sync time.
 
-> **Status: 0.3.0.** The install path is complete and verified — against a real Studio, a
+> **Status: 0.3.1.** The install path is complete and verified — against a real Studio, a
 > real `wally install`, and a require harness that models Roblox's instance-cached
 > `require`. One package has been published to the live registry end to end and installed
 > back from both Rarn and Wally. **The manifest and lockfile formats are not stable until
@@ -88,7 +88,7 @@ rokit install
 ```toml
 # rokit.toml, afterwards
 [tools]
-rarn = "Hawakiki/roblox-rarn@0.3.0"
+rarn = "Hawakiki/roblox-rarn@0.3.1"
 ```
 
 **Give it the alias.** Rokit names a tool after its repository unless told otherwise, so
@@ -281,8 +281,9 @@ Wally uses Cargo syntax, which differs twice over. `,` is its AND separator, and
 version is a caret requirement** — Cargo reads `1.0.0` as `^1.0.0` where npm reads it as an
 exact pin. Neither difference throws, so both are translated explicitly rather than hoped
 about: `rarn import` turns `red-blox/spawn@1.0.0` into `^1.0.0`, which is what the registry
-itself stored for that line. Going the other way, `rarn publish` refuses a range Cargo cannot
-express instead of quietly widening it.
+itself stored for that line. Going the other way, `rarn publish` writes a pin as `=1.0.0`,
+so Wally does not read it as a caret, and refuses a range Cargo cannot express instead of
+quietly widening it.
 
 ## What the install looks like
 

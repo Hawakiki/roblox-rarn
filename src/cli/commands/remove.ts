@@ -2,7 +2,7 @@ import { resolve as resolvePath } from 'node:path'
 import chalk from 'chalk'
 import { readManifestRaw } from '../../manifest/read.ts'
 import { validateManifest } from '../../manifest/validate.ts'
-import { withoutDependency, writeManifest } from '../../manifest/write.ts'
+import { withoutDependency, writeManifestThen } from '../../manifest/write.ts'
 import { createRegistryClient } from '../../registry/client.ts'
 import type { RegistryClient } from '../../registry/types.ts'
 import { Code } from '../../util/codes.ts'
@@ -61,13 +61,11 @@ export async function remove(
   }
 
   validateManifest(manifest, 'rarn.json')
-  await writeManifest(projectDir, manifest)
+  await writeManifestThen(projectDir, manifest, () => install({ cwd: projectDir }, registry))
 
   for (const name of removed) {
     process.stdout.write(`${chalk.green('removed')} ${name}\n`)
   }
-
-  await install({ cwd: projectDir }, registry)
 }
 
 /** `@scope/name@1.0.0` -> `@scope/name`. A version here is accepted and ignored. */

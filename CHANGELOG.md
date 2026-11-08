@@ -10,6 +10,60 @@ rather than silently misread, and a `0.x` release may bump it.
 
 Nothing yet.
 
+## 0.3.1 — 2026-11-08
+
+**Upgrade before you publish.** Every release so far wrote an exact version from
+`rarn.json` into the published `wally.toml` in a form Wally reads as a caret (RN-26), and
+a published version cannot be replaced. The other three fixes keep a failed `add`, `up`
+or `remove` from leaving `rarn.json` changed (RN-27), keep a damaged cache out of
+installs that re-resolve (RN-28), and stop `--frozen-lockfile` from writing `rarn.lock`
+(RN-29). Neither file format changed. `rarn.json` and `rarn.lock` are read and written
+exactly as in 0.3.0.
+
+### Fixed
+
+- **`rarn publish` no longer widens an exact version in the `wally.toml` it writes**
+  (RN-26). `rarn.json` uses npm syntax, where `1.2.3` means exactly `1.2.3` and `1.2`
+  means `>=1.2.0 <1.3.0`. Cargo, and so Wally, reads the same text as a caret: anything
+  below `2.0.0`. The range was copied across unchanged, so a package that pinned a
+  dependency was published depending on every later `1.x`, and a published version
+  cannot be replaced. Every requirement is now written with an operator: `1.2.3` as
+  `=1.2.3`, `1.2` and `1.2.x` as `~1.2`, `1` as `^1`. The translation is also read back
+  and compared with the original, and a range that would not come back the same is
+  refused with `RN0620`, as `||` and hyphen ranges already were.
+
+  Versions published before this keep the requirements they were published with.
+  Publishing a new version is the only way to change them.
+
+- **A failed `rarn add`, `rarn up` or `rarn remove` leaves `rarn.json` as it was**
+  (RN-27). Each wrote the manifest and then installed, so an install that failed left the
+  change in `rarn.json` with the lockfile still describing the old one. When the change
+  was the problem, as with `rarn add @evaera/promise@^9.0.0` for a major that was never
+  published, every `rarn install` after it failed with the same error until the file was
+  edited by hand. The previous file is now put back, byte for byte, when the install
+  fails. `added`, `up` and `removed` are printed after the install succeeds, since
+  before it they could announce a change that was then taken back. If the file cannot
+  be put back, the command says so and shows the first error.
+
+- **An install that re-resolves now checks the cache against `rarn.lock` too** (RN-28).
+  0.3.0 made a damaged cache entry get downloaded again when the lockfile was reused
+  (RN-21), but only then. `rarn add`, `rarn remove`, `rarn up`, an install after editing
+  `rarn.json`, and every `--production` install resolve afresh, and they took the cached
+  archive as it was. Outside `--production` they also recorded its digest in
+  `rarn.lock`, over the one that matched the registry. They now hold every package whose
+  name and version are unchanged to the digest the lockfile recorded, so the damaged
+  entry is replaced and reported as it is under a reused lockfile. After a change of
+  `registry` in `rarn.json` the old digests are not applied, since another index can
+  publish a different package under the same name and version.
+
+- **`rarn install --frozen-lockfile` no longer writes `rarn.lock`** (RN-29). It refused a
+  stale lockfile but rewrote a fresh one at the end of the install, so any change in how
+  the file is serialized reached CI as a modified `rarn.lock`. 0.3.0 reorders keys
+  (RN-17), so the first frozen install of a lockfile written by 0.2.0 failed every CI
+  step that runs `git diff --exit-code` afterwards. Frozen now means what it means in
+  Yarn: the lockfile is read and never written. A plain `rarn install` still rewrites it
+  in the current format.
+
 ## 0.3.0 — 2026-09-25
 
 **Upgrade if you install from lockfiles or packages you did not write yourself.** In 0.2.0

@@ -207,10 +207,10 @@ describe('the install pipeline', () => {
   /**
    * Lockfiles written before the order was fixed hold the same facts in another order.
    * Freshness compares facts, so such a file is reused offline and `--frozen-lockfile`
-   * accepts it; the rewrite at the end of that install is the only thing that changes.
-   * A freshness check that ever compared text would fail every CI run on upgrade.
+   * accepts it. A freshness check that ever compared text would fail every CI run on
+   * upgrade.
    */
-  test('a lockfile in another key order is fresh, and is rewritten in code-unit order', async () => {
+  async function reorderedLockfile(): Promise<{ written: string; reordered: string }> {
     await manifest({ dependencies: { '@a/one': '^1.0.0', '@a/two': '^2.0.0' } })
     await install()
     const written = await readFile(join(dir, 'rarn.lock'), 'utf8')
@@ -220,13 +220,31 @@ describe('the install pipeline', () => {
     const reordered = `${JSON.stringify(lock, null, 2)}\n`
     expect(reordered).not.toBe(written)
     await writeFile(join(dir, 'rarn.lock'), reordered)
+    return { written, reordered }
+  }
+
+  test('a lockfile in another key order is fresh, and is rewritten in code-unit order', async () => {
+    const { written } = await reorderedLockfile()
+
+    const registry = registryOf(SPEC)
+    const outcome = await install({ registry })
+
+    expect(outcome.fromLockfile).toBe(true)
+    expect(registry.metadataCalls).toBe(0)
+    expect(await readFile(join(dir, 'rarn.lock'), 'utf8')).toBe(written)
+  })
+
+  // RN-29. This test once asserted the rewrite under --frozen-lockfile too, and that
+  // rewrite is what failed a CI step checking the tree was clean after installing.
+  test('--frozen-lockfile accepts it and leaves every byte where it was', async () => {
+    const { reordered } = await reorderedLockfile()
 
     const registry = registryOf(SPEC)
     const outcome = await install({ registry, frozenLockfile: true })
 
     expect(outcome.fromLockfile).toBe(true)
     expect(registry.metadataCalls).toBe(0)
-    expect(await readFile(join(dir, 'rarn.lock'), 'utf8')).toBe(written)
+    expect(await readFile(join(dir, 'rarn.lock'), 'utf8')).toBe(reordered)
   })
 
   /**
@@ -352,6 +370,77 @@ describe('a damaged cache under a fresh lockfile', () => {
     expect((error as RarnError).code).toBe(Code.NetworkBlocked)
     expect((error as RarnError).what).toContain('cached copy')
     expect((error as RarnError).format()).not.toContain('registry served')
+  })
+})
+
+/**
+ * RN-28. Only an install that *reused* the lockfile checked the cache against it, so
+ * every install that re-resolves took a damaged cache at its word and, unless it was
+ * `--production`, wrote the damaged digest over the right one. RN-21 closed this for the
+ * reused lockfile and left the other half open.
+ */
+describe('a damaged cache under a lockfile that is not reused', () => {
+  const cachedArchive = () => downloadPath(cacheDir, cacheKey(parseWallyName('a/one'), '1.0.0'))
+  const damage = new TextEncoder().encode('not the pinned bytes')
+
+  async function lockedIntegrity(key: string): Promise<string | undefined> {
+    const lock = JSON.parse(await readFile(join(dir, 'rarn.lock'), 'utf8')) as {
+      packages: Record<string, { integrity: string }>
+    }
+    return lock.packages[key]?.integrity
+  }
+
+  // The reproduction from the review, step for step: install, damage the cache, add a
+  // dependency, install again.
+  test('is repaired by an install that re-resolves, and the pinned digest survives', async () => {
+    await manifest()
+    await install()
+    const pinned = await lockedIntegrity('@a/one@1.0.0')
+    await writeFile(cachedArchive(), damage)
+
+    await manifest({ dependencies: { '@a/one': '^1.0.0', '@a/two': '^2.0.0' } })
+    const outcome = await install()
+
+    expect(outcome.fromLockfile).toBe(false)
+    expect(outcome.repairedCache).toEqual([
+      { key: '@a/one@1.0.0', discarded: computeIntegrity(damage) },
+    ])
+    expect(await lockedIntegrity('@a/one@1.0.0')).toBe(pinned)
+  })
+
+  // `--production` never reuses the lockfile, fresh or not, so it never checked at all.
+  test('is repaired under --production too', async () => {
+    await manifest()
+    await install()
+    await writeFile(cachedArchive(), damage)
+
+    const outcome = await install({ production: true })
+
+    expect(outcome.repairedCache).toEqual([
+      { key: '@a/one@1.0.0', discarded: computeIntegrity(damage) },
+    ])
+  })
+
+  // The guard on the guard. Another index may publish a different package under the same
+  // name and version, and holding it to this index's digest would fail a correct install
+  // with RN0300.
+  test('from another index, the old digests are not applied', async () => {
+    await manifest()
+    await install()
+    await rm(cacheDir, { recursive: true, force: true })
+    await mkdir(cacheDir)
+
+    const elsewhere = zipSync(
+      { 'init.luau': new TextEncoder().encode('return "another index"') },
+      { mtime: new Date(2020, 0, 1).getTime() },
+    )
+    await manifest({ registry: 'https://github.com/example/another-index' })
+    const outcome = await install({
+      registry: { ...registryOf(SPEC), getContents: () => Promise.resolve(elsewhere) },
+    })
+
+    expect(outcome.downloaded).toBe(1)
+    expect(await lockedIntegrity('@a/one@1.0.0')).toBe(computeIntegrity(elsewhere))
   })
 })
 

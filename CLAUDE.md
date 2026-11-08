@@ -826,7 +826,14 @@ archive rather than trusting the record — re-reading one small file is cheaper
 bug where a stale lockfile silently changes what gets installed.
 
 `--production` never writes the lockfile: its graph omits devDependencies and so no longer
-describes the manifest.
+describes the manifest. `--frozen-lockfile` never writes it either, as Yarn's frozen mode
+does not. It only gets that far when the file already matches, so a write could change
+nothing but formatting, and a CI step that checks the tree is clean after installing
+fails on that. It did, once per serialization change, until RN-29.
+
+A lockfile that is not reused still vouches for its digests. Every install that
+re-resolves holds each unchanged `name@version` to the digest recorded for it, unless
+the manifest's index changed (RN-28).
 
 ## Publishing
 
@@ -841,6 +848,14 @@ never shadow it, or a stale hand-written file decides what gets published.
 fine; `||` and hyphen ranges have no Cargo equivalent and are refused rather than
 widened. Widening would publish a package whose declared dependencies are not the
 ones its author tested.
+
+**No comparator is written bare**, because a bare version is where the two syntaxes
+disagree (constraint 4): `1.2.3` in `rarn.json` is a pin, and the same text in
+`wally.toml` is `^1.2.3`. It goes out as `=1.2.3`, `1.2` as `~1.2`, `1` as `^1`. That
+shipped wrong until RN-26, with a test asserting the wrong output. The translation is
+now read back through `fromCargoRange` and compared with the original, and anything
+that does not come back as the same range is refused (`RN0620`). An unforeseen
+form should cost a publish rather than a widened range in the registry.
 
 **A published version is permanent.** There is no unpublish; the registry answers
 `409` to a repeat. Two consequences: the upload is never retried (a retry after a

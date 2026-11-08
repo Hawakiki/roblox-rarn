@@ -3,6 +3,7 @@ import { link, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { unzipSync } from 'fflate'
+import semver from 'semver'
 import { pack as packCommand } from '../src/cli/commands/pack.ts'
 import { publish as publishCommand } from '../src/cli/commands/publish.ts'
 import { normalizeManifest } from '../src/manifest/read.ts'
@@ -14,6 +15,7 @@ import { createRegistryClient } from '../src/registry/client.ts'
 import { DEFAULT_API_URL } from '../src/registry/types.ts'
 import { Code } from '../src/util/codes.ts'
 import { RarnError } from '../src/util/errors.ts'
+import { fromCargoRange } from '../src/util/version-range.ts'
 import { asIfLocale } from './locale.ts'
 
 const manifestOf = (partial: Partial<Manifest> = {}) =>
@@ -27,10 +29,98 @@ describe('toCargoRange', () => {
     expect(toCargoRange('>=1.0.0 <2.0.0', '@a/b')).toBe('>=1.0.0, <2.0.0')
   })
 
-  test('a lone comparator is unchanged', () => {
+  test('a comparator with an operator is unchanged', () => {
     expect(toCargoRange('^1.2.0', '@a/b')).toBe('^1.2.0')
     expect(toCargoRange('~1.2.3', '@a/b')).toBe('~1.2.3')
-    expect(toCargoRange('1.2.3', '@a/b')).toBe('1.2.3')
+    expect(toCargoRange('=1.2.3', '@a/b')).toBe('=1.2.3')
+    expect(toCargoRange('>1.2', '@a/b')).toBe('>1.2')
+  })
+
+  /**
+   * RN-26. npm reads a bare version as a pin and Cargo reads it as a caret, so copying
+   * `1.2.3` across published a dependency on everything below `2.0.0` — in a version
+   * that can never be withdrawn. This test used to assert exactly that output.
+   */
+  test.each([
+    ['1.2.3', '=1.2.3'],
+    ['0.2.3', '=0.2.3'],
+    ['1.2.3-rc.1', '=1.2.3-rc.1'],
+    ['v1.2.3', '=1.2.3'],
+    ['1.2.3+build', '=1.2.3'],
+    ['1.2', '~1.2'],
+    ['=1.2', '~1.2'],
+    ['1.2.x', '~1.2'],
+    ['1.2.*', '~1.2'],
+    ['1', '^1'],
+    ['1.x', '^1'],
+    ['^1.x', '^1'],
+    ['*', '*'],
+    ['>=1.0.0 *', '>=1.0.0'],
+    ['>=1.2.3 1.x', '>=1.2.3, ^1'],
+  ])('a bare version keeps the meaning npm gives it: %p -> %p', (npm, cargo) => {
+    expect(toCargoRange(npm, '@a/b')).toBe(cargo)
+  })
+
+  /**
+   * The property the table above samples: whatever goes out, read back the way Rarn reads
+   * a Cargo requirement — bare means caret — matches exactly the versions the author
+   * wrote. And nothing goes out bare, since a bare comparator is the one spelling the
+   * two syntaxes disagree on.
+   */
+  test('every range reads back as itself, and nothing is written bare', () => {
+    const ranges = [
+      '1.2.3',
+      '1.2',
+      '1',
+      '0.2.3',
+      '0.2',
+      '0',
+      '0.0.3',
+      '1.2.x',
+      '1.x.x',
+      '*',
+      'x',
+      '1.2.*',
+      '^1.2.0',
+      '~1.2.0',
+      '=1.2.3',
+      '=1',
+      '>=1.0.0 <1.5.0',
+      '1.2.3-rc.1',
+      '=v1.2.3',
+      '^v1.2.3',
+      '~=1.2.3',
+      '~1.2.x',
+      '>=1.2.x',
+      '<1.2.x',
+      '>1.2.x',
+      '<=1.2.x',
+      '>1',
+      '<2',
+      '<=*',
+      '>= 1.0.0 <2',
+      '1.2.x-rc',
+      '^0.x',
+      '^0.2.x',
+      '~1',
+      '^1.2.3-beta.2',
+    ]
+    for (const range of ranges) {
+      const cargo = toCargoRange(range, '@a/b')
+      const readBack = fromCargoRange(cargo)
+      expect({
+        range,
+        cargo,
+        same: semver.subset(readBack, range) && semver.subset(range, readBack),
+      }).toEqual({ range, cargo, same: true })
+      expect(cargo.split(', ').filter((part) => /^\d/.test(part))).toEqual([])
+    }
+  })
+
+  test('a comparator that matches nothing is refused rather than published', () => {
+    for (const range of ['<*', '>*']) {
+      expect(() => toCargoRange(range, '@a/b')).toThrow(RarnError)
+    }
   })
 
   // Space inside one comparator is not a separator and must be closed up first,
@@ -75,6 +165,12 @@ describe('renderWallyToml', () => {
     const toml = renderWallyToml(manifestOf({ dependencies: { '@evaera/promise': '^4.0.0' } }))
     expect(toml).toContain('[dependencies]')
     expect(toml).toContain('Promise = "evaera/promise@^4.0.0"')
+  })
+
+  // The far end of RN-26: what the registry stores is this line, and it is permanent.
+  test('an exact pin in rarn.json is published as an exact pin', () => {
+    const toml = renderWallyToml(manifestOf({ dependencies: { '@evaera/promise': '4.0.0' } }))
+    expect(toml).toContain('Promise = "evaera/promise@=4.0.0"')
   })
 
   test('each dependency section is separate', () => {
