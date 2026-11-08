@@ -8,7 +8,20 @@ rather than silently misread, and a `0.x` release may bump it.
 
 ## Unreleased
 
-Nothing yet.
+### Fixed
+
+- **`rarn publish` no longer widens an exact version in the `wally.toml` it writes**
+  (RN-26). `rarn.json` uses npm syntax, where `1.2.3` means exactly `1.2.3` and `1.2`
+  means `>=1.2.0 <1.3.0`. Cargo, and so Wally, reads the same text as a caret: anything
+  below `2.0.0`. The range was copied across unchanged, so a package that pinned a
+  dependency was published depending on every later `1.x`, and a published version
+  cannot be replaced. Every requirement is now written with an operator: `1.2.3` as
+  `=1.2.3`, `1.2` and `1.2.x` as `~1.2`, `1` as `^1`. The translation is also read back
+  and compared with the original, and a range that would not come back the same is
+  refused with `RN0620`, as `||` and hyphen ranges already were.
+
+  Versions published before this keep the requirements they were published with.
+  Publishing a new version is the only way to change them.
 
 ## 0.3.0 — 2026-09-25
 

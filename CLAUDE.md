@@ -842,6 +842,14 @@ fine; `||` and hyphen ranges have no Cargo equivalent and are refused rather tha
 widened. Widening would publish a package whose declared dependencies are not the
 ones its author tested.
 
+**No comparator is written bare**, because a bare version is where the two syntaxes
+disagree (constraint 4): `1.2.3` in `rarn.json` is a pin, and the same text in
+`wally.toml` is `^1.2.3`. It goes out as `=1.2.3`, `1.2` as `~1.2`, `1` as `^1`. That
+shipped wrong until RN-26, with a test asserting the wrong output. The translation is
+now read back through `fromCargoRange` and compared with the original, and anything
+that does not come back as the same range is refused (`RN0620`). An unforeseen
+form should cost a publish rather than a widened range in the registry.
+
 **A published version is permanent.** There is no unpublish; the registry answers
 `409` to a repeat. Two consequences: the upload is never retried (a retry after a
 timeout is a second publish), and the default exclude list covers `.env`, `*.key`
