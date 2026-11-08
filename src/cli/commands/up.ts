@@ -3,7 +3,7 @@ import chalk from 'chalk'
 import { readManifestRaw } from '../../manifest/read.ts'
 import { DEPENDENCY_SECTIONS, type DependencySection } from '../../manifest/types.ts'
 import { validateManifest } from '../../manifest/validate.ts'
-import { withDependency, writeManifest } from '../../manifest/write.ts'
+import { withDependency, writeManifestThen } from '../../manifest/write.ts'
 import { createRegistryClient } from '../../registry/client.ts'
 import type { RegistryClient } from '../../registry/types.ts'
 import { type RangeUpgrade, upgradeRanges } from '../../resolver/upgrade.ts'
@@ -113,7 +113,9 @@ export async function up(
   }
 
   validateManifest(manifest, 'rarn.json')
-  await writeManifest(projectDir, manifest)
+  // `--latest` can raise a range past what another dependency accepts, and the install
+  // is the first thing to find out. The manifest goes back when it does.
+  await writeManifestThen(projectDir, manifest, () => install({ cwd: projectDir }, registry))
 
   const width = Math.max(...changes.map((c) => c.name.length))
   for (const change of changes) {
@@ -122,8 +124,6 @@ export async function up(
     )
   }
   for (const line of kept) process.stdout.write(line)
-
-  await install({ cwd: projectDir }, registry)
 }
 
 interface Declared {

@@ -4,7 +4,7 @@ import semver from 'semver'
 import { readManifestRaw } from '../../manifest/read.ts'
 import type { DependencySection } from '../../manifest/types.ts'
 import { validateManifest } from '../../manifest/validate.ts'
-import { withDependency, writeManifest } from '../../manifest/write.ts'
+import { withDependency, writeManifestThen } from '../../manifest/write.ts'
 import { createRegistryClient } from '../../registry/client.ts'
 import type { RegistryClient } from '../../registry/types.ts'
 import { Code } from '../../util/codes.ts'
@@ -51,13 +51,13 @@ export async function add(
   // Validated before writing, so a bad addition fails the same way a hand-edited
   // manifest would rather than leaving a file that cannot be loaded.
   validateManifest(manifest, 'rarn.json')
-  await writeManifest(projectDir, manifest)
+  await writeManifestThen(projectDir, manifest, () => install({ cwd: projectDir }, registry))
 
+  // After the install, because before it this announced an addition that a failed
+  // install then took back.
   for (const entry of added) {
     process.stdout.write(`${chalk.green('added')} ${entry}${sectionLabel(section)}\n`)
   }
-
-  await install({ cwd: projectDir }, registry)
 }
 
 function sectionFor(options: AddOptions): DependencySection {

@@ -23,6 +23,16 @@ rather than silently misread, and a `0.x` release may bump it.
   Versions published before this keep the requirements they were published with.
   Publishing a new version is the only way to change them.
 
+- **A failed `rarn add`, `rarn up` or `rarn remove` leaves `rarn.json` as it was**
+  (RN-27). Each wrote the manifest and then installed, so an install that failed left the
+  change in `rarn.json` with the lockfile still describing the old one. When the change
+  was the problem, as with `rarn add @evaera/promise@^9.0.0` for a major that was never
+  published, every `rarn install` after it failed with the same error until the file was
+  edited by hand. The previous file is now put back, byte for byte, when the install
+  fails. `added`, `up` and `removed` are printed after the install succeeds, since
+  before it they could announce a change that was then taken back. If the file cannot
+  be put back, the command says so and shows the first error.
+
 ## 0.3.0 — 2026-09-25
 
 **Upgrade if you install from lockfiles or packages you did not write yourself.** In 0.2.0
