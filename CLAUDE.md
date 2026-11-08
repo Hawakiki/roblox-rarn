@@ -826,7 +826,14 @@ archive rather than trusting the record — re-reading one small file is cheaper
 bug where a stale lockfile silently changes what gets installed.
 
 `--production` never writes the lockfile: its graph omits devDependencies and so no longer
-describes the manifest.
+describes the manifest. `--frozen-lockfile` never writes it either, as Yarn's frozen mode
+does not. It only gets that far when the file already matches, so a write could change
+nothing but formatting, and a CI step that checks the tree is clean after installing
+fails on that. It did, once per serialization change, until RN-29.
+
+A lockfile that is not reused still vouches for its digests. Every install that
+re-resolves holds each unchanged `name@version` to the digest recorded for it, unless
+the manifest's index changed (RN-28).
 
 ## Publishing
 

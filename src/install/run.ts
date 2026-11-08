@@ -51,7 +51,7 @@ export interface InstallRequest {
   readonly store?: CacheStore
   /** Drop devDependencies. The result no longer describes the manifest. */
   readonly production?: boolean
-  /** Refuse to update a stale lockfile instead of rewriting it. For CI. */
+  /** Refuse a stale lockfile, and never write one. For CI. */
   readonly frozenLockfile?: boolean
   readonly observer?: InstallObserver
 }
@@ -166,8 +166,11 @@ export async function runInstall(request: InstallRequest): Promise<InstallOutcom
   })
 
   // Written after linking so that `moduleRoot` records what actually happened rather
-  // than what was predicted. Skipped for --production, whose graph is a subset.
-  if (!production) {
+  // than what was predicted. Skipped for --production, whose graph is a subset, and for
+  // --frozen-lockfile, which only got here because the file already matched. Writing it
+  // anyway changed it whenever serialization did. 0.3.0 reordered keys (RN-17), and every
+  // CI step that ran `git diff --exit-code` after a frozen install failed once (RN-29).
+  if (!production && request.frozenLockfile !== true) {
     await writeLockfile(
       projectDir,
       buildLockfile({

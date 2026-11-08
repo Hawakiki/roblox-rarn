@@ -44,6 +44,14 @@ rather than silently misread, and a `0.x` release may bump it.
   `registry` in `rarn.json` the old digests are not applied, since another index can
   publish a different package under the same name and version.
 
+- **`rarn install --frozen-lockfile` no longer writes `rarn.lock`** (RN-29). It refused a
+  stale lockfile but rewrote a fresh one at the end of the install, so any change in how
+  the file is serialized reached CI as a modified `rarn.lock`. 0.3.0 reorders keys
+  (RN-17), so the first frozen install of a lockfile written by 0.2.0 failed every CI
+  step that runs `git diff --exit-code` afterwards. Frozen now means what it means in
+  Yarn: the lockfile is read and never written. A plain `rarn install` still rewrites it
+  in the current format.
+
 ## 0.3.0 — 2026-09-25
 
 **Upgrade if you install from lockfiles or packages you did not write yourself.** In 0.2.0
